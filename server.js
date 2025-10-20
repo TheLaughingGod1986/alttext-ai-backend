@@ -312,6 +312,9 @@ function buildPrompt(imageData, context) {
     const filename = context?.filename || imageData?.filename;
     contextLines.push(`Filename: ${filename}`);
   }
+  if (imageData?.width && imageData?.height) {
+    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
+  }
 
   if (contextLines.length > 0) {
     lines.push('\nAdditional context:');
@@ -324,9 +327,21 @@ function buildPrompt(imageData, context) {
 }
 
 function buildUserMessage(prompt, imageData, options = {}) {
-  const hasUsableImage = !options.forceTextOnly && imageData?.url && isLikelyPublicUrl(imageData.url);
-  
-  if (hasUsableImage) {
+  const allowImage = !options.forceTextOnly;
+
+  if (allowImage && imageData?.inline?.data_url) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.inline.data_url } }
+      ]
+    };
+  }
+
+  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
+
+  if (hasUsableUrl) {
     return {
       role: 'user',
       content: [
