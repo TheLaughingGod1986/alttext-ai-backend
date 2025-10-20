@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: alttext-ai-api
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: API_SECRET
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: FREE_MONTHLY_LIMIT
+        value: 50
+      - key: PRO_MONTHLY_LIMIT
+        value: 999999
+      - key: WEBHOOK_SECRET
+        sync: false
+
