@@ -260,6 +260,41 @@ app.post('/api/review', async (req, res) => {
   }
 });
 
+// Reset usage for a domain (for testing)
+app.post('/api/usage/reset', async (req, res) => {
+  try {
+    const { domain, resetTo = 0 } = req.body;
+    if (!domain) {
+      return res.status(400).json({ success: false, error: 'Domain required' });
+    }
+    
+    const domainHash = hashDomain(domain);
+    const db = await loadDB();
+    
+    if (!db.usage[domainHash]) {
+      return res.status(404).json({ success: false, error: 'Domain not found' });
+    }
+    
+    db.usage[domainHash].count = Math.max(0, parseInt(resetTo, 10));
+    await saveDB(db);
+    
+    res.json({
+      success: true,
+      message: `Usage reset to ${resetTo}`,
+      usage: {
+        used: db.usage[domainHash].count,
+        limit: getPlanLimit(db.usage[domainHash].plan),
+        remaining: Math.max(0, getPlanLimit(db.usage[domainHash].plan) - db.usage[domainHash].count),
+        plan: db.usage[domainHash].plan,
+        resetDate: getNextResetDate()
+      }
+    });
+  } catch (error) {
+    console.error('Reset usage error:', error);
+    res.status(500).json({ success: false, error: 'Failed to reset usage' });
+  }
+});
+
 // Get usage for a domain
 app.get('/api/usage/:domain', async (req, res) => {
   try {
