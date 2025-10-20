@@ -127,30 +127,26 @@ app.post('/api/generate', async (req, res) => {
     const prompt = buildPrompt(image_data, context);
     const userMessage = buildUserMessage(prompt, image_data);
     
-    // Call OpenAI API
-    const openaiResponse = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
-          },
-          userMessage
-        ],
-        max_tokens: 100,
-        temperature: 0.2
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+    // Call OpenAI API with graceful fallback if image retrieval fails
+    const systemMessage = {
+      role: 'system',
+      content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
+    };
+
+    let openaiResponse;
+    try {
+      openaiResponse = await requestAltText([systemMessage, userMessage]);
+    } catch (error) {
+      if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
+        console.warn('Image fetch failed, retrying without image input...');
+        const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+        openaiResponse = await requestAltText([systemMessage, fallbackMessage]);
+      } else {
+        throw error;
       }
-    );
+    }
     
-    const altText = openaiResponse.data.choices[0].message.content.trim();
+    const altText = openaiResponse.choices[0].message.content.trim();
     
     // Increment usage
     const newUsage = await incrementUsage(domainHash);
@@ -166,23 +162,38 @@ app.post('/api/generate', async (req, res) => {
         plan: newUsage.plan,
         resetDate: getNextResetDate()
       },
-      tokens: openaiResponse.data.usage
+      tokens: openaiResponse.usage
     });
     
   } catch (error) {
-    console.error('Generate error:', error.response?.data || error.message);
+    const debug = {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    };
+
+    console.error('Generate error:', debug);
     
     if (error.response?.status === 429) {
       return res.status(429).json({
         error: 'OpenAI rate limit reached. Please try again later.',
-        code: 'OPENAI_RATE_LIMIT'
+        code: 'OPENAI_RATE_LIMIT',
+        debug
       });
     }
-    
+
+    const openaiMessage = error.response?.data?.error?.message;
+    const fallbackMessage = error.response?.data?.error || error.message || 'Failed to generate alt text';
+    const errorMessage = typeof openaiMessage === 'string' && openaiMessage.trim() !== ''
+      ? openaiMessage
+      : fallbackMessage;
+
     res.status(500).json({
       error: 'Failed to generate alt text',
       code: 'GENERATION_ERROR',
-      message: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: errorMessage,
+      debug
     });
   }
 });
@@ -312,8 +323,10 @@ function buildPrompt(imageData, context) {
   return lines.join('\n');
 }
 
-function buildUserMessage(prompt, imageData) {
-  if (imageData?.url) {
+function buildUserMessage(prompt, imageData, options = {}) {
+  const hasUsableImage = !options.forceTextOnly && imageData?.url && isLikelyPublicUrl(imageData.url);
+  
+  if (hasUsableImage) {
     return {
       role: 'user',
       content: [
@@ -333,6 +346,91 @@ function getNextResetDate() {
   const now = new Date();
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return nextMonth.toISOString().split('T')[0];
+}
+
+function isLikelyPublicUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Local or private network hosts
+    const privatePatterns = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[0-1])\./,
+      /^192\.168\./,
+      /\.local$/,
+      /\.test$/,
+      /\.internal$/
+    ];
+
+    if (privatePatterns.some(pattern => pattern.test(hostname))) {
+      return false;
+    }
+
+    // Prefer HTTPS for remote fetch reliability
+    if (protocol === 'http:') {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function requestAltText(messages) {
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages,
+      max_tokens: 100,
+      temperature: 0.2
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  return {
+    choices: response.data.choices,
+    usage: response.data.usage
+  };
+}
+
+function shouldDisableImageInput(error) {
+  const status = error?.response?.status;
+  if (!status || status >= 500) {
+    return false;
+  }
+
+  const message = error?.response?.data?.error?.message || '';
+  return (
+    status === 400 ||
+    status === 422 ||
+    /image_url/i.test(message) ||
+    /fetch/i.test(message) ||
+    /unable to load image/i.test(message)
+  );
+}
+
+function messageHasImage(message) {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  if (Array.isArray(message.content)) {
+    return message.content.some(part => part?.type === 'image_url');
+  }
+  return false;
 }
 
 // Start server
