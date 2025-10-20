@@ -135,18 +135,25 @@ app.post('/api/generate', async (req, res) => {
 
     let openaiResponse;
     try {
-      openaiResponse = await requestAltText([systemMessage, userMessage]);
+    openaiResponse = await requestChatCompletion([systemMessage, userMessage]);
     } catch (error) {
       if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
         console.warn('Image fetch failed, retrying without image input...');
         const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-        openaiResponse = await requestAltText([systemMessage, fallbackMessage]);
+        openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage]);
       } else {
         throw error;
       }
     }
     
     const altText = openaiResponse.choices[0].message.content.trim();
+
+    let review = null;
+    try {
+      review = await reviewAltText(altText, image_data, context);
+    } catch (reviewError) {
+      console.warn('Review generation failed:', reviewError.message);
+    }
     
     // Increment usage
     const newUsage = await incrementUsage(domainHash);
@@ -162,7 +169,8 @@ app.post('/api/generate', async (req, res) => {
         plan: newUsage.plan,
         resetDate: getNextResetDate()
       },
-      tokens: openaiResponse.usage
+      tokens: openaiResponse.usage,
+      review
     });
     
   } catch (error) {
@@ -194,6 +202,35 @@ app.post('/api/generate', async (req, res) => {
       code: 'GENERATION_ERROR',
       message: errorMessage,
       debug
+    });
+  }
+});
+
+// Review existing alt text for accuracy
+app.post('/api/review', async (req, res) => {
+  try {
+    const { domain, alt_text, image_data, context } = req.body;
+
+    if (!alt_text || typeof alt_text !== 'string') {
+      return res.status(400).json({
+        error: 'Alt text is required',
+        code: 'MISSING_ALT_TEXT'
+      });
+    }
+
+    const review = await reviewAltText(alt_text, image_data, context);
+
+    res.json({
+      success: true,
+      review,
+      tokens: review?.usage
+    });
+  } catch (error) {
+    console.error('Review error:', error.response?.data || error.message);
+    res.status(500).json({
+      error: 'Failed to review alt text',
+      code: 'REVIEW_ERROR',
+      message: error.response?.data?.error?.message || error.message
     });
   }
 });
@@ -399,14 +436,20 @@ function isLikelyPublicUrl(rawUrl) {
   }
 }
 
-async function requestAltText(messages) {
+async function requestChatCompletion(messages, overrides = {}) {
+  const {
+    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    max_tokens = 100,
+    temperature = 0.2
+  } = overrides;
+
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model,
       messages,
-      max_tokens: 100,
-      temperature: 0.2
+      max_tokens,
+      temperature
     },
     {
       headers: {
@@ -436,6 +479,187 @@ function shouldDisableImageInput(error) {
     /fetch/i.test(message) ||
     /unable to load image/i.test(message)
   );
+}
+
+async function reviewAltText(altText, imageData, context) {
+  if (!altText || typeof altText !== 'string') {
+    return null;
+  }
+
+  const hasInline = Boolean(imageData?.inline?.data_url);
+  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
+
+  if (!hasInline && !hasPublicUrl) {
+    return null;
+  }
+
+  const systemMessage = {
+    role: 'system',
+    content: 'You are an accessibility QA reviewer. When given an image and a candidate alternative text, you evaluate how well the text represents the image content. Respond strictly with a JSON object containing the fields: score (integer 0-100), status (one of: great, good, review, critical), grade (short human-readable label), summary (<=120 characters), and issues (array of short issue strings). Penalize hallucinations, missing key subjects, incorrect genders, colors, text, or context. Score 0 for placeholder or irrelevant descriptions.'
+  };
+
+  const prompt = buildReviewPrompt(altText, imageData, context);
+  const userMessage = buildUserMessage(prompt, imageData);
+
+  let response;
+  try {
+    response = await requestChatCompletion([
+      systemMessage,
+      userMessage
+    ], {
+      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      max_tokens: 220,
+      temperature: 0
+    });
+  } catch (error) {
+    if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
+      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+      response = await requestChatCompletion([
+        systemMessage,
+        fallbackMessage
+      ], {
+        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        max_tokens: 220,
+        temperature: 0
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  const content = response.choices[0].message.content.trim();
+  const parsed = parseReviewResponse(content);
+
+  if (!parsed) {
+    return null;
+  }
+
+  const score = clampScore(parsed.score);
+  const status = normalizeStatus(parsed.status, score);
+  const grade = parsed.grade || gradeFromStatus(status);
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+  const issues = Array.isArray(parsed.issues)
+    ? parsed.issues
+        .filter(item => typeof item === 'string' && item.trim() !== '')
+        .map(item => item.trim())
+        .slice(0, 6)
+    : [];
+
+  return {
+    score,
+    status,
+    grade,
+    summary,
+    issues,
+    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    usage: response.usage
+  };
+}
+
+function buildReviewPrompt(altText, imageData, context) {
+  const lines = [
+    'Evaluate whether the provided alternative text accurately describes the attached image.',
+    'Respond ONLY with a JSON object containing these keys: score, status, grade, summary, issues.',
+    'Score rules: 100 is a precise, specific match including essential context and any visible text. 0 is completely wrong, irrelevant, or placeholder text.',
+    `Alt text candidate: "${altText}".`
+  ];
+
+  if (imageData?.title) {
+    lines.push(`Media library title: ${imageData.title}`);
+  }
+  if (imageData?.caption) {
+    lines.push(`Caption: ${imageData.caption}`);
+  }
+  if (context?.post_title) {
+    lines.push(`Appears on page: ${context.post_title}`);
+  }
+  if (imageData?.filename) {
+    lines.push(`Filename: ${imageData.filename}`);
+  }
+  if (imageData?.width && imageData?.height) {
+    lines.push(`Dimensions: ${imageData.width}x${imageData.height}px`);
+  }
+
+  lines.push('Remember: return valid JSON only, without markdown fencing.');
+
+  return lines.join('\n');
+}
+
+function parseReviewResponse(content) {
+  if (!content) {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  const directParse = tryParseJson(trimmed);
+  if (directParse) {
+    return directParse;
+  }
+
+  const match = trimmed.match(/\{[\s\S]*\}/);
+  if (match) {
+    return tryParseJson(match[0]);
+  }
+  return null;
+}
+
+function tryParseJson(payload) {
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    return null;
+  }
+}
+
+function clampScore(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+function normalizeStatus(status, score) {
+  const lookup = {
+    great: 'great',
+    excellent: 'great',
+    good: 'good',
+    ok: 'review',
+    needs_review: 'review',
+    review: 'review',
+    poor: 'critical',
+    critical: 'critical',
+    fail: 'critical'
+  };
+
+  if (typeof status === 'string') {
+    const key = status.toLowerCase().replace(/[^a-z]/g, '_');
+    if (lookup[key]) {
+      return lookup[key];
+    }
+  }
+
+  if (typeof score === 'number' && Number.isFinite(score)) {
+    if (score >= 90) return 'great';
+    if (score >= 75) return 'good';
+    if (score >= 55) return 'review';
+    return 'critical';
+  }
+
+  return 'review';
+}
+
+function gradeFromStatus(status) {
+  switch (status) {
+    case 'great':
+      return 'Excellent';
+    case 'good':
+      return 'Strong';
+    case 'review':
+      return 'Needs review';
+    default:
+      return 'Critical';
+  }
 }
 
 function messageHasImage(message) {
