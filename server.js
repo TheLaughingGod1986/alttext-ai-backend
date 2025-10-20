@@ -17,6 +17,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'db.json');
 
+function parseLimit(value, fallback) {
+  const parsed = parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
+}
+
+const FREE_MONTHLY_LIMIT = parseLimit(process.env.FREE_MONTHLY_LIMIT, 10);
+const PRO_MONTHLY_LIMIT = parseLimit(process.env.PRO_MONTHLY_LIMIT, 1000);
+
 // Middleware
 app.use(helmet());
 app.use(cors());
@@ -108,7 +119,7 @@ app.post('/api/generate', async (req, res) => {
     
     // Check current usage
     const usage = await getUsage(domainHash);
-    const limit = usage.plan === 'pro' ? parseInt(process.env.PRO_MONTHLY_LIMIT) : parseInt(process.env.FREE_MONTHLY_LIMIT);
+    const limit = getPlanLimit(usage.plan);
     
     if (usage.count >= limit) {
       return res.status(429).json({
@@ -135,12 +146,16 @@ app.post('/api/generate', async (req, res) => {
 
     let openaiResponse;
     try {
-    openaiResponse = await requestChatCompletion([systemMessage, userMessage]);
+    openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
+      apiKey: process.env.OPENAI_API_KEY
+    });
     } catch (error) {
       if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
         console.warn('Image fetch failed, retrying without image input...');
         const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-        openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage]);
+        openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
+          apiKey: process.env.OPENAI_API_KEY
+        });
       } else {
         throw error;
       }
@@ -149,10 +164,12 @@ app.post('/api/generate', async (req, res) => {
     const altText = openaiResponse.choices[0].message.content.trim();
 
     let review = null;
-    try {
-      review = await reviewAltText(altText, image_data, context);
-    } catch (reviewError) {
-      console.warn('Review generation failed:', reviewError.message);
+    if (isReviewEnabled()) {
+      try {
+        review = await reviewAltText(altText, image_data, context);
+      } catch (reviewError) {
+        console.warn('Review generation failed:', reviewError.message);
+      }
     }
     
     // Increment usage
@@ -208,6 +225,14 @@ app.post('/api/generate', async (req, res) => {
 
 // Review existing alt text for accuracy
 app.post('/api/review', async (req, res) => {
+  if (!isReviewEnabled()) {
+    return res.json({
+      success: true,
+      review: null,
+      disabled: true
+    });
+  }
+
   try {
     const { domain, alt_text, image_data, context } = req.body;
 
@@ -241,7 +266,7 @@ app.get('/api/usage/:domain', async (req, res) => {
     const { domain } = req.params;
     const domainHash = hashDomain(domain);
     const usage = await getUsage(domainHash);
-    const limit = usage.plan === 'pro' ? parseInt(process.env.PRO_MONTHLY_LIMIT) : parseInt(process.env.FREE_MONTHLY_LIMIT);
+    const limit = getPlanLimit(usage.plan);
     
     res.json({
       success: true,
@@ -400,6 +425,10 @@ function getNextResetDate() {
   return nextMonth.toISOString().split('T')[0];
 }
 
+function getPlanLimit(plan) {
+  return plan === 'pro' ? PRO_MONTHLY_LIMIT : FREE_MONTHLY_LIMIT;
+}
+
 function isLikelyPublicUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
@@ -440,8 +469,13 @@ async function requestChatCompletion(messages, overrides = {}) {
   const {
     model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
     max_tokens = 100,
-    temperature = 0.2
+    temperature = 0.2,
+    apiKey = process.env.OPENAI_REVIEW_API_KEY || process.env.OPENAI_API_KEY
   } = overrides;
+
+  if (!apiKey) {
+    throw new Error('Missing OpenAI API key');
+  }
 
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
@@ -453,7 +487,7 @@ async function requestChatCompletion(messages, overrides = {}) {
     },
     {
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       }
     }
@@ -509,7 +543,8 @@ async function reviewAltText(altText, imageData, context) {
     ], {
       model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       max_tokens: 220,
-      temperature: 0
+      temperature: 0,
+      apiKey: process.env.OPENAI_REVIEW_API_KEY || process.env.OPENAI_API_KEY
     });
   } catch (error) {
     if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
@@ -520,7 +555,8 @@ async function reviewAltText(altText, imageData, context) {
       ], {
         model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         max_tokens: 220,
-        temperature: 0
+        temperature: 0,
+        apiKey: process.env.OPENAI_REVIEW_API_KEY || process.env.OPENAI_API_KEY
       });
     } else {
       throw error;
@@ -660,6 +696,11 @@ function gradeFromStatus(status) {
     default:
       return 'Critical';
   }
+}
+
+function isReviewEnabled() {
+  const flag = (process.env.ALT_REVIEW_ENABLED || 'true').toLowerCase();
+  return !(flag === 'false' || flag === '0' || flag === 'off');
 }
 
 function messageHasImage(message) {
