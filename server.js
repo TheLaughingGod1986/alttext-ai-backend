@@ -123,8 +123,9 @@ app.post('/api/generate', async (req, res) => {
       });
     }
     
-    // Build OpenAI prompt
+    // Build OpenAI prompt and multimodal payload
     const prompt = buildPrompt(image_data, context);
+    const userMessage = buildUserMessage(prompt, image_data);
     
     // Call OpenAI API
     const openaiResponse = await axios.post(
@@ -134,15 +135,12 @@ app.post('/api/generate', async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: 'You are an expert at writing concise, SEO-friendly alt text for images. Write clear, descriptive alt text in 8-16 words that accurately describes the image content.'
+            content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
           },
-          {
-            role: 'user',
-            content: prompt
-          }
+          userMessage
         ],
         max_tokens: 100,
-        temperature: 0.7
+        temperature: 0.2
       },
       {
         headers: {
@@ -282,27 +280,53 @@ app.post('/api/admin/upgrade', async (req, res) => {
 
 // Helper functions
 function buildPrompt(imageData, context) {
-  let prompt = 'Generate concise, SEO-friendly alt text for this image.';
-  
-  if (context?.filename) {
-    prompt += `\n\nFilename: ${context.filename}`;
+  const lines = [
+    'Write accurate alternative text for the provided image.',
+    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
+    'If the image is a logo or icon, state the text or shape that appears.'
+  ];
+
+  const contextLines = [];
+
+  if (imageData?.title) {
+    contextLines.push(`Media library title: ${imageData.title}`);
   }
-  
-  if (context?.title) {
-    prompt += `\nImage title: ${context.title}`;
+  if (imageData?.caption) {
+    contextLines.push(`Attachment caption: ${imageData.caption}`);
   }
-  
-  if (context?.caption) {
-    prompt += `\nCaption: ${context.caption}`;
-  }
-  
   if (context?.post_title) {
-    prompt += `\nPage context: ${context.post_title}`;
+    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
   }
-  
-  prompt += '\n\nProvide only the alt text, nothing else. Keep it under 16 words.';
-  
-  return prompt;
+  if (context?.filename || imageData?.filename) {
+    const filename = context?.filename || imageData?.filename;
+    contextLines.push(`Filename: ${filename}`);
+  }
+
+  if (contextLines.length > 0) {
+    lines.push('\nAdditional context:');
+    lines.push(...contextLines);
+  }
+
+  lines.push('\nReturn just the alt text.');
+
+  return lines.join('\n');
+}
+
+function buildUserMessage(prompt, imageData) {
+  if (imageData?.url) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.url } }
+      ]
+    };
+  }
+
+  return {
+    role: 'user',
+    content: prompt
+  };
 }
 
 function getNextResetDate() {
@@ -323,4 +347,3 @@ process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
   process.exit(0);
 });
-

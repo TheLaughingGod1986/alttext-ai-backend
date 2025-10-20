@@ -14,7 +14,7 @@ services:
       - key: API_SECRET
         sync: false
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: gpt-4o
       - key: FREE_MONTHLY_LIMIT
         value: 50
       - key: PRO_MONTHLY_LIMIT
