@@ -58,6 +58,9 @@ async function handleWebhookEvent(event) {
         break;
 
       case 'invoice.payment_failed':
+      case 'charge.refunded':
+        await handleChargeRefunded(event.data.object);
+        break;
         await handleInvoicePaymentFailed(event.data.object);
         break;
 
@@ -202,8 +205,45 @@ async function testWebhook(req, res) {
 }
 
 module.exports = {
+  handleChargeRefunded,
   webhookMiddleware,
   webhookHandler,
   testWebhook,
   handleWebhookEvent
 };
+
+/**
+ * Handle charge refunded - downgrade user to free plan
+ */
+async function handleChargeRefunded(charge) {
+  try {
+    console.log(`💰 Charge refunded: ${charge.id}`);
+    
+    // Find user by customer ID
+    const customerId = charge.customer;
+    const user = await prisma.user.findUnique({
+      where: { stripeCustomerId: customerId }
+    });
+
+    if (!user) {
+      console.warn(`No user found for customer ${customerId}`);
+      return;
+    }
+
+    // Downgrade to free plan
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        plan: 'free',
+        tokensRemaining: 10,
+        stripeSubscriptionId: null
+      }
+    });
+
+    console.log(`✅ User ${user.id} refunded, downgraded to free plan`);
+
+  } catch (error) {
+    console.error('Error handling charge refund:', error);
+    throw error;
+  }
+}
