@@ -27,9 +27,9 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
     // Validate price ID
     const validPrices = [
-      process.env.STRIPE_PRICE_PRO,
-      process.env.STRIPE_PRICE_AGENCY,
-      process.env.STRIPE_PRICE_CREDITS
+      "price_1SMrxaJl9Rm418cMM4iikjlJ",
+      "price_1SMrxaJl9Rm418cMnJTShXSY",
+      "price_1SMrxbJl9Rm418cM0gkzZQZt"
     ];
 
     if (!validPrices.includes(priceId)) {
@@ -191,7 +191,7 @@ router.get('/plans', async (req, res) => {
         currency: 'gbp',
         interval: 'month',
         images: 1000,
-        priceId: process.env.STRIPE_PRICE_PRO,
+        priceId: "price_1SMrxaJl9Rm418cMM4iikjlJ",
         features: [
           '1000 AI-generated alt texts per month',
           'Advanced quality scoring',
@@ -207,7 +207,7 @@ router.get('/plans', async (req, res) => {
         currency: 'gbp',
         interval: 'month',
         images: 10000,
-        priceId: process.env.STRIPE_PRICE_AGENCY,
+        priceId: "price_1SMrxaJl9Rm418cMnJTShXSY",
         features: [
           '10000 AI-generated alt texts per month',
           'Advanced quality scoring',
@@ -224,7 +224,7 @@ router.get('/plans', async (req, res) => {
         currency: 'gbp',
         interval: 'one-time',
         images: 100,
-        priceId: process.env.STRIPE_PRICE_CREDITS,
+        priceId: "price_1SMrxbJl9Rm418cM0gkzZQZt",
         features: [
           '100 AI-generated alt texts',
           'No expiration',
