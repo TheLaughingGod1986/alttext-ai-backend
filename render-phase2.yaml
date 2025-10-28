@@ -43,11 +43,11 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PRICE_PRO
-        value: price_1SKgtuJl9Rm418cMtcxOZRCR
+        value: price_1SMrxaJl9Rm418cMM4iikjlJ
       - key: STRIPE_PRICE_AGENCY
-        value: price_1SKgu1Jl9Rm418cM8MedRfqr
+        value: price_1SMrxaJl9Rm418cMnJTShXSY
       - key: STRIPE_PRICE_CREDITS
-        value: price_1SKgu2Jl9Rm418cM3b1Z9tUW
+        value: price_1SMrxbJl9Rm418cM0gkzZQZt
 
       # Frontend URL (WordPress site)
       - key: FRONTEND_URL
