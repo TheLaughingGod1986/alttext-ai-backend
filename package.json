@@ -29,6 +29,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.17.1",
+    "resend": "^6.3.0",
     "stripe": "^19.1.0"
   },
   "devDependencies": {
