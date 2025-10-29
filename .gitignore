@@ -3,8 +3,14 @@ node_modules/
 package-lock.json
 yarn.lock
 
-# Environment variables
+# Environment variables and secrets
 .env
+.env.*
+*.env
+render-env-vars.txt
+*-env-vars.txt
+*.key
+*secret*
 
 # Database
 db.json

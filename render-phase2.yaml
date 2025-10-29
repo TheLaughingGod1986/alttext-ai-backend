@@ -60,6 +60,8 @@ services:
 
       # Email Service (Resend)
       - key: RESEND_API_KEY
-        value: re_RvKoP4WQ_GWCmmWA3NPJPyN8f4xQ2FTqU
+        sync: false
+        # Set this in Render dashboard - DO NOT commit real keys
       - key: RESEND_FROM_EMAIL
         value: noreply@splitsave.community
+        # Update this if using a different domain
