@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: alttext-ai-phase2
+    name: alttext-ai-backend
     env: node
     plan: starter
     region: oregon
@@ -57,3 +57,9 @@ services:
       # Optional
       - key: WEBHOOK_SECRET
         generateValue: true
+
+      # Email Service (Resend)
+      - key: RESEND_API_KEY
+        value: re_RvKoP4WQ_GWCmmWA3NPJPyN8f4xQ2FTqU
+      - key: RESEND_FROM_EMAIL
+        value: benoats@gmail.com
