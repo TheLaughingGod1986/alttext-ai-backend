@@ -62,4 +62,4 @@ services:
       - key: RESEND_API_KEY
         value: re_RvKoP4WQ_GWCmmWA3NPJPyN8f4xQ2FTqU
       - key: RESEND_FROM_EMAIL
-        value: benoats@gmail.com
+        value: noreply@splitsave.community
