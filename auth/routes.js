@@ -227,7 +227,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
  */
 router.post('/forgot-password', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, siteUrl } = req.body;
 
     // Validate input
     if (!email) {
@@ -295,8 +295,20 @@ router.post('/forgot-password', async (req, res) => {
     });
 
     // Generate reset URL
-    const frontendUrl = process.env.FRONTEND_URL || 'https://alttextai.com';
-    const resetUrl = `${frontendUrl}/reset-password?token=${token}&email=${encodeURIComponent(user.email)}`;
+    // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
+    const frontendUrl = siteUrl || process.env.FRONTEND_URL || null;
+    
+    // Construct reset URL that points back to WordPress
+    // WordPress will detect the token/email params and show reset form
+    let resetUrl;
+    if (frontendUrl) {
+      // Ensure URL ends with /wp-admin/upload.php?page=ai-alt-gpt (or similar)
+      const baseUrl = frontendUrl.replace(/\/$/, ''); // Remove trailing slash
+      resetUrl = `${baseUrl}?reset-token=${token}&email=${encodeURIComponent(user.email)}`;
+    } else {
+      // Fallback: just return the token in the response (WordPress can construct URL)
+      resetUrl = `?reset-token=${token}&email=${encodeURIComponent(user.email)}`;
+    }
 
     // Send email (mock for now)
     try {
