@@ -144,6 +144,160 @@ router.get('/info', authenticateToken, async (req, res) => {
 });
 
 /**
+ * Get subscription information (for Account Management)
+ * GET /billing/subscription
+ */
+router.get('/subscription', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        plan: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    // If no subscription, return free plan info
+    if (!user.stripeSubscriptionId) {
+      return res.json({
+        success: true,
+        data: {
+          plan: 'free',
+          status: 'free',
+          billingCycle: null,
+          nextBillingDate: null,
+          nextChargeAmount: null,
+          currency: null,
+          paymentMethod: null,
+          cancelAtPeriodEnd: false,
+          subscriptionId: null,
+          currentPeriodEnd: null
+        }
+      });
+    }
+
+    // Fetch subscription from Stripe
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    let subscription;
+    let paymentMethod = null;
+
+    try {
+      subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId, {
+        expand: ['default_payment_method']
+      });
+
+      // Get payment method details
+      if (subscription.default_payment_method) {
+        const pm = typeof subscription.default_payment_method === 'string'
+          ? await stripe.paymentMethods.retrieve(subscription.default_payment_method)
+          : subscription.default_payment_method;
+
+        if (pm && pm.card) {
+          paymentMethod = {
+            last4: pm.card.last4,
+            brand: pm.card.brand,
+            expMonth: pm.card.exp_month,
+            expYear: pm.card.exp_year
+          };
+        }
+      }
+
+      // Determine plan from subscription
+      let plan = 'free';
+      let billingCycle = null;
+      let nextChargeAmount = null;
+      let currency = null;
+
+      if (subscription.items.data.length > 0) {
+        const priceId = subscription.items.data[0].price.id;
+        // Map Stripe price IDs to plans
+        if (priceId === 'price_1SMrxaJl9Rm418cMM4iikjlJ') {
+          plan = 'pro';
+          billingCycle = 'monthly';
+          nextChargeAmount = 12.99;
+          currency = 'GBP';
+        } else if (priceId === 'price_1SMrxaJl9Rm418cMnJTShXSY') {
+          plan = 'agency';
+          billingCycle = 'monthly';
+          nextChargeAmount = 49.99;
+          currency = 'GBP';
+        } else if (priceId === 'price_1SMrxbJl9Rm418cM0gkzZQZt') {
+          plan = 'credits';
+          billingCycle = null; // One-time payment
+          nextChargeAmount = 9.99;
+          currency = 'GBP';
+        }
+      }
+
+      // Determine status
+      let status = 'active';
+      if (subscription.status === 'canceled') {
+        status = 'cancelled';
+      } else if (subscription.status === 'trialing') {
+        status = 'trial';
+      } else if (subscription.status === 'past_due' || subscription.status === 'unpaid') {
+        status = 'past_due';
+      }
+
+      res.json({
+        success: true,
+        data: {
+          plan,
+          status,
+          billingCycle,
+          nextBillingDate: subscription.current_period_end
+            ? new Date(subscription.current_period_end * 1000).toISOString()
+            : null,
+          nextChargeAmount,
+          currency,
+          paymentMethod,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
+          subscriptionId: subscription.id,
+          currentPeriodEnd: subscription.current_period_end
+            ? new Date(subscription.current_period_end * 1000).toISOString()
+            : null
+        }
+      });
+
+    } catch (stripeError) {
+      console.error('Stripe subscription fetch error:', stripeError);
+      
+      // If Stripe fails, return basic info from database
+      res.json({
+        success: true,
+        data: {
+          plan: user.plan || 'free',
+          status: 'active',
+          billingCycle: null,
+          nextBillingDate: null,
+          nextChargeAmount: null,
+          currency: null,
+          paymentMethod: null,
+          cancelAtPeriodEnd: false,
+          subscriptionId: user.stripeSubscriptionId,
+          currentPeriodEnd: null
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Subscription info error:', error);
+    res.status(500).json({
+      error: 'Failed to get subscription information',
+      code: 'SUBSCRIPTION_INFO_ERROR'
+    });
+  }
+});
+
+/**
  * Stripe webhook endpoint
  */
 router.post('/webhook', webhookMiddleware, webhookHandler);
