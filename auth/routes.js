@@ -6,7 +6,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const { generateToken, hashPassword, comparePassword, authenticateToken } = require('./jwt');
-const { sendPasswordResetEmail } = require('./email');
+const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -66,6 +66,12 @@ router.post('/register', async (req, res) => {
 
     // Generate JWT token
     const token = generateToken(user);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(user.email, user.email).catch(err => {
+      console.error('Failed to send welcome email (non-critical):', err);
+      // Don't fail registration if email fails
+    });
 
     res.status(201).json({
       success: true,
@@ -318,9 +324,21 @@ router.post('/forgot-password', async (req, res) => {
       // Don't fail the request if email fails - token is still created
     }
 
+    // For testing/development: include reset link in response
+    // In production with real email, this would be omitted for security
+    const isDevelopment = process.env.NODE_ENV !== 'production' || process.env.DEBUG_EMAIL === 'true';
+    
     res.json({
       success: true,
-      message: 'If an account exists with this email, a password reset link has been sent.'
+      message: 'If an account exists with this email, a password reset link has been sent.',
+      // Include reset link in development mode or when DEBUG_EMAIL is enabled
+      // This allows testing without email service configured
+      ...(isDevelopment && {
+        data: {
+          resetLink: resetUrl,
+          note: 'Email service is in development mode. Use this link to reset your password.'
+        }
+      })
     });
 
   } catch (error) {
