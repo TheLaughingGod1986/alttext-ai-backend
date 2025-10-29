@@ -74,6 +74,19 @@ AltText AI Team
       if (error) {
         console.error('❌ Resend email error:', JSON.stringify(error, null, 2));
         console.error('   Error details:', error);
+        console.error('   Error code:', error?.message || error);
+        
+        // Common Resend errors
+        if (error?.message?.includes('domain') || error?.message?.includes('verified')) {
+          console.error('   ⚠️  Domain verification issue!');
+          console.error('   💡 Try using: onboarding@resend.dev (test domain)');
+          console.error('   💡 Or verify your domain in Resend dashboard');
+        }
+        if (error?.message?.includes('from') || error?.message?.includes('sender')) {
+          console.error('   ⚠️  From email address issue!');
+          console.error('   💡 Email address must be verified in Resend');
+        }
+        
         throw error;
       }
 
