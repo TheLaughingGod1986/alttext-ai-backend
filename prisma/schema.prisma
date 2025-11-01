@@ -1,0 +1,69 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                Int         @id @default(autoincrement())
+  email             String      @unique
+  passwordHash      String
+  plan              String      @default("free")
+  tokensRemaining   Int         @default(50)
+  credits           Int         @default(0)
+  stripeCustomerId  String?     @unique
+  stripeSubscriptionId String?
+  resetDate         DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  usageLogs         UsageLog[]
+  migrations        MigrationLog[]
+  passwordResets    PasswordResetToken[]
+  
+  @@index([email])
+  @@index([stripeCustomerId])
+  @@map("users")
+}
+
+model UsageLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  used      Int      @default(1)
+  imageId   String?
+  endpoint  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, createdAt])
+  @@map("usage_logs")
+}
+
+model MigrationLog {
+  id           Int      @id @default(autoincrement())
+  domainHash   String   @unique
+  userId       Int
+  migratedAt   DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("migration_logs")
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([userId])
+  @@map("password_reset_tokens")
+}

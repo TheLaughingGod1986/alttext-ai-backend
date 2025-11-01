@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: alttext-ai-phase2
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      # Application
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+
+      # Database (from Render PostgreSQL)
+      - key: DATABASE_URL
+        sync: false
+        # Format: postgresql://user:pass@host:5432/dbname
+
+      # JWT Authentication
+      - key: JWT_SECRET
+        generateValue: true
+        # Will auto-generate a secure random string
+      - key: JWT_EXPIRES_IN
+        value: 7d
+
+      # OpenAI API
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_REVIEW_API_KEY
+        sync: false
+      - key: OPENAI_REVIEW_MODEL
+        value: gpt-4o-mini
+
+      # Stripe (Test keys initially)
+      - key: STRIPE_SECRET_KEY
+        sync: false
+        # Start with sk_test_..., upgrade to sk_live_... later
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_PRO
+        value: price_1SKgtuJl9Rm418cMtcxOZRCR
+      - key: STRIPE_PRICE_AGENCY
+        value: price_1SKgu1Jl9Rm418cM8MedRfqr
+      - key: STRIPE_PRICE_CREDITS
+        value: price_1SKgu2Jl9Rm418cM3b1Z9tUW
+
+      # Frontend URL (WordPress site)
+      - key: FRONTEND_URL
+        sync: false
+        # Your WordPress site URL for CORS
+
+      # Optional
+      - key: WEBHOOK_SECRET
+        generateValue: true
