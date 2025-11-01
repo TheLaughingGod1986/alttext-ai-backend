@@ -62,14 +62,15 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
     const limits = await checkUserLimits(userId);
     
     if (!limits.hasAccess) {
+      const planLimit = limits.plan === 'pro'
+        ? 1000
+        : (limits.plan === 'agency' ? 10000 : 50);
       return res.status(429).json({
         error: 'Monthly limit reached',
         code: 'LIMIT_REACHED',
         usage: {
-          used: limits.plan === 'free' ? 10 - limits.tokensRemaining : 
-                limits.plan === 'pro' ? 1000 - limits.tokensRemaining :
-                10000 - limits.tokensRemaining,
-          limit: limits.plan === 'free' ? 10 : limits.plan === 'pro' ? 1000 : 10000,
+          used: planLimit - limits.tokensRemaining,
+          limit: planLimit,
           plan: limits.plan,
           resetDate: getNextResetDate()
         }
@@ -123,8 +124,8 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       }
     });
 
-    const planLimits = { free: 10, pro: 1000, agency: 10000 };
-    const limit = planLimits[user.plan] || 10;
+    const planLimits = { free: 50, pro: 1000, agency: 10000 };
+    const limit = planLimits[user.plan] || 50;
     const used = limit - user.tokensRemaining;
     
     // Return response with usage data

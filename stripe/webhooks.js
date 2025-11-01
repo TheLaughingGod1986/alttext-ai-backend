@@ -102,7 +102,7 @@ async function handleSubscriptionDeleted(subscription) {
       where: { id: user.id },
       data: {
         plan: 'free',
-        tokensRemaining: 10,
+        tokensRemaining: 50,
         stripeSubscriptionId: null
       }
     });
@@ -235,7 +235,7 @@ async function handleChargeRefunded(charge) {
       where: { id: user.id },
       data: {
         plan: 'free',
-        tokensRemaining: 10,
+        tokensRemaining: 50,
         stripeSubscriptionId: null
       }
     });

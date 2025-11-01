@@ -106,7 +106,7 @@ All endpoints tested and working:
     "id": 5,
     "email": "testuser@example.com",
     "plan": "free",
-    "tokensRemaining": 10,
+    "tokensRemaining": 50,
     "credits": 0,
     "resetDate": "2025-10-21T21:58:04.519Z"
   }

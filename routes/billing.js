@@ -330,9 +330,9 @@ router.get('/plans', async (req, res) => {
         price: 0,
         currency: 'gbp',
         interval: 'month',
-        images: 10,
+        images: 50,
         features: [
-          '10 AI-generated alt texts per month',
+          '50 AI-generated alt texts per month',
           'Basic quality scoring',
           'WordPress integration',
           'Email support'

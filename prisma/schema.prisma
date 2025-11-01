@@ -15,7 +15,7 @@ model User {
   email             String      @unique
   passwordHash      String
   plan              String      @default("free")
-  tokensRemaining   Int         @default(10)
+  tokensRemaining   Int         @default(50)
   credits           Int         @default(0)
   stripeCustomerId  String?     @unique
   stripeSubscriptionId String?

@@ -35,12 +35,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Calculate plan limits
     const planLimits = {
-      free: 10,
+      free: 50,
       pro: 1000,
       agency: 10000
     };
 
-    const limit = planLimits[user.plan] || 10;
+    const limit = planLimits[user.plan] || 50;
     const used = limit - user.tokensRemaining;
     const remaining = user.tokensRemaining;
 
@@ -214,7 +214,7 @@ async function useCredit(userId) {
 async function resetMonthlyTokens() {
   try {
     const planLimits = {
-      free: 10,
+      free: 50,
       pro: 1000,
       agency: 10000
     };
@@ -225,7 +225,7 @@ async function resetMonthlyTokens() {
     });
 
     for (const user of users) {
-      const limit = planLimits[user.plan] || 10;
+      const limit = planLimits[user.plan] || 50;
       await prisma.user.update({
         where: { id: user.id },
         data: {

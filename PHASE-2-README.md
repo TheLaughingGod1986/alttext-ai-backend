@@ -228,7 +228,7 @@ Users can manage their subscriptions through Stripe's Customer Portal:
 
 Each plan includes monthly tokens that reset on the 1st of each month:
 
-- **Free**: 10 tokens/month
+- **Free**: 50 tokens/month
 - **Pro**: 1000 tokens/month
 - **Agency**: 10000 tokens/month
 

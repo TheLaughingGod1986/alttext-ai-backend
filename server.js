@@ -25,7 +25,7 @@ function parseLimit(value, fallback) {
   return fallback;
 }
 
-const FREE_MONTHLY_LIMIT = parseLimit(process.env.FREE_MONTHLY_LIMIT, 10);
+const FREE_MONTHLY_LIMIT = parseLimit(process.env.FREE_MONTHLY_LIMIT, 50);
 const PRO_MONTHLY_LIMIT = parseLimit(process.env.PRO_MONTHLY_LIMIT, 1000);
 
 // Middleware
@@ -760,4 +760,3 @@ process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
   process.exit(0);
 });
-

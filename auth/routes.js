@@ -59,7 +59,7 @@ router.post('/register', async (req, res) => {
         email: email.toLowerCase(),
         passwordHash,
         plan: 'free',
-        tokensRemaining: 10,
+        tokensRemaining: 50,
         credits: 0
       }
     });

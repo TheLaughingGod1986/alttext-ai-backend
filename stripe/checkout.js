@@ -191,7 +191,7 @@ async function handleSubscriptionUpdate(subscription) {
         where: { id: user.id },
         data: {
           plan: 'free',
-          tokensRemaining: 10,
+          tokensRemaining: 50,
           stripeSubscriptionId: null
         }
       });
@@ -221,8 +221,8 @@ async function handleInvoicePaid(invoice) {
     }
 
     // Reset monthly tokens based on plan
-    const planLimits = { free: 10, pro: 1000, agency: 10000 };
-    const limit = planLimits[user.plan] || 10;
+    const planLimits = { free: 50, pro: 1000, agency: 10000 };
+    const limit = planLimits[user.plan] || 50;
 
     await prisma.user.update({
       where: { id: user.id },
