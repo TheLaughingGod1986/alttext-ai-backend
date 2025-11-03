@@ -8,49 +8,55 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 model User {
-  id                Int         @id @default(autoincrement())
-  email             String      @unique
-  passwordHash      String
-  plan              String      @default("free")
-  tokensRemaining   Int         @default(50)
-  credits           Int         @default(0)
-  stripeCustomerId  String?     @unique
+  id                   Int                  @id @default(autoincrement())
+  email                String               @unique
+  passwordHash         String
+  plan                 String               @default("free")
+  service              String               @default("alttext-ai") // Service identifier: 'alttext-ai' or 'seo-ai-meta'
+  tokensRemaining      Int                  @default(50)
+  credits              Int                  @default(0)
+  stripeCustomerId     String?              @unique
   stripeSubscriptionId String?
-  resetDate         DateTime    @default(now())
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  usageLogs         UsageLog[]
-  migrations        MigrationLog[]
-  passwordResets    PasswordResetToken[]
-  
+  resetDate            DateTime             @default(now())
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  usageLogs            UsageLog[]
+  migrations           MigrationLog[]
+  passwordResets       PasswordResetToken[]
+  installations        Installation[]
+
   @@index([email])
   @@index([stripeCustomerId])
+  @@index([service])
   @@map("users")
 }
 
 model UsageLog {
   id        Int      @id @default(autoincrement())
   userId    Int
+  service   String   @default("alttext-ai") // Service identifier for tracking
   used      Int      @default(1)
   imageId   String?
   endpoint  String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId, createdAt])
+  @@index([userId, service])
   @@map("usage_logs")
 }
 
 model MigrationLog {
-  id           Int      @id @default(autoincrement())
-  domainHash   String   @unique
-  userId       Int
-  migratedAt   DateTime @default(now())
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id         Int      @id @default(autoincrement())
+  domainHash String   @unique
+  userId     Int
+  migratedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@map("migration_logs")
 }
 
@@ -62,8 +68,93 @@ model PasswordResetToken {
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([token])
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+model Installation {
+  id               Int                   @id @default(autoincrement())
+  installId        String                @unique
+  userId           Int
+  plan             String                @default("unknown")
+  planPriceCents   Int                   @default(0)
+  currency         String                @default("usd")
+  siteHash         String
+  installSecret    String?
+  firstSeen        DateTime              @default(now())
+  lastSeen         DateTime              @default(now())
+  pluginVersion    String?
+  wordpressVersion String?
+  phpVersion       String?
+  isMultisite      Boolean               @default(false)
+  metadata         Json?
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageEvents      UsageEvent[]
+  dailySummaries   UsageDailySummary[]
+  monthlySummaries UsageMonthlySummary[]
+
+  @@index([userId])
+  @@map("installations")
+}
+
+model UsageEvent {
+  id               Int          @id @default(autoincrement())
+  installationId   Int
+  eventId          String       @unique
+  userHash         String
+  source           String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  context          Json?
+  createdAt        DateTime
+  processedAt      DateTime?
+  receivedAt       DateTime     @default(now())
+  costMicros       BigInt       @default(0)
+  revenueCents     Int          @default(0)
+  installation     Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([installationId, createdAt])
+  @@map("usage_events")
+}
+
+model UsageDailySummary {
+  id               Int          @id @default(autoincrement())
+  installationId   Int
+  userHash         String
+  source           String
+  usageDate        DateTime
+  totalRequests    Int          @default(0)
+  promptTokens     Int          @default(0)
+  completionTokens Int          @default(0)
+  totalTokens      Int          @default(0)
+  costMicros       BigInt       @default(0)
+  revenueCents     Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  installation     Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([installationId, userHash, source, usageDate], name: "usage_daily_unique")
+  @@index([usageDate])
+  @@map("usage_daily_summary")
+}
+
+model UsageMonthlySummary {
+  id             Int          @id @default(autoincrement())
+  installationId Int
+  month          String
+  totalRequests  Int          @default(0)
+  totalTokens    Int          @default(0)
+  costMicros     BigInt       @default(0)
+  revenueCents   Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  installation   Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([installationId, month], name: "usage_monthly_unique")
+  @@index([month])
+  @@map("usage_monthly_summary")
 }

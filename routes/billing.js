@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
  */
 router.post('/checkout', authenticateToken, async (req, res) => {
   try {
-    const { priceId, successUrl, cancelUrl } = req.body;
+    const { priceId, successUrl, cancelUrl, service = 'alttext-ai' } = req.body;
 
     if (!priceId) {
       return res.status(400).json({
@@ -25,16 +25,31 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       });
     }
 
-    // Validate price ID
-    const validPrices = [
-      "price_1SMrxaJl9Rm418cMM4iikjlJ",
-      "price_1SMrxaJl9Rm418cMnJTShXSY",
-      "price_1SMrxbJl9Rm418cM0gkzZQZt"
-    ];
+    // Service-specific valid price IDs
+    const validPrices = {
+      'alttext-ai': [
+        "price_1SMrxaJl9Rm418cMM4iikjlJ", // AltText AI Pro
+        "price_1SMrxaJl9Rm418cMnJTShXSY", // AltText AI Agency
+        "price_1SMrxbJl9Rm418cM0gkzZQZt"  // AltText AI Credits
+      ],
+      'seo-ai-meta': [
+        // TODO: Add SEO AI Meta Stripe Price IDs after creating products
+        // "price_XXX_SEO_PRO",      // SEO AI Meta Pro - £12.99/month
+        // "price_XXX_SEO_AGENCY"    // SEO AI Meta Agency - £49.99/month
+      ]
+    };
 
-    if (!validPrices.includes(priceId)) {
+    const servicePrices = validPrices[service] || validPrices['alttext-ai'];
+    
+    // For now, allow SEO AI Meta to use any price ID (will be restricted once products created)
+    const allPrices = [...validPrices['alttext-ai'], ...validPrices['seo-ai-meta']];
+    const pricesToCheck = service === 'seo-ai-meta' && servicePrices.length === 0 
+      ? allPrices 
+      : servicePrices;
+
+    if (!pricesToCheck.includes(priceId)) {
       return res.status(400).json({
-        error: 'Invalid price ID',
+        error: `Invalid price ID for ${service} service`,
         code: 'INVALID_PRICE_ID'
       });
     }
@@ -43,7 +58,8 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       req.user.id,
       priceId,
       successUrl || `${process.env.FRONTEND_URL}/success`,
-      cancelUrl || `${process.env.FRONTEND_URL}/cancel`
+      cancelUrl || `${process.env.FRONTEND_URL}/cancel`,
+      service // Pass service to checkout
     );
 
     res.json({
@@ -323,73 +339,129 @@ router.post('/webhook/test', authenticateToken, async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
-    const plans = [
-      {
-        id: 'free',
-        name: 'Free',
-        price: 0,
-        currency: 'gbp',
-        interval: 'month',
-        images: 50,
-        features: [
-          '50 AI-generated alt texts per month',
-          'Basic quality scoring',
-          'WordPress integration',
-          'Email support'
-        ]
-      },
-      {
-        id: 'pro',
-        name: 'Pro',
-        price: 12.99,
-        currency: 'gbp',
-        interval: 'month',
-        images: 1000,
-        priceId: "price_1SMrxaJl9Rm418cMM4iikjlJ",
-        features: [
-          '1000 AI-generated alt texts per month',
-          'Advanced quality scoring',
-          'Bulk processing',
-          'Priority support',
-          'API access'
-        ]
-      },
-      {
-        id: 'agency',
-        name: 'Agency',
-        price: 49.99,
-        currency: 'gbp',
-        interval: 'month',
-        images: 10000,
-        priceId: "price_1SMrxaJl9Rm418cMnJTShXSY",
-        features: [
-          '10000 AI-generated alt texts per month',
-          'Advanced quality scoring',
-          'Bulk processing',
-          'Priority support',
-          'API access',
-          'White-label options'
-        ]
-      },
-      {
-        id: 'credits',
-        name: 'Credit Pack',
-        price: 9.99,
-        currency: 'gbp',
-        interval: 'one-time',
-        images: 100,
-        priceId: "price_1SMrxbJl9Rm418cM0gkzZQZt",
-        features: [
-          '100 AI-generated alt texts',
-          'No expiration',
-          'Use alongside any plan'
-        ]
-      }
-    ];
+    // Get service from query parameter (defaults to alttext-ai)
+    const service = req.query.service || 'alttext-ai';
+
+    // Service-specific plans
+    const plansByService = {
+      'alttext-ai': [
+        {
+          id: 'free',
+          name: 'Free',
+          price: 0,
+          currency: 'gbp',
+          interval: 'month',
+          images: 50,
+          features: [
+            '50 AI-generated alt texts per month',
+            'Basic quality scoring',
+            'WordPress integration',
+            'Email support'
+          ]
+        },
+        {
+          id: 'pro',
+          name: 'Pro',
+          price: 12.99,
+          currency: 'gbp',
+          interval: 'month',
+          images: 1000,
+          priceId: "price_1SMrxaJl9Rm418cMM4iikjlJ",
+          features: [
+            '1000 AI-generated alt texts per month',
+            'Advanced quality scoring',
+            'Bulk processing',
+            'Priority support',
+            'API access'
+          ]
+        },
+        {
+          id: 'agency',
+          name: 'Agency',
+          price: 49.99,
+          currency: 'gbp',
+          interval: 'month',
+          images: 10000,
+          priceId: "price_1SMrxaJl9Rm418cMnJTShXSY",
+          features: [
+            '10000 AI-generated alt texts per month',
+            'Advanced quality scoring',
+            'Bulk processing',
+            'Priority support',
+            'API access',
+            'White-label options'
+          ]
+        },
+        {
+          id: 'credits',
+          name: 'Credit Pack',
+          price: 9.99,
+          currency: 'gbp',
+          interval: 'one-time',
+          images: 100,
+          priceId: "price_1SMrxbJl9Rm418cM0gkzZQZt",
+          features: [
+            '100 AI-generated alt texts',
+            'No expiration',
+            'Use alongside any plan'
+          ]
+        }
+      ],
+      'seo-ai-meta': [
+        {
+          id: 'free',
+          name: 'Free',
+          price: 0,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 10,
+          features: [
+            '10 AI-generated meta tags per month',
+            'GPT-4o-mini model',
+            'WordPress integration',
+            'Email support'
+          ]
+        },
+        {
+          id: 'pro',
+          name: 'Pro',
+          price: 12.99,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 100,
+          priceId: null, // TODO: Add after creating Stripe product
+          features: [
+            '100 AI-generated meta tags per month',
+            'GPT-4-turbo model',
+            'Bulk processing',
+            'Priority support'
+          ]
+        },
+        {
+          id: 'agency',
+          name: 'Agency',
+          price: 49.99,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 1000,
+          priceId: null, // TODO: Add after creating Stripe product
+          features: [
+            '1000 AI-generated meta tags per month',
+            'GPT-4-turbo model',
+            'Bulk processing',
+            'Priority support',
+            'White-label options'
+          ]
+        }
+      ]
+    };
+
+    const plans = plansByService[service] || plansByService['alttext-ai'];
 
     res.json({
       success: true,
-      plans
+      plans,
+      service: service
     });
 
   } catch (error) {
