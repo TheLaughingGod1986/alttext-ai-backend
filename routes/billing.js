@@ -341,6 +341,65 @@ router.post('/webhook/test', authenticateToken, async (req, res) => {
  */
 router.get('/plans', async (req, res) => {
   try {
+    const { service } = req.query;
+
+    // SEO AI Meta plans
+    if (service === 'seo-ai-meta') {
+      const plans = [
+        {
+          id: 'free',
+          name: 'Free',
+          price: 0,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 5,
+          features: [
+            '5 AI-generated meta tags per month',
+            'GPT-4-turbo model',
+            'WordPress integration',
+            'Email support'
+          ]
+        },
+        {
+          id: 'pro',
+          name: 'Pro',
+          price: 12.99,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 100,
+          priceId: "price_1SQ6a5Jl9Rm418cMx77q8KB9",
+          features: [
+            '100 AI-generated meta tags per month',
+            'GPT-4-turbo model',
+            'Bulk generation',
+            'Priority support'
+          ]
+        },
+        {
+          id: 'agency',
+          name: 'Agency',
+          price: 49.99,
+          currency: 'gbp',
+          interval: 'month',
+          posts: 1000,
+          priceId: "price_1SQ6aTJl9Rm418cMQz47wCZ2",
+          features: [
+            '1000 AI-generated meta tags per month',
+            'GPT-4-turbo model',
+            'Bulk generation',
+            'Priority support',
+            'White-label options'
+          ]
+        }
+      ];
+
+      return res.json({
+        success: true,
+        plans
+      });
+    }
+
+    // AltText AI plans (default)
     const plans = [
       {
         id: 'free',
