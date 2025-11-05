@@ -23,6 +23,7 @@ function generateResetToken() {
  */
 router.post('/register', async (req, res) => {
   try {
+    const { email, password, service = 'alttext-ai' } = req.body;
 
     // Validate input
     if (!email || !password) {
@@ -38,6 +39,16 @@ router.post('/register', async (req, res) => {
         code: 'WEAK_PASSWORD'
       });
     }
+
+    // Validate service
+    const validServices = ['alttext-ai', 'seo-ai-meta'];
+    const userService = validServices.includes(service) ? service : 'alttext-ai';
+
+    // Service-specific initial limits
+    const initialLimits = {
+      'alttext-ai': 50,
+      'seo-ai-meta': 10
+    };
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -58,6 +69,8 @@ router.post('/register', async (req, res) => {
         email: email.toLowerCase(),
         passwordHash,
         plan: 'free',
+        service: userService,
+        tokensRemaining: initialLimits[userService] || 50,
         credits: 0
       }
     });
