@@ -32,8 +32,8 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       "price_1SMrxaJl9Rm418cMnJTShXSY",  // Agency
       "price_1SMrxbJl9Rm418cM0gkzZQZt",  // Credits
       // SEO AI Meta prices
-      "price_1SPXIeJl9Rm418cMVFOu0HVU",  // Pro £12.99/month
-      "price_1SPXIfJl9Rm418cM719fxWyn"   // Agency £49.99/month
+      "price_1SQ6a5Jl9Rm418cMx77q8KB9",  // Pro £12.99/month
+      "price_1SQ6aTJl9Rm418cMQz47wCZ2"   // Agency £49.99/month
     ];
 
     if (!validPrices.includes(priceId)) {
@@ -242,12 +242,12 @@ router.get('/subscription', authenticateToken, async (req, res) => {
           currency = 'GBP';
         }
         // SEO AI Meta pricing
-        else if (priceId === 'price_1SPXIeJl9Rm418cMVFOu0HVU') {
+        else if (priceId === 'price_1SQ6a5Jl9Rm418cMx77q8KB9') {
           plan = 'pro';
           billingCycle = 'monthly';
           nextChargeAmount = 12.99;
           currency = 'GBP';
-        } else if (priceId === 'price_1SPXIfJl9Rm418cM719fxWyn') {
+        } else if (priceId === 'price_1SQ6aTJl9Rm418cMQz47wCZ2') {
           plan = 'agency';
           billingCycle = 'monthly';
           nextChargeAmount = 49.99;
