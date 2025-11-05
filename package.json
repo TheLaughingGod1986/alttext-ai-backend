@@ -4,6 +4,7 @@
   "description": "Proxy API for AltText AI WordPress plugin",
   "main": "server-v2.js",
   "scripts": {
+    "postinstall": "prisma generate && prisma migrate deploy",
     "start": "node server-v2.js",
     "start:v1": "node server.js",
     "dev": "nodemon server-v2.js",

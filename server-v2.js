@@ -20,6 +20,7 @@ const PORT = process.env.PORT || 3000;
 const prisma = new PrismaClient();
 
 // Middleware
+app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
 app.use(helmet());
 app.use(cors());
 
