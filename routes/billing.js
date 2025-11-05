@@ -16,9 +16,12 @@ const prisma = new PrismaClient();
  */
 router.post('/checkout', authenticateToken, async (req, res) => {
   try {
-    const { priceId, successUrl, cancelUrl, service = 'alttext-ai' } = req.body;
+    const { priceId, price_id, successUrl, cancelUrl, service = 'alttext-ai' } = req.body;
+    
+    // Use price_id if provided, otherwise priceId (for backward compatibility)
+    const actualPriceId = price_id || priceId;
 
-    if (!priceId) {
+    if (!actualPriceId) {
       return res.status(400).json({
         error: 'Price ID is required',
         code: 'MISSING_PRICE_ID'
@@ -43,16 +46,18 @@ router.post('/checkout', authenticateToken, async (req, res) => {
     // Use service-specific price validation
     const pricesToCheck = servicePrices;
 
-    if (!pricesToCheck.includes(priceId)) {
+    if (!pricesToCheck.includes(actualPriceId)) {
       return res.status(400).json({
         error: `Invalid price ID for ${service} service`,
-        code: 'INVALID_PRICE_ID'
+        code: 'INVALID_PRICE_ID',
+        provided: actualPriceId,
+        valid: servicePrices
       });
     }
 
     const session = await createCheckoutSession(
       req.user.id,
-      priceId,
+      actualPriceId,
       successUrl || `${process.env.FRONTEND_URL}/success`,
       cancelUrl || `${process.env.FRONTEND_URL}/cancel`,
       service // Pass service to checkout
@@ -66,9 +71,16 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Checkout error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      type: error.type,
+      code: error.code
+    });
     res.status(500).json({
       error: 'Failed to create checkout session',
-      code: 'CHECKOUT_ERROR'
+      code: 'FAILED_TO_CREATE_CHECKOUT_SESSION',
+      message: error.message || 'Unknown error'
     });
   }
 });
