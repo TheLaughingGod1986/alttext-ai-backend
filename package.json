@@ -25,22 +25,15 @@
     "crypto": "^1.0.1",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-<<<<<<< HEAD
     "express-basic-auth": "^1.2.1",
-=======
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "prisma": "^6.17.1",
     "resend": "^6.3.0",
-<<<<<<< HEAD
     "stripe": "^19.1.0",
     "dayjs": "^1.11.13",
     "ejs": "^3.1.10"
-=======
-    "stripe": "^19.1.0"
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
