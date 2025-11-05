@@ -27,9 +27,13 @@ router.post('/checkout', authenticateToken, async (req, res) => {
 
     // Validate price ID
     const validPrices = [
-      "price_1SMrxaJl9Rm418cMM4iikjlJ",
-      "price_1SMrxaJl9Rm418cMnJTShXSY",
-      "price_1SMrxbJl9Rm418cM0gkzZQZt"
+      // AltText AI prices
+      "price_1SMrxaJl9Rm418cMM4iikjlJ",  // Pro
+      "price_1SMrxaJl9Rm418cMnJTShXSY",  // Agency
+      "price_1SMrxbJl9Rm418cM0gkzZQZt",  // Credits
+      // SEO AI Meta prices
+      "price_1SPXIeJl9Rm418cMVFOu0HVU",  // Pro £12.99/month
+      "price_1SPXIfJl9Rm418cM719fxWyn"   // Agency £49.99/month
     ];
 
     if (!validPrices.includes(priceId)) {
@@ -219,6 +223,8 @@ router.get('/subscription', authenticateToken, async (req, res) => {
       if (subscription.items.data.length > 0) {
         const priceId = subscription.items.data[0].price.id;
         // Map Stripe price IDs to plans
+
+        // AltText AI pricing
         if (priceId === 'price_1SMrxaJl9Rm418cMM4iikjlJ') {
           plan = 'pro';
           billingCycle = 'monthly';
@@ -233,6 +239,18 @@ router.get('/subscription', authenticateToken, async (req, res) => {
           plan = 'credits';
           billingCycle = null; // One-time payment
           nextChargeAmount = 9.99;
+          currency = 'GBP';
+        }
+        // SEO AI Meta pricing
+        else if (priceId === 'price_1SPXIeJl9Rm418cMVFOu0HVU') {
+          plan = 'pro';
+          billingCycle = 'monthly';
+          nextChargeAmount = 12.99;
+          currency = 'GBP';
+        } else if (priceId === 'price_1SPXIfJl9Rm418cM719fxWyn') {
+          plan = 'agency';
+          billingCycle = 'monthly';
+          nextChargeAmount = 49.99;
           currency = 'GBP';
         }
       }
