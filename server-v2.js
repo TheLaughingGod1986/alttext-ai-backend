@@ -56,12 +56,27 @@ app.get('/health', (req, res) => {
 // Generate alt text endpoint (Phase 2 with JWT auth)
 app.post('/api/generate', authenticateToken, async (req, res) => {
   try {
-    const { image_data, context, regenerate = false } = req.body;
+    const { image_data, context, regenerate = false, service = 'alttext-ai' } = req.body;
     const userId = req.user.id;
-    
+
+    // Select API key based on service
+    const apiKey = service === 'seo-ai-meta'
+      ? process.env.SEO_META_OPENAI_API_KEY
+      : process.env.ALTTEXT_OPENAI_API_KEY;
+
+    // Validate API key is configured
+    if (!apiKey) {
+      console.error(`Missing OpenAI API key for service: ${service}`);
+      return res.status(500).json({
+        error: 'Failed to generate alt text',
+        code: 'GENERATION_ERROR',
+        message: `Missing OpenAI API key for service: ${service}`
+      });
+    }
+
     // Check user limits
     const limits = await checkUserLimits(userId);
-    
+
     if (!limits.hasAccess) {
       const planLimit = limits.plan === 'pro'
         ? 1000
@@ -77,11 +92,11 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
         }
       });
     }
-    
+
     // Build OpenAI prompt and multimodal payload
     const prompt = buildPrompt(image_data, context, regenerate);
     const userMessage = buildUserMessage(prompt, image_data);
-    
+
     // Call OpenAI API
     const systemMessage = {
       role: 'system',
@@ -91,14 +106,14 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
     let openaiResponse;
     try {
       openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
-        apiKey: process.env.OPENAI_API_KEY
+        apiKey
       });
     } catch (error) {
       if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
         console.warn('Image fetch failed, retrying without image input...');
         const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
         openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
-          apiKey: process.env.OPENAI_API_KEY
+          apiKey
         });
       } else {
         throw error;
@@ -171,7 +186,7 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 // Review existing alt text for accuracy
 app.post('/api/review', authenticateToken, async (req, res) => {
   try {
-    const { alt_text, image_data, context } = req.body;
+    const { alt_text, image_data, context, service = 'alttext-ai' } = req.body;
 
     if (!alt_text || typeof alt_text !== 'string') {
       return res.status(400).json({
@@ -180,7 +195,12 @@ app.post('/api/review', authenticateToken, async (req, res) => {
       });
     }
 
-    const review = await reviewAltText(alt_text, image_data, context);
+    // Select API key based on service
+    const apiKey = service === 'seo-ai-meta'
+      ? (process.env.OPENAI_REVIEW_API_KEY || process.env.SEO_META_OPENAI_API_KEY)
+      : (process.env.OPENAI_REVIEW_API_KEY || process.env.ALTTEXT_OPENAI_API_KEY);
+
+    const review = await reviewAltText(alt_text, image_data, context, apiKey);
 
     res.json({
       success: true,
@@ -419,7 +439,7 @@ function messageHasImage(message) {
   return false;
 }
 
-async function reviewAltText(altText, imageData, context) {
+async function reviewAltText(altText, imageData, context, apiKey = null) {
   if (!altText || typeof altText !== 'string') {
     return null;
   }
@@ -430,6 +450,9 @@ async function reviewAltText(altText, imageData, context) {
   if (!hasInline && !hasPublicUrl) {
     return null;
   }
+
+  // Use provided API key or fallback to environment variables
+  const effectiveApiKey = apiKey || process.env.OPENAI_REVIEW_API_KEY || process.env.ALTTEXT_OPENAI_API_KEY;
 
   const systemMessage = {
     role: 'system',
@@ -448,7 +471,7 @@ async function reviewAltText(altText, imageData, context) {
       model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       max_tokens: 220,
       temperature: 0,
-      apiKey: process.env.OPENAI_REVIEW_API_KEY || process.env.OPENAI_API_KEY
+      apiKey: effectiveApiKey
     });
   } catch (error) {
     if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
@@ -460,7 +483,7 @@ async function reviewAltText(altText, imageData, context) {
         model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         max_tokens: 220,
         temperature: 0,
-        apiKey: process.env.OPENAI_REVIEW_API_KEY || process.env.OPENAI_API_KEY
+        apiKey: effectiveApiKey
       });
     } else {
       throw error;
