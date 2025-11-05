@@ -33,19 +33,15 @@ router.post('/checkout', authenticateToken, async (req, res) => {
         "price_1SMrxbJl9Rm418cM0gkzZQZt"  // AltText AI Credits
       ],
       'seo-ai-meta': [
-        // TODO: Add SEO AI Meta Stripe Price IDs after creating products
-        // "price_XXX_SEO_PRO",      // SEO AI Meta Pro - £12.99/month
-        // "price_XXX_SEO_AGENCY"    // SEO AI Meta Agency - £49.99/month
+        "price_1SQ6a5Jl9Rm418cMx77q8KB9", // SEO AI Meta Pro - £12.99/month
+        "price_1SQ6aTJl9Rm418cMQz47wCZ2"  // SEO AI Meta Agency - £49.99/month
       ]
     };
 
     const servicePrices = validPrices[service] || validPrices['alttext-ai'];
     
-    // For now, allow SEO AI Meta to use any price ID (will be restricted once products created)
-    const allPrices = [...validPrices['alttext-ai'], ...validPrices['seo-ai-meta']];
-    const pricesToCheck = service === 'seo-ai-meta' && servicePrices.length === 0 
-      ? allPrices 
-      : servicePrices;
+    // Use service-specific price validation
+    const pricesToCheck = servicePrices;
 
     if (!pricesToCheck.includes(priceId)) {
       return res.status(400).json({
@@ -429,7 +425,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 100,
-          priceId: null, // TODO: Add after creating Stripe product
+          priceId: "price_1SQ6a5Jl9Rm418cMx77q8KB9", // SEO AI Meta Pro
           features: [
             '100 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -444,7 +440,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 1000,
-          priceId: null, // TODO: Add after creating Stripe product
+          priceId: "price_1SQ6aTJl9Rm418cMQz47wCZ2", // SEO AI Meta Agency
           features: [
             '1000 AI-generated meta tags per month',
             'GPT-4-turbo model',
