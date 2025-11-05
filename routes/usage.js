@@ -229,10 +229,33 @@ async function useCredit(userId) {
  */
 async function resetMonthlyTokens() {
   try {
+    // Service-specific plan limits
+    const planLimits = {
+      'alttext-ai': {
+        free: 50,
+        pro: 1000,
+        agency: 10000
+      },
+      'seo-ai-meta': {
+        free: 10,
+        pro: 100,
+        agency: 1000
+      }
     };
 
     // Reset all users' monthly tokens
     const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        plan: true,
+        service: true
+      }
+    });
+
+    for (const user of users) {
+      const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
+      const limit = serviceLimits[user.plan] || serviceLimits.free;
+
       await prisma.user.update({
         where: { id: user.id },
         data: {
