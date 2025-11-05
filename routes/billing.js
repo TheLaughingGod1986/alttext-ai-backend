@@ -28,17 +28,17 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       });
     }
 
-    // Service-specific valid price IDs
+    // Service-specific valid price IDs from environment variables
     const validPrices = {
       'alttext-ai': [
-        "price_1SMrxaJl9Rm418cMM4iikjlJ", // AltText AI Pro (LIVE)
-        "price_1SMrxaJl9Rm418cMnJTShXSY", // AltText AI Agency (LIVE)
-        "price_1SMrxbJl9Rm418cM0gkzZQZt"  // AltText AI Credits (LIVE)
-      ],
+        process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
+        process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
+        process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS
+      ].filter(Boolean), // Remove any undefined values
       'seo-ai-meta': [
-        "price_1SQ72OJl9Rm418cMruYB5Pgb", // SEO AI Meta Pro - £12.99/month (LIVE)
-        "price_1SQ72KJl9Rm418cMB0CYh8xe"  // SEO AI Meta Agency - £49.99/month (LIVE)
-      ]
+        process.env.SEO_AI_META_STRIPE_PRICE_PRO,
+        process.env.SEO_AI_META_STRIPE_PRICE_AGENCY
+      ].filter(Boolean) // Remove any undefined values
     };
 
     const servicePrices = validPrices[service] || validPrices['alttext-ai'];
@@ -374,7 +374,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 1000,
-          priceId: "price_1SMrxaJl9Rm418cMM4iikjlJ",
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
           features: [
             '1000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -390,7 +390,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 10000,
-          priceId: "price_1SMrxaJl9Rm418cMnJTShXSY",
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
           features: [
             '10000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -407,7 +407,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'one-time',
           images: 100,
-          priceId: "price_1SMrxbJl9Rm418cM0gkzZQZt",
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS,
           features: [
             '100 AI-generated alt texts',
             'No expiration',
@@ -437,7 +437,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 100,
-          priceId: "price_1SQ72OJl9Rm418cMruYB5Pgb", // SEO AI Meta Pro (LIVE)
+          priceId: process.env.SEO_AI_META_STRIPE_PRICE_PRO,
           features: [
             '100 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -452,7 +452,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 1000,
-          priceId: "price_1SQ72KJl9Rm418cMB0CYh8xe", // SEO AI Meta Agency (LIVE)
+          priceId: process.env.SEO_AI_META_STRIPE_PRICE_AGENCY,
           features: [
             '1000 AI-generated meta tags per month',
             'GPT-4-turbo model',

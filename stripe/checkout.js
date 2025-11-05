@@ -59,14 +59,14 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
           quantity: 1,
         },
       ],
-      mode: priceId === process.env.STRIPE_PRICE_CREDITS ? 'payment' : 'subscription',
+      mode: priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? 'payment' : 'subscription',
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
         userId: userId.toString(),
         service: userService
       },
-      subscription_data: priceId !== process.env.STRIPE_PRICE_CREDITS ? {
+      subscription_data: priceId !== process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? {
         metadata: {
           service: userService
         }
@@ -125,16 +125,23 @@ async function handleSuccessfulCheckout(session) {
 
     const priceId = sessionWithItems.line_items.data[0].price.id;
 
-    // Determine plan type based on price ID
+    // Determine plan type based on price ID and service
     let plan = 'free';
     let creditsToAdd = 0;
 
-    if (priceId === process.env.STRIPE_PRICE_PRO) {
+    // AltText AI products
+    if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_PRO) {
       plan = 'pro';
-    } else if (priceId === process.env.STRIPE_PRICE_AGENCY) {
+    } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY) {
       plan = 'agency';
-    } else if (priceId === process.env.STRIPE_PRICE_CREDITS) {
+    } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS) {
       creditsToAdd = 100; // 100 credits for £9.99
+    }
+    // SEO AI Meta products
+    else if (priceId === process.env.SEO_AI_META_STRIPE_PRICE_PRO) {
+      plan = 'pro';
+    } else if (priceId === process.env.SEO_AI_META_STRIPE_PRICE_AGENCY) {
+      plan = 'agency';
     }
 
     // Service-specific plan limits
@@ -200,11 +207,13 @@ async function handleSubscriptionUpdate(subscription) {
     const priceId = subscription.items.data[0].price.id;
 
     if (status === 'active') {
-      // Determine plan from price ID
+      // Determine plan from price ID (supports both services)
       let plan = 'free';
-      if (priceId === process.env.STRIPE_PRICE_PRO) {
+      if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_PRO ||
+          priceId === process.env.SEO_AI_META_STRIPE_PRICE_PRO) {
         plan = 'pro';
-      } else if (priceId === process.env.STRIPE_PRICE_AGENCY) {
+      } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY ||
+                 priceId === process.env.SEO_AI_META_STRIPE_PRICE_AGENCY) {
         plan = 'agency';
       }
 
