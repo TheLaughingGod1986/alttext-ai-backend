@@ -132,6 +132,12 @@ router.get('/history', authenticateToken, async (req, res) => {
 /**
  * Record usage for a generation request
  */
+async function recordUsage(userId, imageId = null, endpoint = null, service = 'alttext-ai') {
+  try {
+    await prisma.usageLog.create({
+      data: {
+        userId,
+        service,
         used: 1,
         imageId,
         endpoint
