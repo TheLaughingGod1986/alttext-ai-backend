@@ -12,6 +12,8 @@ const prisma = new PrismaClient();
 /**
  * Get user's current usage and plan info
  */
+router.get('/', authenticateToken, async (req, res) => {
+  try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
@@ -20,7 +22,8 @@ const prisma = new PrismaClient();
         tokensRemaining: true,
         credits: true,
         resetDate: true,
-        createdAt: true
+        createdAt: true,
+        service: true
       }
     });
 
@@ -31,14 +34,41 @@ const prisma = new PrismaClient();
       });
     }
 
+    // Get usage count
+    const usageCount = await prisma.usageLog.count({
+      where: { 
+        userId: req.user.id,
+        service: user.service || 'alttext-ai'
+      }
+    });
+
+    // Service-specific plan limits
+    const planLimits = {
+      'alttext-ai': {
+        free: 50,
+        pro: 1000,
+        agency: 10000
+      },
+      'seo-ai-meta': {
+        free: 10,
+        pro: 100,
+        agency: 1000
+      }
+    };
+
+    const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
+    const limit = serviceLimits[user.plan] || serviceLimits.free;
+    const remaining = Math.max(0, user.tokensRemaining || limit - usageCount);
+
     res.json({
       success: true,
       usage: {
-        used,
-        limit,
-        remaining,
+        used: usageCount,
+        limit: limit,
+        remaining: remaining,
         plan: user.plan,
         credits: user.credits,
+        service: user.service || 'alttext-ai'
       }
     });
 
