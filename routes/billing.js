@@ -31,13 +31,13 @@ router.post('/checkout', authenticateToken, async (req, res) => {
     // Service-specific valid price IDs
     const validPrices = {
       'alttext-ai': [
-        "price_1SMrxaJl9Rm418cMM4iikjlJ", // AltText AI Pro
-        "price_1SMrxaJl9Rm418cMnJTShXSY", // AltText AI Agency
-        "price_1SMrxbJl9Rm418cM0gkzZQZt"  // AltText AI Credits
+        "price_1SMrxaJl9Rm418cMM4iikjlJ", // AltText AI Pro (LIVE)
+        "price_1SMrxaJl9Rm418cMnJTShXSY", // AltText AI Agency (LIVE)
+        "price_1SMrxbJl9Rm418cM0gkzZQZt"  // AltText AI Credits (LIVE)
       ],
       'seo-ai-meta': [
-        "price_1SQ6a5Jl9Rm418cMx77q8KB9", // SEO AI Meta Pro - £12.99/month
-        "price_1SQ6aTJl9Rm418cMQz47wCZ2"  // SEO AI Meta Agency - £49.99/month
+        "price_1SQ72OJl9Rm418cMruYB5Pgb", // SEO AI Meta Pro - £12.99/month (LIVE)
+        "price_1SQ72KJl9Rm418cMB0CYh8xe"  // SEO AI Meta Agency - £49.99/month (LIVE)
       ]
     };
 
@@ -437,7 +437,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 100,
-          priceId: "price_1SQ6a5Jl9Rm418cMx77q8KB9", // SEO AI Meta Pro
+          priceId: "price_1SQ72OJl9Rm418cMruYB5Pgb", // SEO AI Meta Pro (LIVE)
           features: [
             '100 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -452,7 +452,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 1000,
-          priceId: "price_1SQ6aTJl9Rm418cMQz47wCZ2", // SEO AI Meta Agency
+          priceId: "price_1SQ72KJl9Rm418cMB0CYh8xe", // SEO AI Meta Agency (LIVE)
           features: [
             '1000 AI-generated meta tags per month',
             'GPT-4-turbo model',
