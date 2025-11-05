@@ -11,11 +11,19 @@ const prisma = new PrismaClient();
 /**
  * Create Stripe Checkout Session
  */
+async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, stripeCustomerId: true, service: true }
     });
 
     if (!user) {
       throw new Error('User not found');
     }
+
+    // Use service from request or user's stored service
+    const userService = service || user.service || 'alttext-ai';
 
     let customerId = user.stripeCustomerId;
 
@@ -24,6 +32,8 @@ const prisma = new PrismaClient();
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
+          userId: userId.toString(),
+          service: userService
         }
       });
 
@@ -32,6 +42,10 @@ const prisma = new PrismaClient();
       // Update user with customer ID
       await prisma.user.update({
         where: { id: userId },
+        data: { 
+          stripeCustomerId: customerId,
+          service: userService // Update service if not set
+        }
       });
     }
 
@@ -49,6 +63,14 @@ const prisma = new PrismaClient();
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
+        userId: userId.toString(),
+        service: userService
+      },
+      subscription_data: priceId !== process.env.STRIPE_PRICE_CREDITS ? {
+        metadata: {
+          service: userService
+        }
+      } : undefined
     });
 
     return session;
@@ -115,7 +137,30 @@ async function handleSuccessfulCheckout(session) {
       creditsToAdd = 100; // 100 credits for £9.99
     }
 
+    // Service-specific plan limits
+    const planLimits = {
+      'alttext-ai': {
+        free: 50,
+        pro: 1000,
+        agency: 10000
+      },
+      'seo-ai-meta': {
+        free: 10,
+        pro: 100,
+        agency: 1000
+      }
+    };
+
+    const service = session.metadata.service || 'alttext-ai';
+    const serviceLimits = planLimits[service] || planLimits['alttext-ai'];
+
     // Update user
+    const updateData = {
+      service: service // Update service if not set
+    };
+    if (plan !== 'free') {
+      updateData.plan = plan;
+      updateData.tokensRemaining = serviceLimits[plan] || serviceLimits.free;
       updateData.stripeSubscriptionId = sessionWithItems.subscription;
     }
     if (creditsToAdd > 0) {
@@ -126,6 +171,8 @@ async function handleSuccessfulCheckout(session) {
       where: { id: userId },
       data: updateData
     });
+
+    console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
 
   } catch (error) {
@@ -202,6 +249,14 @@ async function handleInvoicePaid(invoice) {
       return;
     }
 
+    // Service-specific plan limits
+    const planLimits = {
+      'alttext-ai': { free: 50, pro: 1000, agency: 10000 },
+      'seo-ai-meta': { free: 10, pro: 100, agency: 1000 }
+    };
+
+    const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
+    const limit = serviceLimits[user.plan] || serviceLimits.free;
 
     await prisma.user.update({
       where: { id: user.id },
@@ -210,6 +265,8 @@ async function handleInvoicePaid(invoice) {
         resetDate: new Date()
       }
     });
+
+    console.log(`✅ User ${user.id} (${user.service}) monthly tokens reset to ${limit}`);
 
 
   } catch (error) {
