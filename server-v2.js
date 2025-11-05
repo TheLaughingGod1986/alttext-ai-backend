@@ -56,7 +56,7 @@ app.get('/health', (req, res) => {
 // Generate alt text endpoint (Phase 2 with JWT auth)
 app.post('/api/generate', authenticateToken, async (req, res) => {
   try {
-    const { image_data, context, regenerate = false, service = 'alttext-ai' } = req.body;
+    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
     const userId = req.user.id;
 
     // Select API key based on service
@@ -64,11 +64,14 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       ? process.env.SEO_META_OPENAI_API_KEY
       : process.env.ALTTEXT_OPENAI_API_KEY;
 
+    // Log for debugging
+    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, API Key exists: ${!!apiKey}, API Key prefix: ${apiKey ? apiKey.substring(0, 10) + '...' : 'N/A'}`);
+
     // Validate API key is configured
     if (!apiKey) {
       console.error(`Missing OpenAI API key for service: ${service}`);
       return res.status(500).json({
-        error: 'Failed to generate alt text',
+        error: 'Failed to generate content',
         code: 'GENERATION_ERROR',
         message: `Missing OpenAI API key for service: ${service}`
       });
@@ -93,6 +96,74 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       });
     }
 
+    // Handle meta generation differently from alt text
+    if (type === 'meta' || (service === 'seo-ai-meta' && !image_data)) {
+      // Meta tag generation - use the context directly as the prompt
+      const systemMessage = {
+        role: 'system',
+        content: 'You are an expert SEO copywriter specializing in meta tag optimization. Always respond with valid JSON only.'
+      };
+
+      const userMessage = {
+        role: 'user',
+        content: context || ''
+      };
+
+      let openaiResponse;
+      try {
+        openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
+          apiKey,
+          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          max_tokens: 300,
+          temperature: 0.7
+        });
+      } catch (error) {
+        console.error('Meta generation error:', error.response?.data || error.message);
+        throw error;
+      }
+
+      const content = openaiResponse.choices[0].message.content.trim();
+
+      // Record usage
+      if (limits.hasTokens) {
+        await recordUsage(userId, null, 'generate', 'seo-ai-meta');
+      } else if (limits.hasCredits) {
+        await useCredit(userId);
+      }
+
+      // Get updated user info
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          plan: true,
+          tokensRemaining: true,
+          credits: true,
+          resetDate: true
+        }
+      });
+
+      const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
+      const limit = planLimits[user.plan] || 10;
+      const used = limit - user.tokensRemaining;
+
+      // Return the raw content (JSON string) for meta generation
+      return res.json({
+        success: true,
+        alt_text: content, // Reusing alt_text field for backward compatibility
+        content: content,  // Also include as content
+        usage: {
+          used,
+          limit,
+          remaining: user.tokensRemaining,
+          plan: user.plan,
+          credits: user.credits,
+          resetDate: getNextResetDate()
+        },
+        tokens: openaiResponse.usage
+      });
+    }
+
+    // Original alt text generation logic
     // Build OpenAI prompt and multimodal payload
     const prompt = buildPrompt(image_data, context, regenerate);
     const userMessage = buildUserMessage(prompt, image_data);
@@ -124,7 +195,7 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 
     // Record usage (use credit if no monthly tokens, otherwise use token)
     if (limits.hasTokens) {
-      await recordUsage(userId, image_data?.image_id, 'generate');
+      await recordUsage(userId, image_data?.image_id, 'generate', service);
     } else if (limits.hasCredits) {
       await useCredit(userId);
     }
