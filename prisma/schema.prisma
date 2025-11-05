@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+<<<<<<< HEAD
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
@@ -32,31 +33,70 @@ model User {
   @@index([email])
   @@index([stripeCustomerId])
   @@index([service])
+=======
+}
+
+model User {
+  id                Int         @id @default(autoincrement())
+  email             String      @unique
+  passwordHash      String
+  plan              String      @default("free")
+  tokensRemaining   Int         @default(50)
+  credits           Int         @default(0)
+  stripeCustomerId  String?     @unique
+  stripeSubscriptionId String?
+  resetDate         DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  usageLogs         UsageLog[]
+  migrations        MigrationLog[]
+  passwordResets    PasswordResetToken[]
+  
+  @@index([email])
+  @@index([stripeCustomerId])
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   @@map("users")
 }
 
 model UsageLog {
   id        Int      @id @default(autoincrement())
   userId    Int
+<<<<<<< HEAD
   service   String   @default("alttext-ai") // Service identifier for tracking
+=======
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   used      Int      @default(1)
   imageId   String?
   endpoint  String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+<<<<<<< HEAD
 
   @@index([userId, createdAt])
   @@index([userId, service])
+=======
+  
+  @@index([userId, createdAt])
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   @@map("usage_logs")
 }
 
 model MigrationLog {
+<<<<<<< HEAD
   id         Int      @id @default(autoincrement())
   domainHash String   @unique
   userId     Int
   migratedAt DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+=======
+  id           Int      @id @default(autoincrement())
+  domainHash   String   @unique
+  userId       Int
+  migratedAt   DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   @@map("migration_logs")
 }
 
@@ -68,11 +108,16 @@ model PasswordResetToken {
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+<<<<<<< HEAD
 
+=======
+  
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
   @@index([token])
   @@index([userId])
   @@map("password_reset_tokens")
 }
+<<<<<<< HEAD
 
 model Installation {
   id               Int                   @id @default(autoincrement())
@@ -158,3 +203,5 @@ model UsageMonthlySummary {
   @@index([month])
   @@map("usage_monthly_summary")
 }
+=======
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac

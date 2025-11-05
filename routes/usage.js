@@ -5,7 +5,10 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken } = require('../auth/jwt');
+<<<<<<< HEAD
 const { ingestUsageBatch } = require('../services/providerUsageService');
+=======
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -13,6 +16,7 @@ const prisma = new PrismaClient();
 /**
  * Get user's current usage and plan info
  */
+<<<<<<< HEAD
 
 /**
  * Ingest usage events from plugin (internal)
@@ -53,12 +57,19 @@ router.get('/', authenticateToken, async (req, res) => {
     // Get service from query parameter (defaults to alttext-ai for backward compatibility)
     const service = req.query.service || req.user.service || 'alttext-ai';
 
+=======
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
         id: true,
         plan: true,
+<<<<<<< HEAD
         service: true,
+=======
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
         tokensRemaining: true,
         credits: true,
         resetDate: true,
@@ -73,6 +84,7 @@ router.get('/', authenticateToken, async (req, res) => {
       });
     }
 
+<<<<<<< HEAD
     // Service-specific plan limits
     const planLimits = {
       'alttext-ai': {
@@ -96,6 +108,19 @@ router.get('/', authenticateToken, async (req, res) => {
     const nextResetDate = getNextResetDate();
     const resetTimestamp = Math.floor(new Date(user.resetDate).getTime() / 1000);
 
+=======
+    // Calculate plan limits
+    const planLimits = {
+      free: 50,
+      pro: 1000,
+      agency: 10000
+    };
+
+    const limit = planLimits[user.plan] || 50;
+    const used = limit - user.tokensRemaining;
+    const remaining = user.tokensRemaining;
+
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
     res.json({
       success: true,
       usage: {
@@ -104,9 +129,14 @@ router.get('/', authenticateToken, async (req, res) => {
         remaining,
         plan: user.plan,
         credits: user.credits,
+<<<<<<< HEAD
         resetDate: nextResetDate,
         resetTimestamp: resetTimestamp,
         service: service
+=======
+        resetDate: user.resetDate,
+        nextReset: getNextResetDate()
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
       }
     });
 
@@ -170,6 +200,7 @@ router.get('/history', authenticateToken, async (req, res) => {
 /**
  * Record usage for a generation request
  */
+<<<<<<< HEAD
 async function recordUsage(userId, imageId = null, endpoint = 'generate', service = 'alttext-ai') {
   try {
     // Get user to determine service if not provided
@@ -184,6 +215,13 @@ async function recordUsage(userId, imageId = null, endpoint = 'generate', servic
       data: {
         userId,
         service: userService,
+=======
+async function recordUsage(userId, imageId = null, endpoint = 'generate') {
+  try {
+    await prisma.usageLog.create({
+      data: {
+        userId,
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
         used: 1,
         imageId,
         endpoint
@@ -275,6 +313,7 @@ async function useCredit(userId) {
  */
 async function resetMonthlyTokens() {
   try {
+<<<<<<< HEAD
     // Service-specific plan limits
     const planLimits = {
       'alttext-ai': {
@@ -287,10 +326,17 @@ async function resetMonthlyTokens() {
         pro: 100,
         agency: 1000
       }
+=======
+    const planLimits = {
+      free: 50,
+      pro: 1000,
+      agency: 10000
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
     };
 
     // Reset all users' monthly tokens
     const users = await prisma.user.findMany({
+<<<<<<< HEAD
       select: { id: true, plan: true, service: true }
     });
 
@@ -298,6 +344,13 @@ async function resetMonthlyTokens() {
       const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
       const limit = serviceLimits[user.plan] || serviceLimits.free;
       
+=======
+      select: { id: true, plan: true }
+    });
+
+    for (const user of users) {
+      const limit = planLimits[user.plan] || 50;
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
       await prisma.user.update({
         where: { id: user.id },
         data: {

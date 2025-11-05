@@ -58,6 +58,12 @@ async function handleWebhookEvent(event) {
         break;
 
       case 'invoice.payment_failed':
+<<<<<<< HEAD
+=======
+      case 'charge.refunded':
+        await handleChargeRefunded(event.data.object);
+        break;
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
         await handleInvoicePaymentFailed(event.data.object);
         break;
 
@@ -94,6 +100,7 @@ async function handleSubscriptionDeleted(subscription) {
       return;
     }
 
+<<<<<<< HEAD
     // Service-specific plan limits
     const planLimits = {
       'alttext-ai': { free: 50 },
@@ -103,17 +110,27 @@ async function handleSubscriptionDeleted(subscription) {
     const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
     const freeLimit = serviceLimits.free || 50;
 
+=======
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
     // Downgrade to free plan
     await prisma.user.update({
       where: { id: user.id },
       data: {
         plan: 'free',
+<<<<<<< HEAD
         tokensRemaining: freeLimit,
+=======
+        tokensRemaining: 50,
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
         stripeSubscriptionId: null
       }
     });
 
+<<<<<<< HEAD
     console.log(`✅ User ${user.id} (${user.service}) subscription canceled, downgraded to free`);
+=======
+    console.log(`✅ User ${user.id} subscription canceled, downgraded to free`);
+>>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 
   } catch (error) {
     console.error('Error handling subscription deletion:', error);
