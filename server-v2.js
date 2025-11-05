@@ -381,25 +381,41 @@ function buildPrompt(imageData, context, regenerate = false) {
 
 function buildUserMessage(prompt, imageData, options = {}) {
   const allowImage = !options.forceTextOnly;
+  
+  // Use detail: low to keep token usage at 85 tokens per image (instead of 170+ for high detail)
+  const imageUrlConfig = { detail: 'low' };
 
+  // Check for base64-encoded image (from frontend for localhost URLs)
+  if (allowImage && imageData?.base64 && imageData?.mime_type) {
+    const dataUrl = `data:${imageData.mime_type};base64,${imageData.base64}`;
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: dataUrl, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  // Check for inline data URL
   if (allowImage && imageData?.inline?.data_url) {
     return {
       role: 'user',
       content: [
         { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.inline.data_url } }
+        { type: 'image_url', image_url: { url: imageData.inline.data_url, ...imageUrlConfig } }
       ]
     };
   }
 
+  // Check for public URL
   const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
-
   if (hasUsableUrl) {
     return {
       role: 'user',
       content: [
         { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.url } }
+        { type: 'image_url', image_url: { url: imageData.url, ...imageUrlConfig } }
       ]
     };
   }
