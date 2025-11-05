@@ -5,10 +5,6 @@
 
 require('dotenv').config();
 const express = require('express');
-<<<<<<< HEAD
-const path = require('path');
-=======
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -18,10 +14,6 @@ const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens } = require('./routes/usage');
 const billingRoutes = require('./routes/billing');
-<<<<<<< HEAD
-const providerRoutes = require('./routes/provider');
-=======
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,14 +23,6 @@ const prisma = new PrismaClient();
 app.use(helmet());
 app.use(cors());
 
-<<<<<<< HEAD
-// Views & static assets for provider dashboard
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'ejs');
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
-=======
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 // Stripe webhook needs raw body - must come before express.json()
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
 
@@ -57,10 +41,6 @@ app.use('/api/', limiter);
 app.use('/auth', authRoutes);
 app.use('/usage', usageRoutes);
 app.use('/billing', billingRoutes);
-<<<<<<< HEAD
-app.use('/provider', providerRoutes);
-=======
->>>>>>> 7f9cd0cfac2850ea0b3e11dcdd510dd57af3bbac
 
 // Health check
 app.get('/health', (req, res) => {
