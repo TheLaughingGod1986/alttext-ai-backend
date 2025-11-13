@@ -15,6 +15,7 @@ const { combinedAuth } = require('./auth/dual-auth');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
 const billingRoutes = require('./routes/billing');
+const licensesRoutes = require('./routes/licenses');
 const licenseRoutes = require('./routes/license');
 const organizationRoutes = require('./routes/organization');
 
@@ -45,6 +46,7 @@ app.use('/api/', limiter);
 app.use('/auth', authRoutes);
 app.use('/usage', usageRoutes);
 app.use('/billing', billingRoutes);
+app.use('/api/licenses', licensesRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/organization', authenticateToken, organizationRoutes);
 
@@ -83,6 +85,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         message: `Missing OpenAI API key for service: ${service}`
       });
     }
+<<<<<<< HEAD
 
     // Check limits - use organization limits if available, otherwise user limits
     let limits;
@@ -98,7 +101,10 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         code: 'AUTH_REQUIRED'
       });
     }
-
+    
+    // Check user limits
+    const limits = await checkUserLimits(userId);
+    
     if (!limits.hasAccess) {
       const planLimit = limits.plan === 'pro'
         ? 1000
@@ -114,7 +120,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         }
       });
     }
-
+    
     // Handle meta generation differently from alt text
     if (type === 'meta' || (service === 'seo-ai-meta' && !image_data)) {
       // Meta tag generation - use the context directly as the prompt
@@ -215,7 +221,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     // Build OpenAI prompt and multimodal payload
     const prompt = buildPrompt(image_data, context, regenerate);
     const userMessage = buildUserMessage(prompt, image_data);
-
+    
     // Call OpenAI API
     const systemMessage = {
       role: 'system',
