@@ -282,10 +282,159 @@ function getNextResetDate() {
   return nextMonth.toISOString().split('T')[0];
 }
 
+/**
+ * Check organization limits (for multi-user license sharing)
+ */
+async function checkOrganizationLimits(organizationId) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      plan: true,
+      tokensRemaining: true,
+      credits: true,
+      service: true
+    }
+  });
+
+  if (!organization) {
+    throw new Error('Organization not found');
+  }
+
+  const hasTokens = organization.tokensRemaining > 0;
+  const hasCredits = organization.credits > 0;
+  const hasAccess = hasTokens || hasCredits;
+
+  return {
+    hasAccess,
+    hasTokens,
+    hasCredits,
+    plan: organization.plan,
+    tokensRemaining: organization.tokensRemaining,
+    credits: organization.credits
+  };
+}
+
+/**
+ * Record usage for an organization (shared quota)
+ */
+async function recordOrganizationUsage(organizationId, userId, imageId = null, endpoint = null, service = 'alttext-ai') {
+  try {
+    // Create usage log
+    await prisma.usageLog.create({
+      data: {
+        userId,
+        organizationId,
+        service,
+        used: 1,
+        imageId,
+        endpoint
+      }
+    });
+
+    // Decrement organization's remaining tokens
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        tokensRemaining: {
+          decrement: 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error recording organization usage:', error);
+    throw error;
+  }
+}
+
+/**
+ * Use organization credit instead of monthly token
+ */
+async function useOrganizationCredit(organizationId, userId) {
+  try {
+    await prisma.organization.update({
+      where: {
+        id: organizationId,
+        credits: { gt: 0 }
+      },
+      data: {
+        credits: {
+          decrement: 1
+        }
+      }
+    });
+
+    // Record usage
+    await prisma.usageLog.create({
+      data: {
+        userId,
+        organizationId,
+        used: 1,
+        endpoint: 'generate-credit'
+      }
+    });
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Reset organization monthly tokens (called by cron or webhook)
+ */
+async function resetOrganizationTokens() {
+  try {
+    const planLimits = {
+      'alttext-ai': {
+        free: 50,
+        pro: 1000,
+        agency: 10000
+      },
+      'seo-ai-meta': {
+        free: 10,
+        pro: 100,
+        agency: 1000
+      }
+    };
+
+    const organizations = await prisma.organization.findMany({
+      select: {
+        id: true,
+        plan: true,
+        service: true
+      }
+    });
+
+    for (const org of organizations) {
+      const serviceLimits = planLimits[org.service] || planLimits['alttext-ai'];
+      const limit = serviceLimits[org.plan] || serviceLimits.free;
+
+      await prisma.organization.update({
+        where: { id: org.id },
+        data: {
+          tokensRemaining: limit,
+          resetDate: new Date()
+        }
+      });
+    }
+
+    console.log(`Reset monthly tokens for ${organizations.length} organizations`);
+    return organizations.length;
+  } catch (error) {
+    console.error('Error resetting organization tokens:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   router,
   recordUsage,
   checkUserLimits,
   useCredit,
-  resetMonthlyTokens
+  resetMonthlyTokens,
+  checkOrganizationLimits,
+  recordOrganizationUsage,
+  useOrganizationCredit,
+  resetOrganizationTokens
 };

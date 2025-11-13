@@ -12,22 +12,23 @@ datasource db {
 }
 
 model User {
-  id                   Int                  @id @default(autoincrement())
-  email                String               @unique
+  id                   Int                   @id @default(autoincrement())
+  email                String                @unique
   passwordHash         String
-  plan                 String               @default("free")
-  service              String               @default("alttext-ai") // Service identifier: 'alttext-ai' or 'seo-ai-meta'
-  tokensRemaining      Int                  @default(50)
-  credits              Int                  @default(0)
-  stripeCustomerId     String?              @unique
+  plan                 String                @default("free")
+  service              String                @default("alttext-ai") // Service identifier: 'alttext-ai' or 'seo-ai-meta'
+  tokensRemaining      Int                   @default(50)
+  credits              Int                   @default(0)
+  stripeCustomerId     String?               @unique
   stripeSubscriptionId String?
-  resetDate            DateTime             @default(now())
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  resetDate            DateTime              @default(now())
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
   usageLogs            UsageLog[]
   migrations           MigrationLog[]
   passwordResets       PasswordResetToken[]
   installations        Installation[]
+  organizationMembers  OrganizationMember[]
 
   @@index([email])
   @@index([stripeCustomerId])
@@ -35,18 +36,80 @@ model User {
   @@map("users")
 }
 
+model Organization {
+  id                   Int                   @id @default(autoincrement())
+  name                 String
+  licenseKey           String                @unique @default(uuid())
+  plan                 String                @default("free") // free, pro, agency
+  service              String                @default("alttext-ai")
+  maxSites             Int                   @default(1) // 1 for free/pro, 10 for agency
+  tokensRemaining      Int                   @default(50)
+  credits              Int                   @default(0)
+  stripeCustomerId     String?               @unique
+  stripeSubscriptionId String?
+  resetDate            DateTime              @default(now())
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  members              OrganizationMember[]
+  sites                Site[]
+  usageLogs            UsageLog[]
+
+  @@index([licenseKey])
+  @@index([stripeCustomerId])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             Int          @id @default(autoincrement())
+  organizationId Int
+  userId         Int
+  role           String       @default("member") // owner, admin, member
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model Site {
+  id               Int          @id @default(autoincrement())
+  organizationId   Int
+  siteHash         String       @unique
+  siteUrl          String?
+  installId        String?      @unique
+  isActive         Boolean      @default(true)
+  firstSeen        DateTime     @default(now())
+  lastSeen         DateTime     @default(now())
+  pluginVersion    String?
+  wordpressVersion String?
+  phpVersion       String?
+  isMultisite      Boolean      @default(false)
+  metadata         Json?
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([siteHash])
+  @@map("sites")
+}
+
 model UsageLog {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  service   String   @default("alttext-ai") // Service identifier for tracking
-  used      Int      @default(1)
-  imageId   String?
-  endpoint  String?
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             Int           @id @default(autoincrement())
+  userId         Int
+  organizationId Int?
+  service        String        @default("alttext-ai") // Service identifier for tracking
+  used           Int           @default(1)
+  imageId        String?
+  endpoint       String?
+  createdAt      DateTime      @default(now())
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([userId, service])
+  @@index([organizationId, createdAt])
   @@map("usage_logs")
 }
 

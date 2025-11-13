@@ -4,6 +4,7 @@
 
 const Stripe = require('stripe');
 const { PrismaClient } = require('@prisma/client');
+const emailService = require('../services/emailService');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const prisma = new PrismaClient();
@@ -174,13 +175,70 @@ async function handleSuccessfulCheckout(session) {
       updateData.credits = { increment: creditsToAdd };
     }
 
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData
     });
 
     console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
+    // If agency plan, create organization and send license key email
+    if (plan === 'agency') {
+      try {
+        console.log(`📋 Creating agency organization for user ${userId}`);
+
+        // Create organization with generated license key
+        const organization = await prisma.organization.create({
+          data: {
+            name: `${updatedUser.email.split('@')[0]}'s Agency`,
+            plan: 'agency',
+            service: service,
+            maxSites: 10,
+            tokensRemaining: serviceLimits.agency,
+            stripeCustomerId: updatedUser.stripeCustomerId,
+            stripeSubscriptionId: sessionWithItems.subscription,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+
+        console.log(`✅ Organization created: ${organization.id}, License: ${organization.licenseKey}`);
+
+        // Create organization member (owner role)
+        await prisma.organizationMember.create({
+          data: {
+            organizationId: organization.id,
+            userId: userId,
+            role: 'owner',
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+
+        console.log(`✅ Organization owner added: user ${userId}`);
+
+        // Send license key email
+        const emailResult = await emailService.sendLicenseKey({
+          email: updatedUser.email,
+          name: updatedUser.email.split('@')[0],
+          licenseKey: organization.licenseKey,
+          plan: 'agency',
+          maxSites: 10,
+          monthlyQuota: serviceLimits.agency
+        });
+
+        if (emailResult.success) {
+          console.log(`✅ License key email sent to ${updatedUser.email}`);
+        } else {
+          console.error(`❌ Failed to send license email: ${emailResult.error}`);
+        }
+
+      } catch (orgError) {
+        console.error('Error creating organization/sending email:', orgError);
+        // Don't fail the whole checkout if organization creation fails
+        // User still gets their plan upgrade
+      }
+    }
 
   } catch (error) {
     console.error('Error handling successful checkout:', error);

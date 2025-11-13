@@ -11,9 +11,12 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
+const { combinedAuth } = require('./auth/dual-auth');
 const authRoutes = require('./auth/routes');
-const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens } = require('./routes/usage');
+const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
 const billingRoutes = require('./routes/billing');
+const licenseRoutes = require('./routes/license');
+const organizationRoutes = require('./routes/organization');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +45,8 @@ app.use('/api/', limiter);
 app.use('/auth', authRoutes);
 app.use('/usage', usageRoutes);
 app.use('/billing', billingRoutes);
+app.use('/api/license', licenseRoutes);
+app.use('/api/organization', authenticateToken, organizationRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -53,11 +58,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Generate alt text endpoint (Phase 2 with JWT auth)
-app.post('/api/generate', authenticateToken, async (req, res) => {
+// Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
+app.post('/api/generate', combinedAuth, async (req, res) => {
   try {
     const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
-    const userId = req.user.id;
+
+    // Determine userId based on auth method
+    const userId = req.user?.id || null;
 
     // Select API key based on service
     const apiKey = service === 'seo-ai-meta'
@@ -65,7 +72,7 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       : process.env.ALTTEXT_OPENAI_API_KEY;
 
     // Log for debugging
-    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, API Key exists: ${!!apiKey}, API Key prefix: ${apiKey ? apiKey.substring(0, 10) + '...' : 'N/A'}`);
+    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
 
     // Validate API key is configured
     if (!apiKey) {
@@ -77,8 +84,20 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check user limits
-    const limits = await checkUserLimits(userId);
+    // Check limits - use organization limits if available, otherwise user limits
+    let limits;
+    if (req.organization) {
+      limits = await checkOrganizationLimits(req.organization.id);
+      console.log(`[Generate] Using organization ${req.organization.id} quota: ${limits.tokensRemaining} remaining`);
+    } else if (userId) {
+      limits = await checkUserLimits(userId);
+      console.log(`[Generate] Using user ${userId} quota: ${limits.tokensRemaining} remaining`);
+    } else {
+      return res.status(401).json({
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
 
     if (!limits.hasAccess) {
       const planLimit = limits.plan === 'pro'
@@ -124,27 +143,56 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 
       const content = openaiResponse.choices[0].message.content.trim();
 
-      // Record usage
-      if (limits.hasTokens) {
-        await recordUsage(userId, null, 'generate', 'seo-ai-meta');
-      } else if (limits.hasCredits) {
-        await useCredit(userId);
+      // Record usage - organization or user based
+      if (req.organization) {
+        if (limits.hasTokens) {
+          await recordOrganizationUsage(req.organization.id, userId, null, 'generate', 'seo-ai-meta');
+        } else if (limits.hasCredits) {
+          await useOrganizationCredit(req.organization.id, userId);
+        }
+      } else {
+        if (limits.hasTokens) {
+          await recordUsage(userId, null, 'generate', 'seo-ai-meta');
+        } else if (limits.hasCredits) {
+          await useCredit(userId);
+        }
       }
 
-      // Get updated user info
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          plan: true,
-          tokensRemaining: true,
-          credits: true,
-          resetDate: true
-        }
-      });
+      // Get updated info (organization or user)
+      let plan, tokensRemaining, credits, resetDate;
+      if (req.organization) {
+        const org = await prisma.organization.findUnique({
+          where: { id: req.organization.id },
+          select: {
+            plan: true,
+            tokensRemaining: true,
+            credits: true,
+            resetDate: true
+          }
+        });
+        plan = org.plan;
+        tokensRemaining = org.tokensRemaining;
+        credits = org.credits;
+        resetDate = org.resetDate;
+      } else {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            plan: true,
+            tokensRemaining: true,
+            credits: true,
+            resetDate: true
+          }
+        });
+        plan = user.plan;
+        tokensRemaining = user.tokensRemaining;
+        credits = user.credits;
+        resetDate = user.resetDate;
+      }
 
       const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
-      const limit = planLimits[user.plan] || 10;
-      const used = limit - user.tokensRemaining;
+      const limit = planLimits[plan] || 10;
+      const used = limit - tokensRemaining;
 
       // Return the raw content (JSON string) for meta generation
       return res.json({
@@ -154,9 +202,9 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
         usage: {
           used,
           limit,
-          remaining: user.tokensRemaining,
-          plan: user.plan,
-          credits: user.credits,
+          remaining: tokensRemaining,
+          plan: plan,
+          credits: credits,
           resetDate: getNextResetDate()
         },
         tokens: openaiResponse.usage
@@ -193,28 +241,57 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
     
     const altText = openaiResponse.choices[0].message.content.trim();
 
-    // Record usage (use credit if no monthly tokens, otherwise use token)
-    if (limits.hasTokens) {
-      await recordUsage(userId, image_data?.image_id, 'generate', service);
-    } else if (limits.hasCredits) {
-      await useCredit(userId);
+    // Record usage - organization or user based
+    if (req.organization) {
+      if (limits.hasTokens) {
+        await recordOrganizationUsage(req.organization.id, userId, image_data?.image_id, 'generate', service);
+      } else if (limits.hasCredits) {
+        await useOrganizationCredit(req.organization.id, userId);
+      }
+    } else {
+      if (limits.hasTokens) {
+        await recordUsage(userId, image_data?.image_id, 'generate', service);
+      } else if (limits.hasCredits) {
+        await useCredit(userId);
+      }
     }
 
-    // Get updated user info
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        plan: true,
-        tokensRemaining: true,
-        credits: true,
-        resetDate: true
-      }
-    });
+    // Get updated info (organization or user)
+    let plan, tokensRemaining, credits, resetDate;
+    if (req.organization) {
+      const org = await prisma.organization.findUnique({
+        where: { id: req.organization.id },
+        select: {
+          plan: true,
+          tokensRemaining: true,
+          credits: true,
+          resetDate: true
+        }
+      });
+      plan = org.plan;
+      tokensRemaining = org.tokensRemaining;
+      credits = org.credits;
+      resetDate = org.resetDate;
+    } else {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          plan: true,
+          tokensRemaining: true,
+          credits: true,
+          resetDate: true
+        }
+      });
+      plan = user.plan;
+      tokensRemaining = user.tokensRemaining;
+      credits = user.credits;
+      resetDate = user.resetDate;
+    }
 
     const planLimits = { free: 50, pro: 1000, agency: 10000 };
-    const limit = planLimits[user.plan] || 50;
-    const used = limit - user.tokensRemaining;
-    
+    const limit = planLimits[plan] || 50;
+    const used = limit - tokensRemaining;
+
     // Return response with usage data
     res.json({
       success: true,
@@ -222,9 +299,9 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
       usage: {
         used,
         limit,
-        remaining: user.tokensRemaining,
-        plan: user.plan,
-        credits: user.credits,
+        remaining: tokensRemaining,
+        plan: plan,
+        credits: credits,
         resetDate: getNextResetDate()
       },
       tokens: openaiResponse.usage

@@ -558,6 +558,224 @@ The AltText AI Team
 Unsubscribe: https://alttextai.com/unsubscribe
     `.trim();
   }
+
+  /**
+   * Send license key email to agency customer
+   * @param {Object} data - License email data
+   * @param {string} data.email - Customer email
+   * @param {string} data.name - Customer name
+   * @param {string} data.licenseKey - Generated license key
+   * @param {string} data.plan - Plan name (agency)
+   * @param {number} data.maxSites - Maximum number of sites allowed
+   * @param {number} data.monthlyQuota - Monthly generation quota
+   * @returns {Promise<Object>}
+   */
+  async sendLicenseKey(data) {
+    const { email, name, licenseKey, plan = 'agency', maxSites = 10, monthlyQuota = 10000 } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - license email not sent');
+      console.log(`📧 Would have sent license key to ${email}: ${licenseKey}`);
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending license key email to ${email}`);
+
+      const emailHtml = this.getLicenseEmailHtml(data);
+      const emailText = this.getLicenseEmailText(data);
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject: `🎉 Your AltText AI ${plan.charAt(0).toUpperCase() + plan.slice(1)} License Key`,
+        html: emailHtml,
+        text: emailText
+      });
+
+      console.log(`✅ License key email sent to ${email} (email ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'License key email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] License email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send license email'
+      };
+    }
+  }
+
+  getLicenseEmailHtml(data) {
+    const { name, licenseKey, plan = 'agency', maxSites = 10, monthlyQuota = 10000 } = data;
+    const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px 10px 0 0; text-align: center; }
+    .content { background: #ffffff; padding: 30px; border: 1px solid #e1e4e8; border-top: none; border-radius: 0 0 10px 10px; }
+    .license-key { background: #f6f8fa; border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; font-family: 'Courier New', monospace; font-size: 16px; font-weight: bold; color: #667eea; word-break: break-all; }
+    .features { background: #f6f8fa; border-left: 4px solid #667eea; padding: 15px 20px; margin: 20px 0; }
+    .features ul { margin: 10px 0; padding-left: 20px; }
+    .button { display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; margin: 10px 0; font-weight: 600; }
+    .steps { counter-reset: step-counter; }
+    .step { counter-increment: step-counter; margin: 15px 0; padding-left: 40px; position: relative; }
+    .step:before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: bold; }
+    .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e1e4e8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin: 0; font-size: 28px;">🎉 Your AltText AI ${planName} License</h1>
+      <p style="margin: 10px 0 0 0; opacity: 0.9;">Welcome to the team!</p>
+    </div>
+
+    <div class="content">
+      <p>Hi ${name || 'there'},</p>
+
+      <p>Thank you for upgrading to AltText AI ${planName}! Your license is ready to use.</p>
+
+      <h2 style="color: #667eea; margin-top: 30px;">Your License Key</h2>
+      <div class="license-key">${licenseKey}</div>
+      <p style="text-align: center; font-size: 14px; color: #666;">Copy this key - you'll need it to activate your sites</p>
+
+      <div class="features">
+        <h3 style="margin-top: 0; color: #667eea;">Your ${planName} Plan Includes:</h3>
+        <ul>
+          <li><strong>${monthlyQuota.toLocaleString()} AI generations</strong> per month</li>
+          <li><strong>Use on up to ${maxSites} sites</strong></li>
+          <li><strong>Shared quota</strong> across all sites</li>
+          <li><strong>Self-service site management</strong></li>
+          <li><strong>Priority support</strong></li>
+        </ul>
+      </div>
+
+      <h2 style="color: #667eea; margin-top: 30px;">Activation Instructions</h2>
+      <div class="steps">
+        <div class="step">
+          <strong>Log into your WordPress admin panel</strong><br>
+          <span style="color: #666;">Go to any site where you want to use AltText AI</span>
+        </div>
+        <div class="step">
+          <strong>Navigate to AltText AI → License tab</strong><br>
+          <span style="color: #666;">You'll find this in your WordPress dashboard menu</span>
+        </div>
+        <div class="step">
+          <strong>Paste your license key</strong><br>
+          <span style="color: #666;">Copy the key above and paste it in the activation form</span>
+        </div>
+        <div class="step">
+          <strong>Click "Activate License"</strong><br>
+          <span style="color: #666;">Your site will be activated instantly!</span>
+        </div>
+      </div>
+
+      <p style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px;">
+        <strong>💡 Pro Tip:</strong> You can use the same license key on all ${maxSites} of your sites. They'll all share the ${monthlyQuota.toLocaleString()} monthly generation quota.
+      </p>
+
+      <p>Your quota is active now! Start generating professional alt text for all your client sites.</p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="https://docs.alttextai.com/license" class="button">View Full Documentation</a>
+      </div>
+
+      <h3 style="color: #667eea;">Need Help?</h3>
+      <p>We're here to support you:</p>
+      <ul>
+        <li>📖 <a href="https://docs.alttextai.com" style="color: #667eea;">Documentation</a></li>
+        <li>💬 <a href="https://alttextai.com/support" style="color: #667eea;">Contact Support</a></li>
+        <li>📧 Reply to this email with any questions</li>
+      </ul>
+
+      <p style="margin-top: 30px;">Best regards,<br>The AltText AI Team</p>
+    </div>
+
+    <div class="footer">
+      <p>AltText AI - Professional Alt Text for WordPress</p>
+      <p>This email contains your license key. Please save it in a secure location.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+  }
+
+  getLicenseEmailText(data) {
+    const { name, licenseKey, plan = 'agency', maxSites = 10, monthlyQuota = 10000 } = data;
+    const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+
+    return `
+Your AltText AI ${planName} License Key
+
+Hi ${name || 'there'},
+
+Thank you for upgrading to AltText AI ${planName}! Your license is ready to use.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR LICENSE KEY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${licenseKey}
+
+(Copy this key - you'll need it to activate your sites)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Your ${planName} Plan Includes:
+- ${monthlyQuota.toLocaleString()} AI generations per month
+- Use on up to ${maxSites} sites
+- Shared quota across all sites
+- Self-service site management
+- Priority support
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ACTIVATION INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Log into your WordPress admin panel
+   (Go to any site where you want to use AltText AI)
+
+2. Navigate to AltText AI → License tab
+   (You'll find this in your WordPress dashboard menu)
+
+3. Paste your license key
+   (Copy the key above and paste it in the activation form)
+
+4. Click "Activate License"
+   (Your site will be activated instantly!)
+
+💡 Pro Tip: You can use the same license key on all ${maxSites} of your sites. They'll all share the ${monthlyQuota.toLocaleString()} monthly generation quota.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Your quota is active now! Start generating professional alt text for all your client sites.
+
+Need Help?
+- Documentation: https://docs.alttextai.com
+- Support: https://alttextai.com/support
+- Reply to this email with any questions
+
+Best regards,
+The AltText AI Team
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This email contains your license key. Please save it in a secure location.
+    `.trim();
+  }
 }
 
 module.exports = new EmailService();
