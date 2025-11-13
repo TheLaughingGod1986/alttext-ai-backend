@@ -97,14 +97,14 @@ model Site {
 
 model UsageLog {
   id             Int           @id @default(autoincrement())
-  userId         Int
+  userId         Int?
   organizationId Int?
   service        String        @default("alttext-ai") // Service identifier for tracking
   used           Int           @default(1)
   imageId        String?
   endpoint       String?
   createdAt      DateTime      @default(now())
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
