@@ -382,12 +382,15 @@ function buildPrompt(imageData, context, regenerate = false) {
 function buildUserMessage(prompt, imageData, options = {}) {
   const allowImage = !options.forceTextOnly;
   
-  // Use detail: low to keep token usage at 85 tokens per image (instead of 170+ for high detail)
-  const imageUrlConfig = { detail: 'low' };
+  // Use detail: high for better AI analysis and more accurate descriptions
+  // This uses more tokens (~170 vs 85) but provides much better quality
+  const imageUrlConfig = { detail: 'high' };
 
   // Check for base64-encoded image (from frontend for localhost URLs)
-  if (allowImage && imageData?.base64 && imageData?.mime_type) {
-    const dataUrl = `data:${imageData.mime_type};base64,${imageData.base64}`;
+  // Support both 'base64' and 'image_base64' field names for compatibility
+  const base64Data = imageData?.base64 || imageData?.image_base64;
+  if (allowImage && base64Data && imageData?.mime_type) {
+    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
     return {
       role: 'user',
       content: [
