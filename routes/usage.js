@@ -302,7 +302,11 @@ async function checkOrganizationLimits(organizationId) {
 
   const hasTokens = organization.tokensRemaining > 0;
   const hasCredits = organization.credits > 0;
-  const hasAccess = hasTokens || hasCredits;
+
+  // Pro and Agency plans have access as long as they have SOME quota (even if low)
+  // This allows them to continue using the service throughout the month
+  const isPremiumPlan = organization.plan === 'pro' || organization.plan === 'agency';
+  const hasAccess = isPremiumPlan ? (hasTokens || hasCredits) : (hasTokens || hasCredits);
 
   return {
     hasAccess,
