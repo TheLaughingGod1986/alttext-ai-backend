@@ -27,8 +27,8 @@ app.use(cors());
 // Stripe webhook needs raw body - must come before express.json()
 app.use('/billing/webhook', express.raw({ type: 'application/json' }));
 
-// JSON parsing for all other routes
-app.use(express.json());
+// JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
+app.use(express.json({ limit: '2mb' }));
 
 // Rate limiting
 const limiter = rateLimit({
