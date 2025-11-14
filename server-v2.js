@@ -102,9 +102,6 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       });
     }
     
-    // Check user limits
-    const limits = await checkUserLimits(userId);
-    
     if (!limits.hasAccess) {
       const planLimit = limits.plan === 'pro'
         ? 1000
