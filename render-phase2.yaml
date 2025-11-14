@@ -27,8 +27,13 @@ services:
         value: 7d
 
       # OpenAI API
+      # Note: Backend prefers ALTTEXT_OPENAI_API_KEY but falls back to OPENAI_API_KEY
+      - key: ALTTEXT_OPENAI_API_KEY
+        sync: false
+        # Primary key for alttext-ai service
       - key: OPENAI_API_KEY
         sync: false
+        # Fallback key (for backward compatibility)
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: OPENAI_REVIEW_API_KEY

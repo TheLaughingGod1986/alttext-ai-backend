@@ -69,9 +69,10 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     const userId = req.user?.id || null;
 
     // Select API key based on service
+    // Support both ALTTEXT_OPENAI_API_KEY and OPENAI_API_KEY for backward compatibility
     const apiKey = service === 'seo-ai-meta'
-      ? process.env.SEO_META_OPENAI_API_KEY
-      : process.env.ALTTEXT_OPENAI_API_KEY;
+      ? (process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
+      : (process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
 
     // Log for debugging
     console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
@@ -85,8 +86,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         message: `Missing OpenAI API key for service: ${service}`
       });
     }
-<<<<<<< HEAD
-
+    
     // Check limits - use organization limits if available, otherwise user limits
     let limits;
     if (req.organization) {
@@ -294,7 +294,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     const planLimits = { free: 50, pro: 1000, agency: 10000 };
     const limit = planLimits[plan] || 50;
     const used = limit - tokensRemaining;
-
+    
     // Return response with usage data
     res.json({
       success: true,
@@ -313,6 +313,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
   } catch (error) {
     console.error('Generate error:', error);
     
+    // Handle rate limiting
     if (error.response?.status === 429) {
       return res.status(429).json({
         error: 'OpenAI rate limit reached. Please try again later.',
@@ -320,15 +321,45 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       });
     }
 
-    const openaiMessage = error.response?.data?.error?.message;
-    const fallbackMessage = error.response?.data?.error || error.message || 'Failed to generate alt text';
-    const errorMessage = typeof openaiMessage === 'string' && openaiMessage.trim() !== ''
-      ? openaiMessage
-      : fallbackMessage;
+    // Extract error message from OpenAI response
+    const openaiError = error.response?.data?.error;
+    const openaiMessage = openaiError?.message || '';
+    const openaiType = openaiError?.type || '';
+    const openaiCode = openaiError?.code || '';
+    
+    // Check for API key errors specifically
+    const isApiKeyError = openaiMessage?.toLowerCase().includes('incorrect api key') ||
+                         openaiMessage?.toLowerCase().includes('invalid api key') ||
+                         openaiMessage?.toLowerCase().includes('api key provided') ||
+                         openaiType === 'invalid_request_error' && openaiCode === 'invalid_api_key';
+    
+    // Determine error message
+    let errorMessage;
+    let errorCode = 'GENERATION_ERROR';
+    
+    if (isApiKeyError) {
+      // API key is invalid - this is a backend configuration issue
+      errorMessage = 'The backend service has an invalid or expired OpenAI API key configured. Please contact support to update the API key.';
+      errorCode = 'INVALID_API_KEY';
+      console.error('OpenAI API key error - backend configuration issue:', {
+        hasKey: !!apiKey,
+        keyPrefix: apiKey ? apiKey.substring(0, 7) + '...' : 'missing',
+        envVars: {
+          ALTTEXT_OPENAI_API_KEY: !!process.env.ALTTEXT_OPENAI_API_KEY,
+          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY
+        }
+      });
+    } else if (openaiMessage) {
+      // Use OpenAI's error message
+      errorMessage = openaiMessage;
+    } else {
+      // Fallback to generic message
+      errorMessage = error.response?.data?.error || error.message || 'Failed to generate alt text';
+    }
 
     res.status(500).json({
       error: 'Failed to generate alt text',
-      code: 'GENERATION_ERROR',
+      code: errorCode,
       message: errorMessage
     });
   }
