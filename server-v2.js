@@ -62,8 +62,12 @@ app.get('/health', (req, res) => {
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, async (req, res) => {
+  const requestStartTime = Date.now();
+  console.log(`[Generate] Request received at ${new Date().toISOString()}`);
+  
   try {
     const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
+    console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
 
     // Determine userId based on auth method
     const userId = req.user?.id || null;
@@ -342,13 +346,28 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Generate error:', error);
+    const requestDuration = Date.now() - requestStartTime;
+    console.error(`[Generate] Request failed after ${requestDuration}ms:`, {
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+    });
     
     // Handle rate limiting
     if (error.response?.status === 429) {
       return res.status(429).json({
         error: 'OpenAI rate limit reached. Please try again later.',
         code: 'OPENAI_RATE_LIMIT'
+      });
+    }
+    
+    // Handle timeout errors
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      console.error('[Generate] Request timed out - OpenAI API took too long to respond');
+      return res.status(504).json({
+        error: 'Request timeout',
+        code: 'TIMEOUT',
+        message: 'The image generation is taking longer than expected. Please try again.'
       });
     }
 
