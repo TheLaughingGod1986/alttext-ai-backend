@@ -347,9 +347,13 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     
   } catch (error) {
     const requestDuration = Date.now() - requestStartTime;
+    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body || {};
+    
     console.error(`[Generate] Request failed after ${requestDuration}ms:`, {
       message: error.message,
       code: error.code,
+      status: error.response?.status,
+      service: service,
       stack: error.stack?.split('\n').slice(0, 5).join('\n')
     });
     
@@ -391,13 +395,28 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       // API key is invalid - this is a backend configuration issue
       errorMessage = 'The backend service has an invalid or expired OpenAI API key configured. Please contact support to update the API key.';
       errorCode = 'INVALID_API_KEY';
+      // Get API key from closure or environment for logging
+      const currentApiKey = (() => {
+        try {
+          // Try to get from the service-specific logic
+          if (service === 'seo-ai-meta') {
+            return process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+          }
+          return process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+        } catch {
+          return null;
+        }
+      })();
+      
       console.error('OpenAI API key error - backend configuration issue:', {
-        hasKey: !!apiKey,
-        keyPrefix: apiKey ? apiKey.substring(0, 7) + '...' : 'missing',
+        hasKey: !!currentApiKey,
+        keyPrefix: currentApiKey ? currentApiKey.substring(0, 7) + '...' : 'missing',
         envVars: {
           ALTTEXT_OPENAI_API_KEY: !!process.env.ALTTEXT_OPENAI_API_KEY,
-          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY
-        }
+          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+          SEO_META_OPENAI_API_KEY: !!process.env.SEO_META_OPENAI_API_KEY
+        },
+        service: service || 'unknown'
       });
     } else if (openaiMessage) {
       // Use OpenAI's error message
