@@ -70,12 +70,22 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
     // Select API key based on service
     // Support both ALTTEXT_OPENAI_API_KEY and OPENAI_API_KEY for backward compatibility
+    // Check if keys exist AND are not empty strings
+    const getApiKey = (primaryKey, fallbackKey) => {
+      const primary = process.env[primaryKey];
+      const fallback = process.env[fallbackKey];
+      // Use primary if it exists and is not empty, otherwise use fallback
+      return (primary && primary.trim() !== '') ? primary : (fallback && fallback.trim() !== '' ? fallback : null);
+    };
+    
     const apiKey = service === 'seo-ai-meta'
-      ? (process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY)
-      : (process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+      ? getApiKey('SEO_META_OPENAI_API_KEY', 'OPENAI_API_KEY')
+      : getApiKey('ALTTEXT_OPENAI_API_KEY', 'OPENAI_API_KEY'); // Primary: ALTTEXT_OPENAI_API_KEY, Fallback: OPENAI_API_KEY
 
     // Log for debugging
     console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
+    console.log(`[Generate] API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}, OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+    console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
 
     // Validate API key is configured
     if (!apiKey) {
@@ -378,9 +388,16 @@ app.post('/api/review', authenticateToken, async (req, res) => {
     }
 
     // Select API key based on service
+    // Use same helper function to ensure proper fallback
+    const getApiKey = (primaryKey, fallbackKey) => {
+      const primary = process.env[primaryKey];
+      const fallback = process.env[fallbackKey];
+      return (primary && primary.trim() !== '') ? primary : (fallback && fallback.trim() !== '' ? fallback : null);
+    };
+    
     const apiKey = service === 'seo-ai-meta'
-      ? (process.env.OPENAI_REVIEW_API_KEY || process.env.SEO_META_OPENAI_API_KEY)
-      : (process.env.OPENAI_REVIEW_API_KEY || process.env.ALTTEXT_OPENAI_API_KEY);
+      ? (getApiKey('OPENAI_REVIEW_API_KEY', 'SEO_META_OPENAI_API_KEY') || getApiKey('SEO_META_OPENAI_API_KEY', 'OPENAI_API_KEY'))
+      : (getApiKey('OPENAI_REVIEW_API_KEY', 'ALTTEXT_OPENAI_API_KEY') || getApiKey('ALTTEXT_OPENAI_API_KEY', 'OPENAI_API_KEY'));
 
     const review = await reviewAltText(alt_text, image_data, context, apiKey);
 
@@ -585,7 +602,7 @@ async function requestChatCompletion(messages, overrides = {}) {
     model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
     max_tokens = 100,
     temperature = 0.2,
-    apiKey = process.env.OPENAI_API_KEY
+    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
   } = overrides;
 
   if (!apiKey) {
@@ -653,7 +670,8 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
   }
 
   // Use provided API key or fallback to environment variables
-  const effectiveApiKey = apiKey || process.env.OPENAI_REVIEW_API_KEY || process.env.ALTTEXT_OPENAI_API_KEY;
+  // Primary: ALTTEXT_OPENAI_API_KEY (project standard), Fallback: OPENAI_REVIEW_API_KEY (for backward compatibility)
+  const effectiveApiKey = apiKey || process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_REVIEW_API_KEY;
 
   const systemMessage = {
     role: 'system',
