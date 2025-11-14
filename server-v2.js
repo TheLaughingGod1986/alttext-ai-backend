@@ -856,11 +856,27 @@ function gradeFromStatus(status) {
   }
 }
 
+// Error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit - let the server continue running
+  // Render will restart if needed
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  // Don't exit - let the server continue running
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
   console.log(`📅 Version: 2.0.0 (Monetization)`);
   console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+  console.log(`🔑 API Key check - OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
 });
 
 // Graceful shutdown
