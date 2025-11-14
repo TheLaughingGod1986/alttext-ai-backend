@@ -170,11 +170,11 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
           await useOrganizationCredit(req.organization.id, userId);
         }
       } else {
-        if (limits.hasTokens) {
-          await recordUsage(userId, null, 'generate', 'seo-ai-meta');
-        } else if (limits.hasCredits) {
-          await useCredit(userId);
-        }
+      if (limits.hasTokens) {
+        await recordUsage(userId, null, 'generate', 'seo-ai-meta');
+      } else if (limits.hasCredits) {
+        await useCredit(userId);
+      }
       }
 
       // Get updated info (organization or user)
@@ -194,15 +194,15 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         credits = org.credits;
         resetDate = org.resetDate;
       } else {
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-          select: {
-            plan: true,
-            tokensRemaining: true,
-            credits: true,
-            resetDate: true
-          }
-        });
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          plan: true,
+          tokensRemaining: true,
+          credits: true,
+          resetDate: true
+        }
+      });
         plan = user.plan;
         tokensRemaining = user.tokensRemaining;
         credits = user.credits;
@@ -243,16 +243,31 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
     let openaiResponse;
     try {
+      console.log(`[Generate] Calling OpenAI API for image_id: ${image_data?.image_id || 'unknown'}`);
+      const startTime = Date.now();
       openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
         apiKey
       });
+      const duration = Date.now() - startTime;
+      console.log(`[Generate] OpenAI API call completed in ${duration}ms`);
     } catch (error) {
+      console.error(`[Generate] OpenAI API call failed:`, {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status
+      });
+      
       if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
         console.warn('Image fetch failed, retrying without image input...');
         const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-        openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
-          apiKey
-        });
+        try {
+          openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
+            apiKey
+          });
+        } catch (fallbackError) {
+          console.error('[Generate] Fallback request also failed:', fallbackError.message);
+          throw fallbackError;
+        }
       } else {
         throw error;
       }
@@ -268,11 +283,11 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         await useOrganizationCredit(req.organization.id, userId);
       }
     } else {
-      if (limits.hasTokens) {
-        await recordUsage(userId, image_data?.image_id, 'generate', service);
-      } else if (limits.hasCredits) {
-        await useCredit(userId);
-      }
+    if (limits.hasTokens) {
+      await recordUsage(userId, image_data?.image_id, 'generate', service);
+    } else if (limits.hasCredits) {
+      await useCredit(userId);
+    }
     }
 
     // Get updated info (organization or user)
@@ -292,15 +307,15 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       credits = org.credits;
       resetDate = org.resetDate;
     } else {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          plan: true,
-          tokensRemaining: true,
-          credits: true,
-          resetDate: true
-        }
-      });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        plan: true,
+        tokensRemaining: true,
+        credits: true,
+        resetDate: true
+      }
+    });
       plan = user.plan;
       tokensRemaining = user.tokensRemaining;
       credits = user.credits;
@@ -622,26 +637,43 @@ async function requestChatCompletion(messages, overrides = {}) {
     throw new Error('Missing OpenAI API key');
   }
 
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model,
-      messages,
-      max_tokens,
-      temperature
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
+  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
+  console.log(`[OpenAI] Messages count: ${messages.length}`);
+  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
 
-  return {
-    choices: response.data.choices,
-    usage: response.data.usage
-  };
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model,
+        messages,
+        max_tokens,
+        temperature
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 75000 // 75 second timeout for OpenAI API calls (frontend waits 90s)
+      }
+    );
+    
+    console.log(`[OpenAI] Request successful, received response`);
+    return {
+      choices: response.data.choices,
+      usage: response.data.usage
+    };
+  } catch (error) {
+    console.error('[OpenAI] Request failed:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
+    throw error;
+  }
 }
 
 function shouldDisableImageInput(error) {
