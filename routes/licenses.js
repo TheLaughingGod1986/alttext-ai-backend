@@ -4,57 +4,137 @@
 
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
-const { authenticateToken } = require('../auth/jwt');
+const { dualAuthenticate } = require('../auth/dual-auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
 /**
- * Get all sites using the authenticated user's license
+ * Get all sites using the authenticated user's license or organization
  * Returns sites (installations) with their generation counts
  * 
- * Authentication: Requires JWT token (Bearer token in Authorization header)
- * For now, license key authentication (X-License-Key header) is not yet implemented
+ * Authentication: 
+ * - JWT token (Bearer token in Authorization header) - for user accounts
+ * - License key (X-License-Key header) - for organization-based licenses
  */
-router.get('/sites', authenticateToken, async (req, res) => {
+router.get('/sites', dualAuthenticate, async (req, res) => {
   try {
-    const userId = req.user.id;
+    let userId = null;
+    let organizationId = null;
+    let plan = 'free';
     
-    // Get user to check plan
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        plan: true,
-        service: true
+    // Determine authentication method
+    if (req.user && req.user.id) {
+      // JWT authentication - get user's organization
+      userId = req.user.id;
+      
+      // Get user to check plan
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          plan: true,
+          service: true
+        }
+      });
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
       }
-    });
-    
-    if (!user) {
-      return res.status(404).json({
+      
+      plan = user.plan;
+      
+      // Get user's organization if available
+      const membership = await prisma.organizationMember.findFirst({
+        where: { userId: userId },
+        include: {
+          organization: true
+        },
+        orderBy: { role: 'asc' } // Owner first
+      });
+      
+      if (membership && membership.organization) {
+        organizationId = membership.organization.id;
+        // Use organization plan if it's higher than user plan
+        if (membership.organization.plan === 'agency' || membership.organization.plan === 'pro') {
+          plan = membership.organization.plan;
+        }
+      }
+      
+    } else if (req.organization && req.organization.id) {
+      // License key authentication
+      organizationId = req.organization.id;
+      plan = req.organization.plan || 'agency';
+      
+      // Get organization owner for userId lookup
+      const ownerMembership = await prisma.organizationMember.findFirst({
+        where: { 
+          organizationId: organizationId,
+          role: 'owner'
+        }
+      });
+      
+      if (ownerMembership) {
+        userId = ownerMembership.userId;
+      }
+    } else {
+      return res.status(401).json({
         success: false,
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED'
       });
     }
     
     // Only agency and pro plans have multiple sites
     const allowedPlans = ['agency', 'pro'];
-    if (!allowedPlans.includes(user.plan)) {
+    if (!allowedPlans.includes(plan)) {
       return res.status(403).json({
         success: false,
         error: 'This endpoint is only available for Agency and Pro plans',
         code: 'PLAN_NOT_ALLOWED',
-        plan: user.plan
+        plan: plan
       });
     }
     
-    // Get all installations (sites) for this user
+    // Build where clause - prioritize organization if available
+    const whereClause = {};
+    if (organizationId) {
+      // Get all installations for this organization
+      // Installations are linked to users, and users are members of organizations
+      const orgUserIds = await prisma.organizationMember.findMany({
+        where: { organizationId: organizationId },
+        select: { userId: true }
+      }).then(members => members.map(m => m.userId));
+      
+      if (orgUserIds.length > 0) {
+        whereClause.userId = { in: orgUserIds };
+      } else if (userId) {
+        // Fallback to userId if no org members found
+        whereClause.userId = userId;
+      } else {
+        // No users found for this organization
+        return res.json({
+          success: true,
+          data: []
+        });
+      }
+    } else if (userId) {
+      whereClause.userId = userId;
+    } else {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    // Get all installations (sites) for this user/organization
     const installations = await prisma.installation.findMany({
-      where: { 
-        userId: userId 
-      },
+      where: whereClause,
       select: {
         id: true,
         installId: true,
@@ -168,46 +248,105 @@ router.get('/sites', authenticateToken, async (req, res) => {
  * Disconnect a site from the authenticated user's license
  * This removes the installation, effectively disconnecting the site
  */
-router.delete('/sites/:siteId', authenticateToken, async (req, res) => {
+router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
   try {
-    const userId = req.user.id;
     const { siteId } = req.params;
     
-    // Get user to check plan
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        plan: true,
-        service: true
-      }
-    });
+    let userId = null;
+    let organizationId = null;
+    let plan = 'free';
+    let allowedUserIds = [];
     
-    if (!user) {
-      return res.status(404).json({
+    // Determine authentication method
+    if (req.user && req.user.id) {
+      userId = req.user.id;
+      
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          plan: true,
+          service: true
+        }
+      });
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+      
+      plan = user.plan;
+      
+      // Get user's organization if available
+      const membership = await prisma.organizationMember.findFirst({
+        where: { userId: userId },
+        include: {
+          organization: true
+        }
+      });
+      
+      if (membership && membership.organization) {
+        organizationId = membership.organization.id;
+        if (membership.organization.plan === 'agency' || membership.organization.plan === 'pro') {
+          plan = membership.organization.plan;
+        }
+        
+        // Get all user IDs in this organization
+        const orgMembers = await prisma.organizationMember.findMany({
+          where: { organizationId: organizationId },
+          select: { userId: true }
+        });
+        allowedUserIds = orgMembers.map(m => m.userId);
+      } else {
+        allowedUserIds = [userId];
+      }
+      
+    } else if (req.organization && req.organization.id) {
+      organizationId = req.organization.id;
+      plan = req.organization.plan || 'agency';
+      
+      // Get all user IDs in this organization
+      const orgMembers = await prisma.organizationMember.findMany({
+        where: { organizationId: organizationId },
+        select: { userId: true }
+      });
+      allowedUserIds = orgMembers.map(m => m.userId);
+      
+      if (allowedUserIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'No users found for this organization',
+          code: 'NO_USERS_FOUND'
+        });
+      }
+    } else {
+      return res.status(401).json({
         success: false,
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED'
       });
     }
     
     // Only agency and pro plans can disconnect sites
     const allowedPlans = ['agency', 'pro'];
-    if (!allowedPlans.includes(user.plan)) {
+    if (!allowedPlans.includes(plan)) {
       return res.status(403).json({
         success: false,
         error: 'This endpoint is only available for Agency and Pro plans',
         code: 'PLAN_NOT_ALLOWED',
-        plan: user.plan
+        plan: plan
       });
     }
     
-    // Find the installation to ensure it belongs to this user
+    // Find the installation to ensure it belongs to this user/organization
     const installation = await prisma.installation.findFirst({
       where: {
         installId: siteId,
-        userId: userId
+        userId: { in: allowedUserIds }
       },
       select: {
         id: true,
