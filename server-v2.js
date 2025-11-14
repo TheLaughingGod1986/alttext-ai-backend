@@ -75,7 +75,13 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       const primary = process.env[primaryKey];
       const fallback = process.env[fallbackKey];
       // Use primary if it exists and is not empty, otherwise use fallback
-      return (primary && primary.trim() !== '') ? primary : (fallback && fallback.trim() !== '' ? fallback : null);
+      if (primary && typeof primary === 'string' && primary.trim() !== '') {
+        return primary;
+      }
+      if (fallback && typeof fallback === 'string' && fallback.trim() !== '') {
+        return fallback;
+      }
+      return null;
     };
     
     const apiKey = service === 'seo-ai-meta'
@@ -392,7 +398,14 @@ app.post('/api/review', authenticateToken, async (req, res) => {
     const getApiKey = (primaryKey, fallbackKey) => {
       const primary = process.env[primaryKey];
       const fallback = process.env[fallbackKey];
-      return (primary && primary.trim() !== '') ? primary : (fallback && fallback.trim() !== '' ? fallback : null);
+      // Use primary if it exists and is not empty, otherwise use fallback
+      if (primary && typeof primary === 'string' && primary.trim() !== '') {
+        return primary;
+      }
+      if (fallback && typeof fallback === 'string' && fallback.trim() !== '') {
+        return fallback;
+      }
+      return null;
     };
     
     const apiKey = service === 'seo-ai-meta'
