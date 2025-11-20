@@ -3,31 +3,23 @@
  */
 
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { supabase, handleSupabaseResponse } = require('../supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * Get user's current usage and plan info
  */
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        plan: true,
-        tokensRemaining: true,
-        credits: true,
-        resetDate: true,
-        createdAt: true,
-        service: true
-      }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, plan, tokensRemaining, credits, resetDate, createdAt, service')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'
@@ -35,12 +27,15 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 
     // Get usage count
-    const usageCount = await prisma.usageLog.count({
-      where: { 
-        userId: req.user.id,
-        service: user.service || 'alttext-ai'
-      }
-    });
+    const { count: usageCount, error: countError } = await supabase
+      .from('usage_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('userId', req.user.id)
+      .eq('service', user.service || 'alttext-ai');
+
+    if (countError) {
+      throw countError;
+    }
 
     // Service-specific plan limits
     const planLimits = {
@@ -90,24 +85,24 @@ router.get('/history', authenticateToken, async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
 
-    const [usageLogs, totalCount] = await Promise.all([
-      prisma.usageLog.findMany({
-        where: { userId: req.user.id },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          used: true,
-          imageId: true,
-          endpoint: true,
-          createdAt: true
-        }
-      }),
-      prisma.usageLog.count({
-        where: { userId: req.user.id }
-      })
+    const [usageLogsResult, totalCountResult] = await Promise.all([
+      supabase
+        .from('usage_logs')
+        .select('id, used, imageId, endpoint, createdAt')
+        .eq('userId', req.user.id)
+        .order('createdAt', { ascending: false })
+        .range(skip, skip + limit - 1),
+      supabase
+        .from('usage_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('userId', req.user.id)
     ]);
+
+    if (usageLogsResult.error) throw usageLogsResult.error;
+    if (totalCountResult.error) throw totalCountResult.error;
+
+    const usageLogs = usageLogsResult.data || [];
+    const totalCount = totalCountResult.count || 0;
 
     res.json({
       success: true,
@@ -134,25 +129,35 @@ router.get('/history', authenticateToken, async (req, res) => {
  */
 async function recordUsage(userId, imageId = null, endpoint = null, service = 'alttext-ai') {
   try {
-    await prisma.usageLog.create({
-      data: {
+    // Create usage log
+    const { error: logError } = await supabase
+      .from('usage_logs')
+      .insert({
         userId,
         service,
         used: 1,
         imageId,
         endpoint
-      }
-    });
+      });
+
+    if (logError) throw logError;
+
+    // Get current tokensRemaining
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('tokensRemaining')
+      .eq('id', userId)
+      .single();
+
+    if (userError) throw userError;
 
     // Decrement user's remaining tokens
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        tokensRemaining: {
-          decrement: 1
-        }
-      }
-    });
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ tokensRemaining: (user.tokensRemaining || 0) - 1 })
+      .eq('id', userId);
+
+    if (updateError) throw updateError;
 
   } catch (error) {
     console.error('Error recording usage:', error);
@@ -164,22 +169,19 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
  * Check if user has remaining tokens/credits
  */
 async function checkUserLimits(userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      plan: true,
-      tokensRemaining: true,
-      credits: true
-    }
-  });
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('plan, tokensRemaining, credits')
+    .eq('id', userId)
+    .single();
 
-  if (!user) {
+  if (error || !user) {
     throw new Error('User not found');
   }
 
   // Check if user has tokens or credits remaining
-  const hasTokens = user.tokensRemaining > 0;
-  const hasCredits = user.credits > 0;
+  const hasTokens = (user.tokensRemaining || 0) > 0;
+  const hasCredits = (user.credits || 0) > 0;
   const hasAccess = hasTokens || hasCredits;
 
   return {
@@ -187,8 +189,8 @@ async function checkUserLimits(userId) {
     hasTokens,
     hasCredits,
     plan: user.plan,
-    tokensRemaining: user.tokensRemaining,
-    credits: user.credits
+    tokensRemaining: user.tokensRemaining || 0,
+    credits: user.credits || 0
   };
 }
 
@@ -197,26 +199,35 @@ async function checkUserLimits(userId) {
  */
 async function useCredit(userId) {
   try {
-    await prisma.user.update({
-      where: { 
-        id: userId,
-        credits: { gt: 0 } // Only if user has credits
-      },
-      data: {
-        credits: {
-          decrement: 1
-        }
-      }
-    });
+    // Get current credits
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('credits')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user || (user.credits || 0) <= 0) {
+      return false; // No credits available
+    }
+
+    // Decrement credits
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ credits: (user.credits || 0) - 1 })
+      .eq('id', userId);
+
+    if (updateError) throw updateError;
 
     // Record usage
-    await prisma.usageLog.create({
-      data: {
+    const { error: logError } = await supabase
+      .from('usage_logs')
+      .insert({
         userId,
         used: 1,
         endpoint: 'generate-credit'
-      }
-    });
+      });
+
+    if (logError) throw logError;
 
     return true;
   } catch (error) {
@@ -244,25 +255,27 @@ async function resetMonthlyTokens() {
     };
 
     // Reset all users' monthly tokens
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        plan: true,
-        service: true
-      }
-    });
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, plan, service');
+
+    if (usersError) throw usersError;
 
     for (const user of users) {
       const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
       const limit = serviceLimits[user.plan] || serviceLimits.free;
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
           tokensRemaining: limit,
-          resetDate: new Date()
-        }
-      });
+          resetDate: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error(`Error resetting tokens for user ${user.id}:`, updateError);
+      }
     }
 
     console.log(`Reset monthly tokens for ${users.length} users`);
@@ -286,22 +299,18 @@ function getNextResetDate() {
  * Check organization limits (for multi-user license sharing)
  */
 async function checkOrganizationLimits(organizationId) {
-  const organization = await prisma.organization.findUnique({
-    where: { id: organizationId },
-    select: {
-      plan: true,
-      tokensRemaining: true,
-      credits: true,
-      service: true
-    }
-  });
+  const { data: organization, error } = await supabase
+    .from('organizations')
+    .select('plan, tokensRemaining, credits, service')
+    .eq('id', organizationId)
+    .single();
 
-  if (!organization) {
+  if (error || !organization) {
     throw new Error('Organization not found');
   }
 
-  const hasTokens = organization.tokensRemaining > 0;
-  const hasCredits = organization.credits > 0;
+  const hasTokens = (organization.tokensRemaining || 0) > 0;
+  const hasCredits = (organization.credits || 0) > 0;
 
   // Pro and Agency plans have access as long as they have SOME quota (even if low)
   // This allows them to continue using the service throughout the month
@@ -313,8 +322,8 @@ async function checkOrganizationLimits(organizationId) {
     hasTokens,
     hasCredits,
     plan: organization.plan,
-    tokensRemaining: organization.tokensRemaining,
-    credits: organization.credits
+    tokensRemaining: organization.tokensRemaining || 0,
+    credits: organization.credits || 0
   };
 }
 
@@ -324,26 +333,35 @@ async function checkOrganizationLimits(organizationId) {
 async function recordOrganizationUsage(organizationId, userId, imageId = null, endpoint = null, service = 'alttext-ai') {
   try {
     // Create usage log
-    await prisma.usageLog.create({
-      data: {
+    const { error: logError } = await supabase
+      .from('usage_logs')
+      .insert({
         userId,
         organizationId,
         service,
         used: 1,
         imageId,
         endpoint
-      }
-    });
+      });
+
+    if (logError) throw logError;
+
+    // Get current tokensRemaining
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .select('tokensRemaining')
+      .eq('id', organizationId)
+      .single();
+
+    if (orgError) throw orgError;
 
     // Decrement organization's remaining tokens
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        tokensRemaining: {
-          decrement: 1
-        }
-      }
-    });
+    const { error: updateError } = await supabase
+      .from('organizations')
+      .update({ tokensRemaining: (org.tokensRemaining || 0) - 1 })
+      .eq('id', organizationId);
+
+    if (updateError) throw updateError;
 
   } catch (error) {
     console.error('Error recording organization usage:', error);
@@ -356,27 +374,36 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
  */
 async function useOrganizationCredit(organizationId, userId) {
   try {
-    await prisma.organization.update({
-      where: {
-        id: organizationId,
-        credits: { gt: 0 }
-      },
-      data: {
-        credits: {
-          decrement: 1
-        }
-      }
-    });
+    // Get current credits
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .select('credits')
+      .eq('id', organizationId)
+      .single();
+
+    if (orgError || !org || (org.credits || 0) <= 0) {
+      return false; // No credits available
+    }
+
+    // Decrement credits
+    const { error: updateError } = await supabase
+      .from('organizations')
+      .update({ credits: (org.credits || 0) - 1 })
+      .eq('id', organizationId);
+
+    if (updateError) throw updateError;
 
     // Record usage
-    await prisma.usageLog.create({
-      data: {
+    const { error: logError } = await supabase
+      .from('usage_logs')
+      .insert({
         userId,
         organizationId,
         used: 1,
         endpoint: 'generate-credit'
-      }
-    });
+      });
+
+    if (logError) throw logError;
 
     return true;
   } catch (error) {
@@ -402,25 +429,27 @@ async function resetOrganizationTokens() {
       }
     };
 
-    const organizations = await prisma.organization.findMany({
-      select: {
-        id: true,
-        plan: true,
-        service: true
-      }
-    });
+    const { data: organizations, error: orgsError } = await supabase
+      .from('organizations')
+      .select('id, plan, service');
+
+    if (orgsError) throw orgsError;
 
     for (const org of organizations) {
       const serviceLimits = planLimits[org.service] || planLimits['alttext-ai'];
       const limit = serviceLimits[org.plan] || serviceLimits.free;
 
-      await prisma.organization.update({
-        where: { id: org.id },
-        data: {
+      const { error: updateError } = await supabase
+        .from('organizations')
+        .update({
           tokensRemaining: limit,
-          resetDate: new Date()
-        }
-      });
+          resetDate: new Date().toISOString()
+        })
+        .eq('id', org.id);
+
+      if (updateError) {
+        console.error(`Error resetting tokens for organization ${org.id}:`, updateError);
+      }
     }
 
     console.log(`Reset monthly tokens for ${organizations.length} organizations`);

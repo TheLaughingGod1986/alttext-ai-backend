@@ -3,11 +3,10 @@
  */
 
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { dualAuthenticate } = require('../auth/dual-auth');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * Get all sites using the authenticated user's license or organization
@@ -29,17 +28,13 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
       userId = req.user.id;
       
       // Get user to check plan
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          plan: true,
-          service: true
-        }
-      });
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, email, plan, service')
+        .eq('id', userId)
+        .single();
       
-      if (!user) {
+      if (userError || !user) {
         return res.status(404).json({
           success: false,
           error: 'User not found',
@@ -50,19 +45,27 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
       plan = user.plan;
       
       // Get user's organization if available
-      const membership = await prisma.organizationMember.findFirst({
-        where: { userId: userId },
-        include: {
-          organization: true
-        },
-        orderBy: { role: 'asc' } // Owner first
-      });
-      
-      if (membership && membership.organization) {
-        organizationId = membership.organization.id;
-        // Use organization plan if it's higher than user plan
-        if (membership.organization.plan === 'agency' || membership.organization.plan === 'pro') {
-          plan = membership.organization.plan;
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organizationId, role')
+        .eq('userId', userId)
+        .order('role', { ascending: true }) // Owner first
+        .limit(1);
+
+      if (!membershipError && memberships && memberships.length > 0) {
+        const membership = memberships[0];
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', membership.organizationId)
+          .single();
+
+        if (!orgError && organization) {
+          organizationId = organization.id;
+          // Use organization plan if it's higher than user plan
+          if (organization.plan === 'agency' || organization.plan === 'pro') {
+            plan = organization.plan;
+          }
         }
       }
       
@@ -72,14 +75,15 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
       plan = req.organization.plan || 'agency';
       
       // Get organization owner for userId lookup
-      const ownerMembership = await prisma.organizationMember.findFirst({
-        where: { 
-          organizationId: organizationId,
-          role: 'owner'
-        }
-      });
+      const { data: ownerMembership, error: ownerError } = await supabase
+        .from('organization_members')
+        .select('userId')
+        .eq('organizationId', organizationId)
+        .eq('role', 'owner')
+        .limit(1)
+        .single();
       
-      if (ownerMembership) {
+      if (!ownerError && ownerMembership) {
         userId = ownerMembership.userId;
       }
     } else {
@@ -102,20 +106,20 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
     }
     
     // Build where clause - prioritize organization if available
-    const whereClause = {};
+    let allowedUserIds = [];
     if (organizationId) {
       // Get all installations for this organization
       // Installations are linked to users, and users are members of organizations
-      const orgUserIds = await prisma.organizationMember.findMany({
-        where: { organizationId: organizationId },
-        select: { userId: true }
-      }).then(members => members.map(m => m.userId));
+      const { data: orgMembers, error: orgMembersError } = await supabase
+        .from('organization_members')
+        .select('userId')
+        .eq('organizationId', organizationId);
       
-      if (orgUserIds.length > 0) {
-        whereClause.userId = { in: orgUserIds };
+      if (!orgMembersError && orgMembers && orgMembers.length > 0) {
+        allowedUserIds = orgMembers.map(m => m.userId);
       } else if (userId) {
         // Fallback to userId if no org members found
-        whereClause.userId = userId;
+        allowedUserIds = [userId];
       } else {
         // No users found for this organization
         return res.json({
@@ -124,7 +128,7 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
         });
       }
     } else if (userId) {
-      whereClause.userId = userId;
+      allowedUserIds = [userId];
     } else {
       return res.json({
         success: true,
@@ -133,59 +137,47 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
     }
     
     // Get all installations (sites) for this user/organization
-    const installations = await prisma.installation.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        installId: true,
-        siteHash: true,
-        plan: true,
-        firstSeen: true,
-        lastSeen: true,
-        pluginVersion: true,
-        wordpressVersion: true,
-        metadata: true
-      },
-      orderBy: {
-        lastSeen: 'desc'
-      }
-    });
+    const { data: installations, error: installationsError } = await supabase
+      .from('installations')
+      .select('id, installId, siteHash, plan, firstSeen, lastSeen, pluginVersion, wordpressVersion, metadata')
+      .in('userId', allowedUserIds)
+      .order('lastSeen', { ascending: false });
+
+    if (installationsError) throw installationsError;
     
     // Get generation counts for each installation
     // Use UsageMonthlySummary for current month, or UsageEvent count as fallback
     const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
     
     const sitesWithUsage = await Promise.all(
-      installations.map(async (installation) => {
+      (installations || []).map(async (installation) => {
         // Get current month's summary if available
-        const monthlySummary = await prisma.usageMonthlySummary.findFirst({
-          where: {
-            installationId: installation.id,
-            month: currentMonth
-          },
-          select: {
-            totalRequests: true,
-            totalTokens: true
-          }
-        });
+        const { data: monthlySummary, error: summaryError } = await supabase
+          .from('usage_monthly_summary')
+          .select('totalRequests, totalTokens')
+          .eq('installationId', installation.id)
+          .eq('month', currentMonth)
+          .limit(1)
+          .single();
         
         // If no monthly summary, count events for current month
         let generationCount = 0;
-        if (monthlySummary) {
+        if (!summaryError && monthlySummary) {
           generationCount = monthlySummary.totalRequests || 0;
         } else {
           const startOfMonth = new Date();
           startOfMonth.setDate(1);
           startOfMonth.setHours(0, 0, 0, 0);
           
-          generationCount = await prisma.usageEvent.count({
-            where: {
-              installationId: installation.id,
-              createdAt: {
-                gte: startOfMonth
-              }
-            }
-          });
+          const { count, error: countError } = await supabase
+            .from('usage_events')
+            .select('*', { count: 'exact', head: true })
+            .eq('installationId', installation.id)
+            .gte('createdAt', startOfMonth.toISOString());
+
+          if (!countError) {
+            generationCount = count || 0;
+          }
         }
         
         // Get site name from metadata or use installId
@@ -194,19 +186,15 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
         
         // Get last used date from most recent event or lastSeen
         let lastUsed = installation.lastSeen;
-        const lastEvent = await prisma.usageEvent.findFirst({
-          where: {
-            installationId: installation.id
-          },
-          orderBy: {
-            createdAt: 'desc'
-          },
-          select: {
-            createdAt: true
-          }
-        });
+        const { data: lastEvent, error: eventError } = await supabase
+          .from('usage_events')
+          .select('createdAt')
+          .eq('installationId', installation.id)
+          .order('createdAt', { ascending: false })
+          .limit(1)
+          .single();
         
-        if (lastEvent && lastEvent.createdAt > lastUsed) {
+        if (!eventError && lastEvent && new Date(lastEvent.createdAt) > new Date(lastUsed)) {
           lastUsed = lastEvent.createdAt;
         }
         
@@ -216,8 +204,8 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
           siteHash: installation.siteHash,
           siteName: siteName,
           generations: generationCount,
-          lastUsed: lastUsed ? lastUsed.toISOString() : null,
-          firstSeen: installation.firstSeen.toISOString(),
+          lastUsed: lastUsed ? new Date(lastUsed).toISOString() : null,
+          firstSeen: new Date(installation.firstSeen).toISOString(),
           pluginVersion: installation.pluginVersion,
           wordpressVersion: installation.wordpressVersion,
           // Alias fields for frontend compatibility
@@ -261,17 +249,13 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
     if (req.user && req.user.id) {
       userId = req.user.id;
       
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          plan: true,
-          service: true
-        }
-      });
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, email, plan, service')
+        .eq('id', userId)
+        .single();
       
-      if (!user) {
+      if (userError || !user) {
         return res.status(404).json({
           success: false,
           error: 'User not found',
@@ -282,26 +266,39 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
       plan = user.plan;
       
       // Get user's organization if available
-      const membership = await prisma.organizationMember.findFirst({
-        where: { userId: userId },
-        include: {
-          organization: true
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organizationId, role')
+        .eq('userId', userId)
+        .order('role', { ascending: true })
+        .limit(1);
+
+      if (!membershipError && memberships) {
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', memberships.organizationId)
+          .single();
+
+        if (!orgError && organization) {
+          organizationId = organization.id;
+          if (organization.plan === 'agency' || organization.plan === 'pro') {
+            plan = organization.plan;
+          }
+          
+          // Get all user IDs in this organization
+          const { data: orgMembers, error: orgMembersError } = await supabase
+            .from('organization_members')
+            .select('userId')
+            .eq('organizationId', organizationId);
+          
+          if (!orgMembersError && orgMembers) {
+            allowedUserIds = orgMembers.map(m => m.userId);
+          }
         }
-      });
+      }
       
-      if (membership && membership.organization) {
-        organizationId = membership.organization.id;
-        if (membership.organization.plan === 'agency' || membership.organization.plan === 'pro') {
-          plan = membership.organization.plan;
-        }
-        
-        // Get all user IDs in this organization
-        const orgMembers = await prisma.organizationMember.findMany({
-          where: { organizationId: organizationId },
-          select: { userId: true }
-        });
-        allowedUserIds = orgMembers.map(m => m.userId);
-      } else {
+      if (allowedUserIds.length === 0) {
         allowedUserIds = [userId];
       }
       
@@ -310,11 +307,14 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
       plan = req.organization.plan || 'agency';
       
       // Get all user IDs in this organization
-      const orgMembers = await prisma.organizationMember.findMany({
-        where: { organizationId: organizationId },
-        select: { userId: true }
-      });
-      allowedUserIds = orgMembers.map(m => m.userId);
+      const { data: orgMembers, error: orgMembersError } = await supabase
+        .from('organization_members')
+        .select('userId')
+        .eq('organizationId', organizationId);
+      
+      if (!orgMembersError && orgMembers) {
+        allowedUserIds = orgMembers.map(m => m.userId);
+      }
       
       if (allowedUserIds.length === 0) {
         return res.status(404).json({
@@ -343,19 +343,15 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
     }
     
     // Find the installation to ensure it belongs to this user/organization
-    const installation = await prisma.installation.findFirst({
-      where: {
-        installId: siteId,
-        userId: { in: allowedUserIds }
-      },
-      select: {
-        id: true,
-        installId: true,
-        siteHash: true
-      }
-    });
+    const { data: installation, error: installationError } = await supabase
+      .from('installations')
+      .select('id, installId, siteHash')
+      .eq('installId', siteId)
+      .in('userId', allowedUserIds)
+      .limit(1)
+      .single();
     
-    if (!installation) {
+    if (installationError || !installation) {
       return res.status(404).json({
         success: false,
         error: 'Site not found or does not belong to your license',
@@ -364,11 +360,12 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
     }
     
     // Delete the installation (this will cascade delete related usage events and summaries)
-    await prisma.installation.delete({
-      where: {
-        id: installation.id
-      }
-    });
+    const { error: deleteError } = await supabase
+      .from('installations')
+      .delete()
+      .eq('id', installation.id);
+
+    if (deleteError) throw deleteError;
     
     res.json({
       success: true,

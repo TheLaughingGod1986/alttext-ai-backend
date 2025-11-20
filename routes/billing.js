@@ -3,13 +3,12 @@
  */
 
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 const { createCheckoutSession, createCustomerPortalSession } = require('../stripe/checkout');
 const { webhookMiddleware, webhookHandler, testWebhook } = require('../stripe/webhooks');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * Create Stripe Checkout Session
@@ -116,19 +115,13 @@ router.post('/portal', authenticateToken, async (req, res) => {
  */
 router.get('/info', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        plan: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true,
-        tokensRemaining: true,
-        credits: true,
-        resetDate: true
-      }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('plan, stripeCustomerId, stripeSubscriptionId, tokensRemaining, credits, resetDate')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'
@@ -173,16 +166,13 @@ router.get('/info', authenticateToken, async (req, res) => {
  */
 router.get('/subscription', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        plan: true,
-        stripeCustomerId: true,
-        stripeSubscriptionId: true
-      }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('plan, stripeCustomerId, stripeSubscriptionId')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'

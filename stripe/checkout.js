@@ -3,23 +3,23 @@
  */
 
 const Stripe = require('stripe');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const emailService = require('../services/emailService');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const prisma = new PrismaClient();
 
 /**
  * Create Stripe Checkout Session
  */
 async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, stripeCustomerId: true, service: true }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('email, stripeCustomerId, service')
+      .eq('id', userId)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       throw new Error('User not found');
     }
 
@@ -41,13 +41,15 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       customerId = customer.id;
 
       // Update user with customer ID
-      await prisma.user.update({
-        where: { id: userId },
-        data: { 
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
           stripeCustomerId: customerId,
           service: userService // Update service if not set
-        }
-      });
+        })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
     }
 
     // Create checkout session
@@ -87,12 +89,13 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
  */
 async function createCustomerPortalSession(userId, returnUrl) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { stripeCustomerId: true }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('stripeCustomerId')
+      .eq('id', userId)
+      .single();
 
-    if (!user || !user.stripeCustomerId) {
+    if (userError || !user || !user.stripeCustomerId) {
       throw new Error('No Stripe customer found for user');
     }
 
@@ -162,6 +165,15 @@ async function handleSuccessfulCheckout(session) {
     const service = session.metadata.service || 'alttext-ai';
     const serviceLimits = planLimits[service] || planLimits['alttext-ai'];
 
+    // Get current user data
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('credits')
+      .eq('id', userId)
+      .single();
+
+    if (userError) throw userError;
+
     // Update user
     const updateData = {
       service: service // Update service if not set
@@ -172,13 +184,17 @@ async function handleSuccessfulCheckout(session) {
       updateData.stripeSubscriptionId = sessionWithItems.subscription;
     }
     if (creditsToAdd > 0) {
-      updateData.credits = { increment: creditsToAdd };
+      updateData.credits = (currentUser.credits || 0) + creditsToAdd;
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData
-    });
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
 
     console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
@@ -188,8 +204,9 @@ async function handleSuccessfulCheckout(session) {
         console.log(`📋 Creating agency organization for user ${userId}`);
 
         // Create organization with generated license key
-        const organization = await prisma.organization.create({
-          data: {
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .insert({
             name: `${updatedUser.email.split('@')[0]}'s Agency`,
             plan: 'agency',
             service: service,
@@ -197,23 +214,28 @@ async function handleSuccessfulCheckout(session) {
             tokensRemaining: serviceLimits.agency,
             stripeCustomerId: updatedUser.stripeCustomerId,
             stripeSubscriptionId: sessionWithItems.subscription,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
-        });
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (orgError) throw orgError;
 
         console.log(`✅ Organization created: ${organization.id}, License: ${organization.licenseKey}`);
 
         // Create organization member (owner role)
-        await prisma.organizationMember.create({
-          data: {
+        const { error: memberError } = await supabase
+          .from('organization_members')
+          .insert({
             organizationId: organization.id,
             userId: userId,
             role: 'owner',
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
-        });
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+
+        if (memberError) throw memberError;
 
         console.log(`✅ Organization owner added: user ${userId}`);
 
@@ -252,11 +274,13 @@ async function handleSuccessfulCheckout(session) {
 async function handleSubscriptionUpdate(subscription) {
   try {
     const customerId = subscription.customer;
-    const user = await prisma.user.findUnique({
-      where: { stripeCustomerId: customerId }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('stripeCustomerId', customerId)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       console.warn(`No user found for customer ${customerId}`);
       return;
     }
@@ -275,24 +299,27 @@ async function handleSubscriptionUpdate(subscription) {
         plan = 'agency';
       }
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
           plan,
           stripeSubscriptionId: subscription.id
-        }
-      });
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
 
     } else if (status === 'canceled' || status === 'incomplete_expired') {
       // Downgrade to free
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
           plan: 'free',
           stripeSubscriptionId: null
-        }
-      });
+        })
+        .eq('id', user.id);
 
+      if (updateError) throw updateError;
     }
 
   } catch (error) {
@@ -307,11 +334,13 @@ async function handleSubscriptionUpdate(subscription) {
 async function handleInvoicePaid(invoice) {
   try {
     const customerId = invoice.customer;
-    const user = await prisma.user.findUnique({
-      where: { stripeCustomerId: customerId }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('service, plan')
+      .eq('stripeCustomerId', customerId)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       console.warn(`No user found for customer ${customerId}`);
       return;
     }
@@ -325,16 +354,17 @@ async function handleInvoicePaid(invoice) {
     const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
     const limit = serviceLimits[user.plan] || serviceLimits.free;
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
         tokensRemaining: limit,
-        resetDate: new Date()
-      }
-    });
+        resetDate: new Date().toISOString()
+      })
+      .eq('id', user.id);
+
+    if (updateError) throw updateError;
 
     console.log(`✅ User ${user.id} (${user.service}) monthly tokens reset to ${limit}`);
-
 
   } catch (error) {
     console.error('Error handling invoice payment:', error);

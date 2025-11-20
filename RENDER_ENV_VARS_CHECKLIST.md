@@ -22,9 +22,14 @@ SEO_AI_META_STRIPE_PRICE_PRO=price_1SQ72OJl9Rm418cMruYB5Pgb
 SEO_AI_META_STRIPE_PRICE_AGENCY=price_1SQ72KJl9Rm418cMB0CYh8xe
 ```
 
+### Supabase Database (NEW - REQUIRED)
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
 ### Other Required Variables
 ```bash
-DATABASE_URL=postgresql://...
 JWT_SECRET=your-jwt-secret
 JWT_EXPIRES_IN=7d
 STRIPE_SECRET_KEY=sk_live_...
@@ -36,15 +41,17 @@ NODE_ENV=production
 FRONTEND_URL=https://your-frontend-url.com
 ```
 
-## 🗑️ Old Variables to Remove (After Deployment)
+## 🗑️ Variables to Remove (After Supabase Migration)
 
-Once deployment succeeds and is verified, remove these old variables:
+**IMPORTANT:** Remove these old variables from Render:
 
 ```bash
-❌ STRIPE_PRICE_PRO
-❌ STRIPE_PRICE_AGENCY
-❌ STRIPE_PRICE_CREDITS
-❌ OPENAI_API_KEY (if present - replaced by service-specific keys)
+❌ DATABASE_URL          # Replaced by SUPABASE_URL
+❌ SHADOW_DATABASE_URL   # No longer needed
+❌ STRIPE_PRICE_PRO      # Replaced by service-specific prices
+❌ STRIPE_PRICE_AGENCY   # Replaced by service-specific prices
+❌ STRIPE_PRICE_CREDITS  # Replaced by service-specific prices
+❌ OPENAI_API_KEY        # Replaced by service-specific keys (if present)
 ```
 
 ## 📝 Copy-Paste for Render

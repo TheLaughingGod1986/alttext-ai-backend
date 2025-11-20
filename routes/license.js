@@ -4,11 +4,10 @@
  */
 
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { randomUUID } = require('crypto');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * POST /api/license/activate
@@ -55,26 +54,32 @@ router.post('/activate', async (req, res) => {
     }
 
     // Find organization by license key
-    const organization = await prisma.organization.findUnique({
-      where: { licenseKey },
-      include: {
-        sites: {
-          where: { isActive: true }
-        }
-      }
-    });
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('licenseKey', licenseKey)
+      .single();
 
-    if (!organization) {
+    if (orgError || !organization) {
       return res.status(404).json({
         success: false,
         error: 'Invalid license key'
       });
     }
 
+    // Get active sites for organization
+    const { data: activeSites } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('organizationId', organization.id)
+      .eq('isActive', true);
+
     // Check if site already exists
-    let site = await prisma.site.findUnique({
-      where: { siteHash }
-    });
+    const { data: site } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('siteHash', siteHash)
+      .single();
 
     if (site) {
       // Site exists - check if it belongs to this organization
@@ -86,19 +91,23 @@ router.post('/activate', async (req, res) => {
       }
 
       // Reactivate if inactive and update info
-      site = await prisma.site.update({
-        where: { id: site.id },
-        data: {
+      const { data: updatedSite, error: updateError } = await supabase
+        .from('sites')
+        .update({
           isActive: true,
-          lastSeen: new Date(),
+          lastSeen: new Date().toISOString(),
           siteUrl: siteUrl || site.siteUrl,
           installId: installId || site.installId,
           pluginVersion: pluginVersion || site.pluginVersion,
           wordpressVersion: wordpressVersion || site.wordpressVersion,
           phpVersion: phpVersion || site.phpVersion,
           isMultisite: isMultisite !== undefined ? isMultisite : site.isMultisite
-        }
-      });
+        })
+        .eq('id', site.id)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
 
       return res.json({
         success: true,
@@ -112,16 +121,16 @@ router.post('/activate', async (req, res) => {
           resetDate: organization.resetDate
         },
         site: {
-          id: site.id,
-          siteHash: site.siteHash,
-          isActive: site.isActive,
-          activeSiteCount: organization.sites.length
+          id: updatedSite.id,
+          siteHash: updatedSite.siteHash,
+          isActive: updatedSite.isActive,
+          activeSiteCount: activeSites.length
         }
       });
     }
 
     // New site - check if organization has reached site limit
-    const activeSiteCount = organization.sites.filter(s => s.isActive).length;
+    const activeSiteCount = activeSites.length;
     if (activeSiteCount >= organization.maxSites) {
       return res.status(403).json({
         success: false,
@@ -132,8 +141,9 @@ router.post('/activate', async (req, res) => {
     }
 
     // Create new site
-    site = await prisma.site.create({
-      data: {
+    const { data: newSite, error: createError } = await supabase
+      .from('sites')
+      .insert({
         organizationId: organization.id,
         siteHash,
         siteUrl,
@@ -143,8 +153,11 @@ router.post('/activate', async (req, res) => {
         wordpressVersion,
         phpVersion,
         isMultisite: isMultisite || false
-      }
-    });
+      })
+      .select()
+      .single();
+
+    if (createError) throw createError;
 
     res.json({
       success: true,
@@ -158,9 +171,9 @@ router.post('/activate', async (req, res) => {
         resetDate: organization.resetDate
       },
       site: {
-        id: site.id,
-        siteHash: site.siteHash,
-        isActive: site.isActive,
+        id: newSite.id,
+        siteHash: newSite.siteHash,
+        isActive: newSite.isActive,
         activeSiteCount: activeSiteCount + 1
       }
     });
@@ -206,31 +219,28 @@ router.post('/deactivate', async (req, res) => {
     }
 
     // Find the site
-    const site = await prisma.site.findFirst({
-      where: siteId ? { id: siteId } : { siteHash },
-      include: {
-        organization: {
-          include: {
-            members: {
-              where: {
-                userId: req.user.id,
-                role: { in: ['owner', 'admin'] }
-              }
-            }
-          }
-        }
-      }
-    });
+    const { data: site, error: siteError } = await supabase
+      .from('sites')
+      .select('*')
+      .eq(siteId ? 'id' : 'siteHash', siteId || siteHash)
+      .single();
 
-    if (!site) {
+    if (siteError || !site) {
       return res.status(404).json({
         success: false,
         error: 'Site not found'
       });
     }
 
-    // Check if user has permission
-    if (site.organization.members.length === 0) {
+    // Get organization and check membership
+    const { data: members, error: membersError } = await supabase
+      .from('organization_members')
+      .select('*')
+      .eq('organizationId', site.organizationId)
+      .eq('userId', req.user.id)
+      .in('role', ['owner', 'admin']);
+
+    if (membersError || !members || members.length === 0) {
       return res.status(403).json({
         success: false,
         error: 'You do not have permission to manage this organization'
@@ -238,10 +248,12 @@ router.post('/deactivate', async (req, res) => {
     }
 
     // Deactivate the site
-    await prisma.site.update({
-      where: { id: site.id },
-      data: { isActive: false }
-    });
+    const { error: updateError } = await supabase
+      .from('sites')
+      .update({ isActive: false })
+      .eq('id', site.id);
+
+    if (updateError) throw updateError;
 
     res.json({
       success: true,
@@ -285,15 +297,19 @@ router.post('/generate', async (req, res) => {
 
     const licenseKey = randomUUID();
 
-    const organization = await prisma.organization.create({
-      data: {
+    const { data: organization, error: createError } = await supabase
+      .from('organizations')
+      .insert({
         name,
         licenseKey,
         plan,
         maxSites: maxSites || (plan === 'agency' ? 10 : 1),
         tokensRemaining: tokensRemaining || (plan === 'free' ? 50 : plan === 'pro' ? 500 : 10000)
-      }
-    });
+      })
+      .select()
+      .single();
+
+    if (createError) throw createError;
 
     res.json({
       success: true,
@@ -324,38 +340,46 @@ router.get('/info/:licenseKey', async (req, res) => {
   try {
     const { licenseKey } = req.params;
 
-    const organization = await prisma.organization.findUnique({
-      where: { licenseKey },
-      include: {
-        sites: {
-          where: { isActive: true },
-          select: {
-            id: true,
-            siteUrl: true,
-            siteHash: true,
-            lastSeen: true,
-            pluginVersion: true
-          }
-        },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                email: true
-              }
-            }
-          }
-        }
-      }
-    });
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('licenseKey', licenseKey)
+      .single();
 
-    if (!organization) {
+    if (orgError || !organization) {
       return res.status(404).json({
         success: false,
         error: 'License not found'
       });
     }
+
+    // Get active sites
+    const { data: sites } = await supabase
+      .from('sites')
+      .select('id, siteUrl, siteHash, lastSeen, pluginVersion')
+      .eq('organizationId', organization.id)
+      .eq('isActive', true);
+
+    // Get members
+    const { data: membersData } = await supabase
+      .from('organization_members')
+      .select('userId, role')
+      .eq('organizationId', organization.id);
+
+    // Get user emails for members
+    const userIds = (membersData || []).map(m => m.userId);
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, email')
+      .in('id', userIds);
+
+    // Format members data
+    const userMap = new Map((users || []).map(u => [u.id, u.email]));
+    const members = (membersData || []).map(m => ({
+      userId: m.userId,
+      email: userMap.get(m.userId) || null,
+      role: m.role
+    }));
 
     res.json({
       success: true,
@@ -366,13 +390,9 @@ router.get('/info/:licenseKey', async (req, res) => {
         maxSites: organization.maxSites,
         tokensRemaining: organization.tokensRemaining,
         resetDate: organization.resetDate,
-        activeSites: organization.sites.length,
-        sites: organization.sites,
-        members: organization.members.map(m => ({
-          userId: m.user.id,
-          email: m.user.email,
-          role: m.role
-        }))
+        activeSites: (sites || []).length,
+        sites: sites || [],
+        members: members
       }
     });
 

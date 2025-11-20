@@ -4,12 +4,11 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { generateToken, hashPassword, comparePassword, authenticateToken } = require('./jwt');
 const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * Generate a secure random token for password reset
@@ -51,9 +50,11 @@ router.post('/register', async (req, res) => {
     };
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
-    });
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
 
     if (existingUser) {
       return res.status(409).json({
@@ -64,16 +65,22 @@ router.post('/register', async (req, res) => {
 
     // Hash password and create user
     const passwordHash = await hashPassword(password);
-    const user = await prisma.user.create({
-      data: {
+    const { data: user, error: createError } = await supabase
+      .from('users')
+      .insert({
         email: email.toLowerCase(),
         passwordHash,
         plan: 'free',
         service: userService,
         tokensRemaining: initialLimits[userService] || 50,
         credits: 0
-      }
-    });
+      })
+      .select()
+      .single();
+
+    if (createError || !user) {
+      throw createError || new Error('Failed to create user');
+    }
 
     // Generate JWT token
     const token = generateToken(user);
@@ -122,11 +129,13 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(401).json({
         error: 'Invalid email or password',
         code: 'INVALID_CREDENTIALS'
@@ -172,20 +181,13 @@ router.post('/login', async (req, res) => {
  */
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: {
-        id: true,
-        email: true,
-        plan: true,
-        tokensRemaining: true,
-        credits: true,
-        resetDate: true,
-        createdAt: true
-      }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email, plan, tokensRemaining, credits, resetDate, createdAt')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'
@@ -211,11 +213,13 @@ router.get('/me', authenticateToken, async (req, res) => {
  */
 router.post('/refresh', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.user.id)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'User not found',
         code: 'USER_NOT_FOUND'
@@ -255,13 +259,15 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
 
     // Always return success to prevent email enumeration
     // We don't want attackers to know if an email exists
-    if (!user) {
+    if (userError || !user) {
       // Still return success, but don't send email
       return res.json({
         success: true,
@@ -270,14 +276,17 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     // Check for recent reset requests (rate limiting - max 3 per hour)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    const recentResets = await prisma.passwordResetToken.count({
-      where: {
-        userId: user.id,
-        createdAt: { gte: oneHourAgo },
-        used: false
-      }
-    });
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentResets, error: countError } = await supabase
+      .from('password_reset_tokens')
+      .select('*', { count: 'exact', head: true })
+      .eq('userId', user.id)
+      .gte('createdAt', oneHourAgo)
+      .eq('used', false);
+
+    if (countError) {
+      throw countError;
+    }
 
     if (recentResets >= 3) {
       return res.status(429).json({
@@ -287,29 +296,29 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     // Invalidate any existing unused tokens for this user
-    await prisma.passwordResetToken.updateMany({
-      where: {
-        userId: user.id,
-        used: false,
-        expiresAt: { gt: new Date() }
-      },
-      data: {
-        used: true
-      }
-    });
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('userId', user.id)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString());
 
     // Generate reset token
     const token = generateResetToken();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
 
     // Save token to database
-    await prisma.passwordResetToken.create({
-      data: {
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert({
         userId: user.id,
         token,
-        expiresAt
-      }
-    });
+        expiresAt: expiresAt.toISOString()
+      });
+
+    if (tokenError) {
+      throw tokenError;
+    }
 
     // Generate reset URL
     // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
@@ -321,15 +330,15 @@ router.post('/forgot-password', async (req, res) => {
     if (frontendUrl) {
       // Ensure URL ends with /wp-admin/upload.php?page=ai-alt-gpt (or similar)
       const baseUrl = frontendUrl.replace(/\/$/, ''); // Remove trailing slash
-      resetUrl = `${baseUrl}?reset-token=${token}&email=${encodeURIComponent(user.email)}`;
+      resetUrl = `${baseUrl}?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
     } else {
       // Fallback: just return the token in the response (WordPress can construct URL)
-      resetUrl = `?reset-token=${token}&email=${encodeURIComponent(user.email)}`;
+      resetUrl = `?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
     }
 
     // Send email (mock for now)
     try {
-      await sendPasswordResetEmail(user.email, resetUrl);
+      await sendPasswordResetEmail(email.toLowerCase(), resetUrl);
     } catch (emailError) {
       console.error('Failed to send password reset email:', emailError);
       // Don't fail the request if email fails - token is still created
@@ -387,11 +396,13 @@ router.post('/reset-password', async (req, res) => {
     }
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       return res.status(404).json({
         error: 'Invalid reset token or email',
         code: 'INVALID_RESET_TOKEN'
@@ -399,16 +410,16 @@ router.post('/reset-password', async (req, res) => {
     }
 
     // Find valid reset token
-    const resetToken = await prisma.passwordResetToken.findFirst({
-      where: {
-        userId: user.id,
-        token,
-        used: false,
-        expiresAt: { gt: new Date() }
-      }
-    });
+    const { data: resetToken, error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('userId', user.id)
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString())
+      .single();
 
-    if (!resetToken) {
+    if (tokenError || !resetToken) {
       return res.status(400).json({
         error: 'Invalid or expired reset token. Please request a new password reset.',
         code: 'INVALID_RESET_TOKEN'
@@ -419,27 +430,27 @@ router.post('/reset-password', async (req, res) => {
     const passwordHash = await hashPassword(finalPassword);
 
     // Update user password
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash }
-    });
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ passwordHash })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw updateError;
+    }
 
     // Mark token as used
-    await prisma.passwordResetToken.update({
-      where: { id: resetToken.id },
-      data: { used: true }
-    });
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetToken.id);
 
     // Invalidate all other reset tokens for this user
-    await prisma.passwordResetToken.updateMany({
-      where: {
-        userId: user.id,
-        used: false
-      },
-      data: {
-        used: true
-      }
-    });
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('userId', user.id)
+      .eq('used', false);
 
     res.json({
       success: true,

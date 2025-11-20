@@ -1,0 +1,132 @@
+{
+  "timestamp": "2025-11-20T15:53:42.251Z",
+  "baseUrl": "http://localhost:10000",
+  "summary": {
+    "total": 9,
+    "passed": 2,
+    "failed": 7,
+    "warnings": 0
+  },
+  "results": {
+    "passed": [
+      {
+        "name": "SUPABASE_URL is set",
+        "passed": true,
+        "expected": true,
+        "actual": true,
+        "notes": "Required for Supabase connection",
+        "timestamp": "2025-11-20T15:53:42.246Z"
+      },
+      {
+        "name": "SUPABASE_SERVICE_ROLE_KEY is set",
+        "passed": true,
+        "expected": true,
+        "actual": true,
+        "notes": "Required for Supabase operations",
+        "timestamp": "2025-11-20T15:53:42.246Z"
+      }
+    ],
+    "failed": [
+      {
+        "name": "GET /health",
+        "passed": false,
+        "expected": {
+          "status": 200,
+          "statusField": "ok"
+        },
+        "actual": {
+          "status": 500
+        },
+        "notes": "Health check should return status ok",
+        "timestamp": "2025-11-20T15:53:42.245Z"
+      },
+      {
+        "name": "POST /auth/register",
+        "passed": false,
+        "expected": {
+          "status": 201,
+          "success": true,
+          "hasToken": true,
+          "hasUser": true
+        },
+        "actual": {
+          "status": 500,
+          "hasToken": false,
+          "hasUser": false
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.247Z"
+      },
+      {
+        "name": "POST /auth/login",
+        "passed": false,
+        "expected": {
+          "status": 200,
+          "success": true,
+          "hasToken": true,
+          "hasUser": true
+        },
+        "actual": {
+          "status": 500,
+          "hasToken": false,
+          "hasUser": false
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.248Z"
+      },
+      {
+        "name": "GET /billing/plans",
+        "passed": false,
+        "expected": {
+          "status": 200,
+          "success": true,
+          "hasPlansArray": true
+        },
+        "actual": {
+          "status": 500,
+          "hasPlansArray": false
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.249Z"
+      },
+      {
+        "name": "POST /auth/login (invalid credentials)",
+        "passed": false,
+        "expected": {
+          "status": 401,
+          "code": "INVALID_CREDENTIALS"
+        },
+        "actual": {
+          "status": 500
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.250Z"
+      },
+      {
+        "name": "GET /usage (no auth)",
+        "passed": false,
+        "expected": {
+          "status": 401
+        },
+        "actual": {
+          "status": 500
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.250Z"
+      },
+      {
+        "name": "GET /nonexistent (404)",
+        "passed": false,
+        "expected": {
+          "status": 404
+        },
+        "actual": {
+          "status": 500
+        },
+        "notes": "",
+        "timestamp": "2025-11-20T15:53:42.251Z"
+      }
+    ],
+    "warnings": []
+  }
+}

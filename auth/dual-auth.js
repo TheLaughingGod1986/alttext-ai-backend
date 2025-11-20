@@ -3,10 +3,8 @@
  * Supports both JWT token authentication and license key authentication
  */
 
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { verifyToken } = require('./jwt');
-
-const prisma = new PrismaClient();
 
 /**
  * Authenticate using either JWT token OR license key
@@ -32,18 +30,26 @@ async function dualAuthenticate(req, res, next) {
       req.user = decoded;
 
       // Get user's primary organization (personal org or first org they're a member of)
-      const membership = await prisma.organizationMember.findFirst({
-        where: { userId: decoded.id },
-        include: {
-          organization: true
-        },
-        orderBy: { role: 'asc' } // Owner first, then admin, then member
-      });
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organizationId, role')
+        .eq('userId', decoded.id)
+        .order('role', { ascending: true }) // Owner first, then admin, then member
+        .limit(1);
 
-      if (membership) {
-        req.organization = membership.organization;
-        req.authMethod = 'jwt';
-        return next();
+      if (!membershipError && memberships && memberships.length > 0) {
+        const membership = memberships[0];
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', membership.organizationId)
+          .single();
+
+        if (!orgError && organization) {
+          req.organization = organization;
+          req.authMethod = 'jwt';
+          return next();
+        }
       }
 
       // User has JWT but no organization - might be using old system
@@ -61,11 +67,13 @@ async function dualAuthenticate(req, res, next) {
 
   if (licenseKey) {
     try {
-      const organization = await prisma.organization.findUnique({
-        where: { licenseKey }
-      });
+      const { data: organization, error: orgError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('licenseKey', licenseKey)
+        .single();
 
-      if (!organization) {
+      if (orgError || !organization) {
         return res.status(401).json({
           error: 'Invalid license key',
           code: 'INVALID_LICENSE'
@@ -104,17 +112,25 @@ async function optionalDualAuth(req, res, next) {
       const decoded = verifyToken(jwtToken);
       req.user = decoded;
 
-      const membership = await prisma.organizationMember.findFirst({
-        where: { userId: decoded.id },
-        include: {
-          organization: true
-        },
-        orderBy: { role: 'asc' }
-      });
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organizationId, role')
+        .eq('userId', decoded.id)
+        .order('role', { ascending: true })
+        .limit(1);
 
-      if (membership) {
-        req.organization = membership.organization;
-        req.authMethod = 'jwt';
+      if (!membershipError && memberships && memberships.length > 0) {
+        const membership = memberships[0];
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', membership.organizationId)
+          .single();
+
+        if (!orgError && organization) {
+          req.organization = organization;
+          req.authMethod = 'jwt';
+        }
       }
 
       return next();
@@ -129,11 +145,13 @@ async function optionalDualAuth(req, res, next) {
 
   if (licenseKey) {
     try {
-      const organization = await prisma.organization.findUnique({
-        where: { licenseKey }
-      });
+      const { data: organization, error: orgError } = await supabase
+        .from('organizations')
+        .select('*')
+        .eq('licenseKey', licenseKey)
+        .single();
 
-      if (organization) {
+      if (!orgError && organization) {
         req.organization = organization;
         req.authMethod = 'license';
       }
@@ -164,17 +182,30 @@ async function authenticateBySiteHash(req, res, next) {
   }
 
   try {
-    const site = await prisma.site.findUnique({
-      where: { siteHash },
-      include: {
-        organization: true
-      }
-    });
+    const { data: site, error: siteError } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('siteHash', siteHash)
+      .single();
 
-    if (!site) {
+    if (siteError || !site) {
       return res.status(404).json({
         error: 'Site not registered',
         code: 'SITE_NOT_FOUND'
+      });
+    }
+
+    // Get organization
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', site.organizationId)
+      .single();
+
+    if (orgError || !organization) {
+      return res.status(404).json({
+        error: 'Organization not found for site',
+        code: 'ORG_NOT_FOUND'
       });
     }
 
@@ -186,13 +217,13 @@ async function authenticateBySiteHash(req, res, next) {
     }
 
     // Update lastSeen
-    await prisma.site.update({
-      where: { id: site.id },
-      data: { lastSeen: new Date() }
-    });
+    await supabase
+      .from('sites')
+      .update({ lastSeen: new Date().toISOString() })
+      .eq('id', site.id);
 
     req.site = site;
-    req.organization = site.organization;
+    req.organization = organization;
     req.authMethod = 'site';
 
     next();

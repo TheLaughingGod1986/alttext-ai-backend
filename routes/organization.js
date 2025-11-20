@@ -4,10 +4,9 @@
  */
 
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 /**
  * GET /api/organization/my-organizations
@@ -24,44 +23,84 @@ router.get('/my-organizations', async (req, res) => {
       });
     }
 
-    const memberships = await prisma.organizationMember.findMany({
-      where: { userId: req.user.id },
-      include: {
-        organization: {
-          include: {
-            sites: {
-              where: { isActive: true }
-            },
-            members: {
-              include: {
-                user: {
-                  select: {
-                    email: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
+    // Get memberships
+    const { data: memberships, error: membershipsError } = await supabase
+      .from('organization_members')
+      .select('organizationId, role')
+      .eq('userId', req.user.id);
 
-    const organizations = memberships.map(m => ({
-      id: m.organization.id,
-      name: m.organization.name,
-      licenseKey: m.role === 'owner' ? m.organization.licenseKey : undefined, // Only owners see license key
-      plan: m.organization.plan,
-      maxSites: m.organization.maxSites,
-      tokensRemaining: m.organization.tokensRemaining,
-      resetDate: m.organization.resetDate,
-      myRole: m.role,
-      activeSites: m.organization.sites.length,
-      memberCount: m.organization.members.length
-    }));
+    if (membershipsError) throw membershipsError;
+
+    if (!memberships || memberships.length === 0) {
+      return res.json({
+        success: true,
+        organizations: []
+      });
+    }
+
+    // Get organization IDs
+    const orgIds = memberships.map(m => m.organizationId);
+
+    // Get organizations with sites and members
+    const { data: organizations, error: orgsError } = await supabase
+      .from('organizations')
+      .select('*')
+      .in('id', orgIds);
+
+    if (orgsError) throw orgsError;
+
+    // Get active sites for all organizations
+    const { data: allSites, error: sitesError } = await supabase
+      .from('sites')
+      .select('organizationId, id')
+      .in('organizationId', orgIds)
+      .eq('isActive', true);
+
+    if (sitesError) throw sitesError;
+
+    // Get all members for all organizations
+    const { data: allMembers, error: membersError } = await supabase
+      .from('organization_members')
+      .select('organizationId, userId, role')
+      .in('organizationId', orgIds);
+
+    if (membersError) throw membersError;
+
+    // Get user emails for members
+    const userIds = [...new Set(allMembers.map(m => m.userId))];
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, email')
+      .in('id', userIds);
+
+    if (usersError) throw usersError;
+
+    // Build user map
+    const userMap = new Map((users || []).map(u => [u.id, u.email]));
+
+    // Build response
+    const formattedOrganizations = organizations.map(org => {
+      const membership = memberships.find(m => m.organizationId === org.id);
+      const activeSites = (allSites || []).filter(s => s.organizationId === org.id);
+      const orgMembers = (allMembers || []).filter(m => m.organizationId === org.id);
+
+      return {
+        id: org.id,
+        name: org.name,
+        licenseKey: membership?.role === 'owner' ? org.licenseKey : undefined, // Only owners see license key
+        plan: org.plan,
+        maxSites: org.maxSites,
+        tokensRemaining: org.tokensRemaining,
+        resetDate: org.resetDate,
+        myRole: membership?.role,
+        activeSites: activeSites.length,
+        memberCount: orgMembers.length
+      };
+    });
 
     res.json({
       success: true,
-      organizations
+      organizations: formattedOrganizations
     });
 
   } catch (error) {
@@ -91,30 +130,31 @@ router.get('/:orgId/sites', async (req, res) => {
     const orgId = parseInt(req.params.orgId);
 
     // Check if user is a member
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: req.user.id
-        }
-      }
-    });
+    const { data: membership, error: membershipError } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organizationId', orgId)
+      .eq('userId', req.user.id)
+      .single();
 
-    if (!membership) {
+    if (membershipError || !membership) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this organization'
       });
     }
 
-    const sites = await prisma.site.findMany({
-      where: { organizationId: orgId },
-      orderBy: { lastSeen: 'desc' }
-    });
+    const { data: sites, error: sitesError } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('organizationId', orgId)
+      .order('lastSeen', { ascending: false });
+
+    if (sitesError) throw sitesError;
 
     res.json({
       success: true,
-      sites: sites.map(s => ({
+      sites: (sites || []).map(s => ({
         id: s.id,
         siteUrl: s.siteUrl,
         siteHash: s.siteHash,
@@ -155,16 +195,14 @@ router.get('/:orgId/usage', async (req, res) => {
     const orgId = parseInt(req.params.orgId);
 
     // Check if user is a member
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: req.user.id
-        }
-      }
-    });
+    const { data: membership, error: membershipError } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organizationId', orgId)
+      .eq('userId', req.user.id)
+      .single();
 
-    if (!membership) {
+    if (membershipError || !membership) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this organization'
@@ -172,29 +210,34 @@ router.get('/:orgId/usage', async (req, res) => {
     }
 
     // Get organization details
-    const organization = await prisma.organization.findUnique({
-      where: { id: orgId }
-    });
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', orgId)
+      .single();
+
+    if (orgError || !organization) {
+      throw orgError || new Error('Organization not found');
+    }
 
     // Get usage logs for the current period (since last reset)
-    const usageLogs = await prisma.usageLog.findMany({
-      where: {
-        organizationId: orgId,
-        createdAt: {
-          gte: organization.resetDate
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100 // Last 100 entries
-    });
+    const { data: usageLogs, error: logsError } = await supabase
+      .from('usage_logs')
+      .select('*')
+      .eq('organizationId', orgId)
+      .gte('createdAt', organization.resetDate)
+      .order('createdAt', { ascending: false })
+      .limit(100); // Last 100 entries
 
-    const totalUsed = usageLogs.reduce((sum, log) => sum + log.used, 0);
+    if (logsError) throw logsError;
+
+    const totalUsed = (usageLogs || []).reduce((sum, log) => sum + (log.used || 0), 0);
 
     // Calculate usage by day
     const usageByDay = {};
-    usageLogs.forEach(log => {
-      const day = log.createdAt.toISOString().split('T')[0];
-      usageByDay[day] = (usageByDay[day] || 0) + log.used;
+    (usageLogs || []).forEach(log => {
+      const day = new Date(log.createdAt).toISOString().split('T')[0];
+      usageByDay[day] = (usageByDay[day] || 0) + (log.used || 0);
     });
 
     res.json({
@@ -204,7 +247,7 @@ router.get('/:orgId/usage', async (req, res) => {
         tokensUsed: totalUsed,
         resetDate: organization.resetDate,
         plan: organization.plan,
-        recentLogs: usageLogs.slice(0, 20).map(log => ({
+        recentLogs: (usageLogs || []).slice(0, 20).map(log => ({
           imageId: log.imageId,
           used: log.used,
           createdAt: log.createdAt
@@ -250,16 +293,14 @@ router.post('/:orgId/invite', async (req, res) => {
     const { email, role } = req.body;
 
     // Check if user is owner or admin
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: req.user.id
-        }
-      }
-    });
+    const { data: membership, error: membershipError } = await supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organizationId', orgId)
+      .eq('userId', req.user.id)
+      .single();
 
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
       return res.status(403).json({
         success: false,
         error: 'Only owners and admins can invite members'
@@ -267,11 +308,13 @@ router.post('/:orgId/invite', async (req, res) => {
     }
 
     // Find the user to invite
-    const invitedUser = await prisma.user.findUnique({
-      where: { email }
-    });
+    const { data: invitedUser, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
 
-    if (!invitedUser) {
+    if (userError || !invitedUser) {
       return res.status(404).json({
         success: false,
         error: 'User not found. They need to create an account first.'
@@ -279,14 +322,12 @@ router.post('/:orgId/invite', async (req, res) => {
     }
 
     // Check if already a member
-    const existingMembership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: invitedUser.id
-        }
-      }
-    });
+    const { data: existingMembership, error: existingError } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organizationId', orgId)
+      .eq('userId', invitedUser.id)
+      .single();
 
     if (existingMembership) {
       return res.status(400).json({
@@ -296,13 +337,15 @@ router.post('/:orgId/invite', async (req, res) => {
     }
 
     // Create membership
-    await prisma.organizationMember.create({
-      data: {
+    const { error: createError } = await supabase
+      .from('organization_members')
+      .insert({
         organizationId: orgId,
         userId: invitedUser.id,
         role: role || 'member'
-      }
-    });
+      });
+
+    if (createError) throw createError;
 
     res.json({
       success: true,
@@ -337,16 +380,14 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
     const userIdToRemove = parseInt(req.params.userId);
 
     // Check if user is owner or admin
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: req.user.id
-        }
-      }
-    });
+    const { data: membership, error: membershipError } = await supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organizationId', orgId)
+      .eq('userId', req.user.id)
+      .single();
 
-    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
       return res.status(403).json({
         success: false,
         error: 'Only owners and admins can remove members'
@@ -354,14 +395,12 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
     }
 
     // Don't allow removing the owner
-    const memberToRemove = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: userIdToRemove
-        }
-      }
-    });
+    const { data: memberToRemove, error: memberError } = await supabase
+      .from('organization_members')
+      .select('role')
+      .eq('organizationId', orgId)
+      .eq('userId', userIdToRemove)
+      .single();
 
     if (memberToRemove?.role === 'owner') {
       return res.status(403).json({
@@ -371,14 +410,13 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
     }
 
     // Remove the member
-    await prisma.organizationMember.delete({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: userIdToRemove
-        }
-      }
-    });
+    const { error: deleteError } = await supabase
+      .from('organization_members')
+      .delete()
+      .eq('organizationId', orgId)
+      .eq('userId', userIdToRemove);
+
+    if (deleteError) throw deleteError;
 
     res.json({
       success: true,
@@ -412,40 +450,44 @@ router.get('/:orgId/members', async (req, res) => {
     const orgId = parseInt(req.params.orgId);
 
     // Check if user is a member
-    const membership = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: {
-          organizationId: orgId,
-          userId: req.user.id
-        }
-      }
-    });
+    const { data: membership, error: membershipError } = await supabase
+      .from('organization_members')
+      .select('id')
+      .eq('organizationId', orgId)
+      .eq('userId', req.user.id)
+      .single();
 
-    if (!membership) {
+    if (membershipError || !membership) {
       return res.status(403).json({
         success: false,
         error: 'You do not have access to this organization'
       });
     }
 
-    const members = await prisma.organizationMember.findMany({
-      where: { organizationId: orgId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            createdAt: true
-          }
-        }
-      }
-    });
+    const { data: members, error: membersError } = await supabase
+      .from('organization_members')
+      .select('userId, role, createdAt')
+      .eq('organizationId', orgId);
+
+    if (membersError) throw membersError;
+
+    // Get user details
+    const userIds = (members || []).map(m => m.userId);
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, email, createdAt')
+      .in('id', userIds);
+
+    if (usersError) throw usersError;
+
+    // Build user map
+    const userMap = new Map((users || []).map(u => [u.id, u]));
 
     res.json({
       success: true,
-      members: members.map(m => ({
-        userId: m.user.id,
-        email: m.user.email,
+      members: (members || []).map(m => ({
+        userId: m.userId,
+        email: userMap.get(m.userId)?.email || null,
         role: m.role,
         joinedAt: m.createdAt
       }))

@@ -3,7 +3,7 @@
  */
 
 const Stripe = require('stripe');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('../supabase-client');
 const { 
   handleSuccessfulCheckout, 
   handleSubscriptionUpdate, 
@@ -11,7 +11,6 @@ const {
 } = require('./checkout');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const prisma = new PrismaClient();
 
 /**
  * Verify webhook signature
@@ -85,24 +84,27 @@ async function handleCheckoutSessionCompleted(session) {
 async function handleSubscriptionDeleted(subscription) {
   try {
     const customerId = subscription.customer;
-    const user = await prisma.user.findUnique({
-      where: { stripeCustomerId: customerId }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('stripeCustomerId', customerId)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       console.warn(`No user found for customer ${customerId}`);
       return;
     }
 
     // Downgrade to free plan
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
         plan: 'free',
         stripeSubscriptionId: null
-      }
-    });
+      })
+      .eq('id', user.id);
 
+    if (updateError) throw updateError;
 
   } catch (error) {
     console.error('Error handling subscription deletion:', error);
@@ -116,11 +118,13 @@ async function handleSubscriptionDeleted(subscription) {
 async function handleInvoicePaymentFailed(invoice) {
   try {
     const customerId = invoice.customer;
-    const user = await prisma.user.findUnique({
-      where: { stripeCustomerId: customerId }
-    });
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('stripeCustomerId', customerId)
+      .single();
 
-    if (!user) {
+    if (userError || !user) {
       console.warn(`No user found for customer ${customerId}`);
       return;
     }
@@ -135,6 +139,46 @@ async function handleInvoicePaymentFailed(invoice) {
 
   } catch (error) {
     console.error('Error handling payment failure:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handle charge refunded - downgrade user to free plan
+ */
+async function handleChargeRefunded(charge) {
+  try {
+    console.log(`💰 Charge refunded: ${charge.id}`);
+    
+    // Find user by customer ID
+    const customerId = charge.customer;
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('stripeCustomerId', customerId)
+      .single();
+
+    if (userError || !user) {
+      console.warn(`No user found for customer ${customerId}`);
+      return;
+    }
+
+    // Downgrade to free plan
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        plan: 'free',
+        tokensRemaining: 50,
+        stripeSubscriptionId: null
+      })
+      .eq('id', user.id);
+
+    if (updateError) throw updateError;
+
+    console.log(`✅ User ${user.id} refunded, downgraded to free plan`);
+
+  } catch (error) {
+    console.error('Error handling charge refund:', error);
     throw error;
   }
 }
@@ -206,39 +250,3 @@ module.exports = {
   testWebhook,
   handleWebhookEvent
 };
-
-/**
- * Handle charge refunded - downgrade user to free plan
- */
-async function handleChargeRefunded(charge) {
-  try {
-    console.log(`💰 Charge refunded: ${charge.id}`);
-    
-    // Find user by customer ID
-    const customerId = charge.customer;
-    const user = await prisma.user.findUnique({
-      where: { stripeCustomerId: customerId }
-    });
-
-    if (!user) {
-      console.warn(`No user found for customer ${customerId}`);
-      return;
-    }
-
-    // Downgrade to free plan
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        plan: 'free',
-        tokensRemaining: 50,
-        stripeSubscriptionId: null
-      }
-    });
-
-    console.log(`✅ User ${user.id} refunded, downgraded to free plan`);
-
-  } catch (error) {
-    console.error('Error handling charge refund:', error);
-    throw error;
-  }
-}

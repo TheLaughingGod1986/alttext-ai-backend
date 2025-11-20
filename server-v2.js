@@ -9,7 +9,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
-const { PrismaClient } = require('@prisma/client');
+const { supabase } = require('./supabase-client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./auth/dual-auth');
 const authRoutes = require('./auth/routes');
@@ -21,7 +21,6 @@ const organizationRoutes = require('./routes/organization');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const prisma = new PrismaClient();
 
 // Middleware
 app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
@@ -94,7 +93,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
     // Log for debugging
     console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
-    console.log(`[Generate] API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}, OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+    console.log(`[Generate] API Key check - ${service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'}: ${process.env[service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'] ? 'SET' : 'NOT SET'}`);
     console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
 
     // Validate API key is configured
@@ -184,29 +183,25 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       // Get updated info (organization or user)
       let plan, tokensRemaining, credits, resetDate;
       if (req.organization) {
-        const org = await prisma.organization.findUnique({
-          where: { id: req.organization.id },
-          select: {
-            plan: true,
-            tokensRemaining: true,
-            credits: true,
-            resetDate: true
-          }
-        });
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('plan, tokensRemaining, credits, resetDate')
+          .eq('id', req.organization.id)
+          .single();
+        
+        if (orgError || !org) throw orgError || new Error('Organization not found');
         plan = org.plan;
         tokensRemaining = org.tokensRemaining;
         credits = org.credits;
         resetDate = org.resetDate;
       } else {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          plan: true,
-          tokensRemaining: true,
-          credits: true,
-          resetDate: true
-        }
-      });
+        const { data: user, error: userError } = await supabase
+          .from('users')
+          .select('plan, tokensRemaining, credits, resetDate')
+          .eq('id', userId)
+          .single();
+        
+        if (userError || !user) throw userError || new Error('User not found');
         plan = user.plan;
         tokensRemaining = user.tokensRemaining;
         credits = user.credits;
@@ -297,29 +292,25 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     // Get updated info (organization or user)
     let plan, tokensRemaining, credits, resetDate;
     if (req.organization) {
-      const org = await prisma.organization.findUnique({
-        where: { id: req.organization.id },
-        select: {
-          plan: true,
-          tokensRemaining: true,
-          credits: true,
-          resetDate: true
-        }
-      });
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .select('plan, tokensRemaining, credits, resetDate')
+        .eq('id', req.organization.id)
+        .single();
+      
+      if (orgError || !org) throw orgError || new Error('Organization not found');
       plan = org.plan;
       tokensRemaining = org.tokensRemaining;
       credits = org.credits;
       resetDate = org.resetDate;
     } else {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        plan: true,
-        tokensRemaining: true,
-        credits: true,
-        resetDate: true
-      }
-    });
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('plan, tokensRemaining, credits, resetDate')
+        .eq('id', userId)
+        .single();
+      
+      if (userError || !user) throw userError || new Error('User not found');
       plan = user.plan;
       tokensRemaining = user.tokensRemaining;
       credits = user.credits;
@@ -946,12 +937,12 @@ app.listen(PORT, () => {
   console.log(`📅 Version: 2.0.0 (Monetization)`);
   console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-  console.log(`🔑 API Key check - OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+  console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, shutting down gracefully...');
-  await prisma.$disconnect();
+  // Supabase client doesn't require explicit disconnection
   process.exit(0);
 });
