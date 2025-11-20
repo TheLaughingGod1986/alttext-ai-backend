@@ -69,10 +69,10 @@ router.post('/register', async (req, res) => {
       .from('users')
       .insert({
         email: email.toLowerCase(),
-        passwordHash,
+        password_hash: passwordHash,
         plan: 'free',
         service: userService,
-        tokensRemaining: initialLimits[userService] || 50
+        tokens_remaining: initialLimits[userService] || 50
       })
       .select()
       .single();
@@ -97,9 +97,9 @@ router.post('/register', async (req, res) => {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokensRemaining,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || 0,
         credits: user.credits || 0,
-        resetDate: user.resetDate
+        resetDate: user.reset_date || user.resetDate
       }
     });
 
@@ -142,7 +142,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Verify password
-    const isValidPassword = await comparePassword(password, user.passwordHash);
+    const isValidPassword = await comparePassword(password, user.password_hash);
     if (!isValidPassword) {
       return res.status(401).json({
         error: 'Invalid email or password',
@@ -160,9 +160,9 @@ router.post('/login', async (req, res) => {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokensRemaining,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || 0,
         credits: user.credits || 0,
-        resetDate: user.resetDate
+        resetDate: user.reset_date || user.resetDate
       }
     });
 
@@ -182,7 +182,7 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, plan, tokensRemaining, resetDate, createdAt')
+      .select('id, email, plan, tokens_remaining, reset_date, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -434,7 +434,7 @@ router.post('/reset-password', async (req, res) => {
     // Update user password
     const { error: updateError } = await supabase
       .from('users')
-      .update({ passwordHash })
+      .update({ password_hash: passwordHash })
       .eq('id', user.id);
 
     if (updateError) {
