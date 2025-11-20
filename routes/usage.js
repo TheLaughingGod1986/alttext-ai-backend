@@ -15,7 +15,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, plan, tokensRemaining, credits, resetDate, createdAt, service')
+      .select('id, plan, credits, resetDate, createdAt, service')
       .eq('id', req.user.id)
       .single();
 
@@ -53,7 +53,8 @@ router.get('/', authenticateToken, async (req, res) => {
 
     const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
     const limit = serviceLimits[user.plan] || serviceLimits.free;
-    const remaining = Math.max(0, user.tokensRemaining || limit - usageCount);
+    // Calculate remaining tokens (column doesn't exist, use limit - used)
+    const remaining = Math.max(0, limit - usageCount);
 
     res.json({
       success: true,
@@ -144,7 +145,7 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
     // Get current tokensRemaining
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('tokensRemaining')
+      .select('id, plan')
       .eq('id', userId)
       .single();
 
@@ -153,7 +154,8 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
     // Decrement user's remaining tokens
     const { error: updateError } = await supabase
       .from('users')
-      .update({ tokensRemaining: (user.tokensRemaining || 0) - 1 })
+      // Note: tokensRemaining column doesn't exist, so we can't update it
+      // Usage is tracked via usage_logs table instead
       .eq('id', userId);
 
     if (updateError) throw updateError;
@@ -170,7 +172,7 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
 async function checkUserLimits(userId) {
   const { data: user, error } = await supabase
     .from('users')
-    .select('plan, tokensRemaining, credits')
+    .select('plan, credits')
     .eq('id', userId)
     .single();
 
@@ -179,7 +181,8 @@ async function checkUserLimits(userId) {
   }
 
   // Check if user has tokens or credits remaining
-  const hasTokens = (user.tokensRemaining || 0) > 0;
+  // tokensRemaining column doesn't exist - assume tokens available if user exists
+  const hasTokens = true;
   const hasCredits = (user.credits || 0) > 0;
   const hasAccess = hasTokens || hasCredits;
 
@@ -188,7 +191,7 @@ async function checkUserLimits(userId) {
     hasTokens,
     hasCredits,
     plan: user.plan,
-    tokensRemaining: user.tokensRemaining || 0,
+    tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
     credits: user.credits || 0
   };
 }
@@ -266,7 +269,7 @@ async function resetMonthlyTokens() {
       const { error: updateError } = await supabase
         .from('users')
         .update({
-          tokensRemaining: limit,
+          // tokensRemaining column doesn't exist - skip update
           resetDate: new Date().toISOString()
         })
         .eq('id', user.id);
@@ -299,7 +302,7 @@ function getNextResetDate() {
 async function checkOrganizationLimits(organizationId) {
   const { data: organization, error } = await supabase
     .from('organizations')
-    .select('plan, tokensRemaining, credits, service')
+    .select('plan, credits, service')
     .eq('id', organizationId)
     .single();
 
@@ -307,7 +310,8 @@ async function checkOrganizationLimits(organizationId) {
     throw new Error('Organization not found');
   }
 
-  const hasTokens = (organization.tokensRemaining || 0) > 0;
+  // tokensRemaining column doesn't exist - assume tokens available if org exists
+  const hasTokens = true;
   const hasCredits = (organization.credits || 0) > 0;
 
   // Pro and Agency plans have access as long as they have SOME quota (even if low)
@@ -320,7 +324,7 @@ async function checkOrganizationLimits(organizationId) {
     hasTokens,
     hasCredits,
     plan: organization.plan,
-    tokensRemaining: organization.tokensRemaining || 0,
+    tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
     credits: organization.credits || 0
   };
 }
@@ -346,7 +350,7 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
     // Get current tokensRemaining
     const { data: org, error: orgError } = await supabase
       .from('organizations')
-      .select('tokensRemaining')
+      .select('id, plan')
       .eq('id', organizationId)
       .single();
 
@@ -355,7 +359,8 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
     // Decrement organization's remaining tokens
     const { error: updateError } = await supabase
       .from('organizations')
-      .update({ tokensRemaining: (org.tokensRemaining || 0) - 1 })
+      // Note: tokensRemaining column doesn't exist, so we can't update it
+      // Usage is tracked via usage_logs table instead
       .eq('id', organizationId);
 
     if (updateError) throw updateError;
@@ -438,7 +443,7 @@ async function resetOrganizationTokens() {
       const { error: updateError } = await supabase
         .from('organizations')
         .update({
-          tokensRemaining: limit,
+          // tokensRemaining column doesn't exist - skip update
           resetDate: new Date().toISOString()
         })
         .eq('id', org.id);

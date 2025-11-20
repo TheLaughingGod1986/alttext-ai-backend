@@ -215,7 +215,7 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, plan, tokens_remaining, reset_date, created_at')
+      .select('id, email, plan, reset_date, created_at')
       .eq('id', req.user.id)
       .single();
 
