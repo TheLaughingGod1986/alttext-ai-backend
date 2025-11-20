@@ -4,7 +4,24 @@
 
 Removed **50+ files** that were no longer needed after the Supabase migration.
 
-### Files Removed
+## Additional Cleanup (Round 2)
+
+### Empty Folders Removed
+- ❌ `public/css/` - Empty directory
+- ❌ `views/` - Empty directory  
+- ❌ `public/` - Empty after removing css subfolder
+
+### Redundant Files Removed
+- ❌ `CLEANUP_PLAN.md` - Redundant (we have CLEANUP_SUMMARY.md)
+
+### Unused Dependencies Removed
+- ❌ `crypto` - Built-in Node.js module (shouldn't be in dependencies)
+- ❌ `express-basic-auth` - Not used anywhere
+- ❌ `ejs` - No views are rendered (templates removed)
+
+---
+
+### Files Removed (Original Cleanup)
 
 #### 1. Old Server Files
 - ❌ `server.js` - Old v1 server (replaced by `server-v2.js`)
