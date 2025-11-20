@@ -15,7 +15,7 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, plan, credits, resetDate, createdAt, service')
+      .select('id, plan, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -31,7 +31,7 @@ router.get('/', authenticateToken, async (req, res) => {
       .from('usage_logs')
       .select('*', { count: 'exact', head: true })
       .eq('userId', req.user.id)
-      .eq('service', user.service || 'alttext-ai');
+      .eq('service', 'alttext-ai'); // service column doesn't exist in users table
 
     if (countError) {
       throw countError;
@@ -64,7 +64,7 @@ router.get('/', authenticateToken, async (req, res) => {
         remaining: remaining,
         plan: user.plan,
         credits: user.credits,
-        service: user.service || 'alttext-ai'
+        service: 'alttext-ai' // service column doesn't exist
       }
     });
 

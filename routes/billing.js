@@ -117,7 +117,7 @@ router.get('/info', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('plan, stripeCustomerId, stripeSubscriptionId, credits, resetDate')
+      .select('plan, stripe_customer_id, stripe_subscription_id')
       .eq('id', req.user.id)
       .single();
 
@@ -130,10 +130,10 @@ router.get('/info', authenticateToken, async (req, res) => {
 
     // Get subscription details from Stripe if exists
     let subscription = null;
-    if (user.stripeSubscriptionId) {
+    if (user.stripe_subscription_id) {
       try {
         const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-        subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        subscription = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
       } catch (error) {
         console.warn('Failed to fetch subscription from Stripe:', error.message);
       }
@@ -143,10 +143,10 @@ router.get('/info', authenticateToken, async (req, res) => {
       success: true,
       billing: {
         plan: user.plan,
-        hasSubscription: !!user.stripeSubscriptionId,
+        hasSubscription: !!user.stripe_subscription_id,
         subscription,
         tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
-        credits: user.credits,
+        credits: 0, // Column doesn't exist
         resetDate: user.resetDate
       }
     });
