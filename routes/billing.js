@@ -117,7 +117,7 @@ router.get('/info', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('plan, stripeCustomerId, stripeSubscriptionId, tokensRemaining, credits, resetDate')
+      .select('plan, stripeCustomerId, stripeSubscriptionId, credits, resetDate')
       .eq('id', req.user.id)
       .single();
 
@@ -145,7 +145,7 @@ router.get('/info', authenticateToken, async (req, res) => {
         plan: user.plan,
         hasSubscription: !!user.stripeSubscriptionId,
         subscription,
-        tokensRemaining: user.tokensRemaining,
+        tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
         credits: user.credits,
         resetDate: user.resetDate
       }
