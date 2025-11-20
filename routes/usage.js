@@ -69,9 +69,16 @@ router.get('/', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Get usage error:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
     res.status(500).json({
       error: 'Failed to get usage info',
-      code: 'USAGE_ERROR'
+      code: 'USAGE_ERROR',
+      message: error.message || 'Unknown error'
     });
   }
 });
@@ -117,9 +124,16 @@ router.get('/history', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Get usage history error:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
     res.status(500).json({
       error: 'Failed to get usage history',
-      code: 'HISTORY_ERROR'
+      code: 'HISTORY_ERROR',
+      message: error.message || 'Unknown error'
     });
   }
 });
