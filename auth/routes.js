@@ -66,16 +66,17 @@ router.post('/register', async (req, res) => {
     // Hash password and create user
     const passwordHash = await hashPassword(password);
     
-    // Build insert object - only include columns that exist
+    // Build insert object - only include columns that exist in Supabase
+    // Supabase schema may not have all columns from Prisma schema
     const userData = {
       email: email.toLowerCase(),
       password_hash: passwordHash,
-      plan: 'free',
-      service: userService
+      plan: 'free'
     };
     
-    // Try to add tokens_remaining if column exists (will fail gracefully if it doesn't)
-    // The database might have a default value
+    // Note: service and tokens_remaining columns don't exist in Supabase
+    // They may need to be added via migration or are handled differently
+    
     const { data: user, error: createError } = await supabase
       .from('users')
       .insert(userData)
@@ -104,7 +105,8 @@ router.post('/register', async (req, res) => {
         plan: user.plan,
         tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
         credits: user.credits || 0,
-        resetDate: user.reset_date || user.resetDate
+        resetDate: user.reset_date || user.resetDate,
+        service: user.service || userService
       }
     });
 
@@ -167,7 +169,8 @@ router.post('/login', async (req, res) => {
         plan: user.plan,
         tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
         credits: user.credits || 0,
-        resetDate: user.reset_date || user.resetDate
+        resetDate: user.reset_date || user.resetDate,
+        service: user.service || userService
       }
     });
 
