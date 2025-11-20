@@ -222,7 +222,6 @@ async function useCredit(userId) {
       .from('usage_logs')
       .insert({
         userId,
-        used: 1,
         endpoint: 'generate-credit'
       });
 
@@ -338,7 +337,6 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
         userId,
         organizationId,
         service,
-        used: 1,
         imageId,
         endpoint
       });
@@ -398,7 +396,6 @@ async function useOrganizationCredit(organizationId, userId) {
       .insert({
         userId,
         organizationId,
-        used: 1,
         endpoint: 'generate-credit'
       });
 
