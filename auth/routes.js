@@ -178,6 +178,13 @@ router.post('/login', async (req, res) => {
     // Generate JWT token
     const token = generateToken(user);
 
+    // Service-specific default limits (if tokens_remaining not available)
+    const defaultLimits = {
+      'alttext-ai': 50,
+      'seo-ai-meta': 10
+    };
+    const userService = user.service || 'alttext-ai';
+
     res.json({
       success: true,
       token,
@@ -185,10 +192,10 @@ router.post('/login', async (req, res) => {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || defaultLimits[userService] || 50,
         credits: user.credits || 0,
         resetDate: user.reset_date || user.resetDate,
-        service: user.service || userService
+        service: userService
       }
     });
 

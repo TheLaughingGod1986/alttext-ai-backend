@@ -88,7 +88,7 @@ router.get('/history', authenticateToken, async (req, res) => {
     const [usageLogsResult, totalCountResult] = await Promise.all([
       supabase
         .from('usage_logs')
-        .select('id, used, imageId, endpoint, createdAt')
+        .select('id, imageId, endpoint, createdAt')
         .eq('userId', req.user.id)
         .order('createdAt', { ascending: false })
         .range(skip, skip + limit - 1),
@@ -135,7 +135,6 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
       .insert({
         userId,
         service,
-        used: 1,
         imageId,
         endpoint
       });
