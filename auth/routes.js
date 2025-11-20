@@ -83,8 +83,18 @@ router.post('/register', async (req, res) => {
       .select()
       .single();
 
-    if (createError || !user) {
-      throw createError || new Error('Failed to create user');
+    if (createError) {
+      console.error('Registration error details:', {
+        code: createError.code,
+        message: createError.message,
+        details: createError.details,
+        hint: createError.hint
+      });
+      throw createError;
+    }
+    
+    if (!user) {
+      throw new Error('User creation returned no data');
     }
 
     // Generate JWT token
@@ -112,9 +122,17 @@ router.post('/register', async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
     res.status(500).json({
       error: 'Failed to create account',
-      code: 'REGISTRATION_ERROR'
+      code: 'REGISTRATION_ERROR',
+      message: error.message || 'Unknown error',
+      details: error.details || null
     });
   }
 });
