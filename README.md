@@ -1,6 +1,15 @@
-# AltText AI - Proxy API
+# AltText AI - Backend API
 
-Simple Node.js API that securely proxies OpenAI requests for the WordPress plugin.
+Production-ready Node.js backend API for the AltText AI WordPress plugin. Features user authentication, usage tracking, Stripe billing, and organization licensing.
+
+## Tech Stack
+
+- **Runtime:** Node.js 18+
+- **Framework:** Express.js
+- **Database:** Supabase (PostgreSQL)
+- **Authentication:** JWT
+- **Payment:** Stripe
+- **Email:** Resend
 
 ## Quick Start
 
@@ -14,16 +23,29 @@ npm start
 
 ## Environment Variables
 
-Create a `.env` file with:
+See `env.example` for all required variables. Key variables:
 
 ```env
-OPENAI_API_KEY=sk-...your-key...
+# Supabase (Required)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# OpenAI (Required)
+ALTTEXT_OPENAI_API_KEY=sk-...
+SEO_META_OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
-PORT=3000
-FREE_MONTHLY_LIMIT=50
-PRO_MONTHLY_LIMIT=1000
-API_SECRET=your-random-secret
-WEBHOOK_SECRET=your-webhook-secret
+
+# JWT (Required)
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=7d
+
+# Stripe (Required)
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Email (Required)
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
 
 ## API Endpoints

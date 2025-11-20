@@ -12,6 +12,7 @@ const axios = require('axios');
 const { supabase } = require('./supabase-client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./auth/dual-auth');
+const { getServiceApiKey, getReviewApiKey } = require('./utils/apiKey');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
 const billingRoutes = require('./routes/billing');
@@ -72,24 +73,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     const userId = req.user?.id || null;
 
     // Select API key based on service
-    // Support both ALTTEXT_OPENAI_API_KEY and OPENAI_API_KEY for backward compatibility
-    // Check if keys exist AND are not empty strings
-    const getApiKey = (primaryKey, fallbackKey) => {
-      const primary = process.env[primaryKey];
-      const fallback = process.env[fallbackKey];
-      // Use primary if it exists and is not empty, otherwise use fallback
-      if (primary && typeof primary === 'string' && primary.trim() !== '') {
-        return primary;
-      }
-      if (fallback && typeof fallback === 'string' && fallback.trim() !== '') {
-        return fallback;
-      }
-      return null;
-    };
-    
-    const apiKey = service === 'seo-ai-meta'
-      ? getApiKey('SEO_META_OPENAI_API_KEY', 'OPENAI_API_KEY')
-      : getApiKey('ALTTEXT_OPENAI_API_KEY', 'OPENAI_API_KEY'); // Primary: ALTTEXT_OPENAI_API_KEY, Fallback: OPENAI_API_KEY
+    const apiKey = getServiceApiKey(service);
 
     // Log for debugging
     console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
@@ -438,23 +422,7 @@ app.post('/api/review', authenticateToken, async (req, res) => {
     }
 
     // Select API key based on service
-    // Use same helper function to ensure proper fallback
-    const getApiKey = (primaryKey, fallbackKey) => {
-      const primary = process.env[primaryKey];
-      const fallback = process.env[fallbackKey];
-      // Use primary if it exists and is not empty, otherwise use fallback
-      if (primary && typeof primary === 'string' && primary.trim() !== '') {
-        return primary;
-      }
-      if (fallback && typeof fallback === 'string' && fallback.trim() !== '') {
-        return fallback;
-      }
-      return null;
-    };
-    
-    const apiKey = service === 'seo-ai-meta'
-      ? (getApiKey('OPENAI_REVIEW_API_KEY', 'SEO_META_OPENAI_API_KEY') || getApiKey('SEO_META_OPENAI_API_KEY', 'OPENAI_API_KEY'))
-      : (getApiKey('OPENAI_REVIEW_API_KEY', 'ALTTEXT_OPENAI_API_KEY') || getApiKey('ALTTEXT_OPENAI_API_KEY', 'OPENAI_API_KEY'));
+    const apiKey = getReviewApiKey(service);
 
     const review = await reviewAltText(alt_text, image_data, context, apiKey);
 
@@ -743,9 +711,9 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
     return null;
   }
 
-  // Use provided API key or fallback to environment variables
-  // Primary: ALTTEXT_OPENAI_API_KEY (project standard), Fallback: OPENAI_REVIEW_API_KEY (for backward compatibility)
-  const effectiveApiKey = apiKey || process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_REVIEW_API_KEY;
+    // Use provided API key or get review API key for the service
+    const service = imageData?.service || 'alttext-ai';
+    const effectiveApiKey = apiKey || getReviewApiKey(service);
 
   const systemMessage = {
     role: 'system',
