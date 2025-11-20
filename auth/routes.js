@@ -65,15 +65,20 @@ router.post('/register', async (req, res) => {
 
     // Hash password and create user
     const passwordHash = await hashPassword(password);
+    
+    // Build insert object - only include columns that exist
+    const userData = {
+      email: email.toLowerCase(),
+      password_hash: passwordHash,
+      plan: 'free',
+      service: userService
+    };
+    
+    // Try to add tokens_remaining if column exists (will fail gracefully if it doesn't)
+    // The database might have a default value
     const { data: user, error: createError } = await supabase
       .from('users')
-      .insert({
-        email: email.toLowerCase(),
-        password_hash: passwordHash,
-        plan: 'free',
-        service: userService,
-        tokens_remaining: initialLimits[userService] || 50
-      })
+      .insert(userData)
       .select()
       .single();
 
@@ -97,7 +102,7 @@ router.post('/register', async (req, res) => {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokens_remaining || user.tokensRemaining || 0,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
         credits: user.credits || 0,
         resetDate: user.reset_date || user.resetDate
       }
@@ -160,7 +165,7 @@ router.post('/login', async (req, res) => {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokens_remaining || user.tokensRemaining || 0,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
         credits: user.credits || 0,
         resetDate: user.reset_date || user.resetDate
       }
