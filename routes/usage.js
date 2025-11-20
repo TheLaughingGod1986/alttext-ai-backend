@@ -30,8 +30,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const { count: usageCount, error: countError } = await supabase
       .from('usage_logs')
       .select('*', { count: 'exact', head: true })
-      .eq('userId', req.user.id)
-      .eq('service', 'alttext-ai'); // service column doesn't exist in users table
+      .eq('user_id', req.user.id)
 
     if (countError) {
       throw countError;
@@ -89,14 +88,14 @@ router.get('/history', authenticateToken, async (req, res) => {
     const [usageLogsResult, totalCountResult] = await Promise.all([
       supabase
         .from('usage_logs')
-        .select('id, imageId, endpoint, createdAt')
-        .eq('userId', req.user.id)
-        .order('createdAt', { ascending: false })
+        .select('id, image_id, endpoint, created_at')
+        .eq('user_id', req.user.id)
+        .order('created_at', { ascending: false })
         .range(skip, skip + limit - 1),
       supabase
         .from('usage_logs')
         .select('*', { count: 'exact', head: true })
-        .eq('userId', req.user.id)
+        .eq('user_id', req.user.id)
     ]);
 
     if (usageLogsResult.error) throw usageLogsResult.error;
@@ -134,9 +133,8 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
     const { error: logError } = await supabase
       .from('usage_logs')
       .insert({
-        userId,
-        service,
-        imageId,
+        user_id: userId,
+        image_id: imageId,
         endpoint
       });
 
@@ -224,7 +222,7 @@ async function useCredit(userId) {
     const { error: logError } = await supabase
       .from('usage_logs')
       .insert({
-        userId,
+        user_id: userId,
         endpoint: 'generate-credit'
       });
 
@@ -338,10 +336,9 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
     const { error: logError } = await supabase
       .from('usage_logs')
       .insert({
-        userId,
-        organizationId,
-        service,
-        imageId,
+        user_id: userId,
+        organization_id: organizationId,
+        image_id: imageId,
         endpoint
       });
 
@@ -399,8 +396,8 @@ async function useOrganizationCredit(organizationId, userId) {
     const { error: logError } = await supabase
       .from('usage_logs')
       .insert({
-        userId,
-        organizationId,
+        user_id: userId,
+        organization_id: organizationId,
         endpoint: 'generate-credit'
       });
 
