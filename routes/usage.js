@@ -50,7 +50,8 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     };
 
-    const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
+    // service column doesn't exist in users table, default to alttext-ai
+    const serviceLimits = planLimits['alttext-ai'];
     const limit = serviceLimits[user.plan] || serviceLimits.free;
     // Calculate remaining tokens (column doesn't exist, use limit - used)
     const remaining = Math.max(0, limit - usageCount);
@@ -275,7 +276,8 @@ async function resetMonthlyTokens() {
     if (usersError) throw usersError;
 
     for (const user of users) {
-      const serviceLimits = planLimits[user.service] || planLimits['alttext-ai'];
+      // service column doesn't exist in users table, default to alttext-ai
+    const serviceLimits = planLimits['alttext-ai'];
       const limit = serviceLimits[user.plan] || serviceLimits.free;
 
       const { error: updateError } = await supabase
