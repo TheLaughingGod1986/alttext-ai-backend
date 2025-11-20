@@ -35,9 +35,10 @@ const supabase = createClient(
   }
 );
 
-// Helper function to convert Prisma-style queries to Supabase
-// Example: prisma.user.findUnique({ where: { id: 1 } })
-// Becomes: supabase.from('users').select('*').eq('id', 1).single()
+// Supabase query examples:
+// Find user: supabase.from('users').select('*').eq('id', 1).single()
+// Insert: supabase.from('users').insert({...}).select().single()
+// Update: supabase.from('users').update({...}).eq('id', 1)
 
 /**
  * Helper function to handle Supabase errors consistently

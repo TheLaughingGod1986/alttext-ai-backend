@@ -19,6 +19,9 @@ db.json
 logs/
 *.log
 npm-debug.log*
+server.log
+server.pid
+test-results.json
 
 # OS
 .DS_Store
