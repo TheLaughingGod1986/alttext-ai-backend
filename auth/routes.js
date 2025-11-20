@@ -72,8 +72,7 @@ router.post('/register', async (req, res) => {
         passwordHash,
         plan: 'free',
         service: userService,
-        tokensRemaining: initialLimits[userService] || 50,
-        credits: 0
+        tokensRemaining: initialLimits[userService] || 50
       })
       .select()
       .single();
@@ -99,7 +98,7 @@ router.post('/register', async (req, res) => {
         email: user.email,
         plan: user.plan,
         tokensRemaining: user.tokensRemaining,
-        credits: user.credits,
+        credits: user.credits || 0,
         resetDate: user.resetDate
       }
     });
@@ -162,7 +161,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         plan: user.plan,
         tokensRemaining: user.tokensRemaining,
-        credits: user.credits,
+        credits: user.credits || 0,
         resetDate: user.resetDate
       }
     });
@@ -183,7 +182,7 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, plan, tokensRemaining, credits, resetDate, createdAt')
+      .select('id, email, plan, tokensRemaining, resetDate, createdAt')
       .eq('id', req.user.id)
       .single();
 
@@ -196,7 +195,10 @@ router.get('/me', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      user
+      user: {
+        ...user,
+        credits: user.credits || 0
+      }
     });
 
   } catch (error) {
