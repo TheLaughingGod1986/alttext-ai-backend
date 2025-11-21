@@ -72,11 +72,13 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     // Determine userId based on auth method
     const userId = req.user?.id || null;
 
+    // Log for debugging
+    console.log(`[Generate] User ID: ${userId}, Type: ${typeof userId}, Auth Method: ${req.authMethod}`);
+    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
+
     // Select API key based on service
     const apiKey = getServiceApiKey(service);
 
-    // Log for debugging
-    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
     console.log(`[Generate] API Key check - ${service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'}: ${process.env[service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'] ? 'SET' : 'NOT SET'}`);
     console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
 
@@ -96,6 +98,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       limits = await checkOrganizationLimits(req.organization.id);
       console.log(`[Generate] Using organization ${req.organization.id} quota: ${limits.tokensRemaining} remaining`);
     } else if (userId) {
+      console.log(`[Generate] Checking user limits for userId: ${userId} (type: ${typeof userId})`);
       limits = await checkUserLimits(userId);
       console.log(`[Generate] Using user ${userId} quota: ${limits.tokensRemaining} remaining`);
     } else {

@@ -183,15 +183,37 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
  * Check if user has remaining tokens/credits
  */
 async function checkUserLimits(userId) {
+  // Validate userId exists
+  if (!userId) {
+    console.error('checkUserLimits: Invalid userId provided:', userId);
+    throw new Error('User not found');
+  }
+
+  console.log('checkUserLimits: Querying user:', { userId, userIdType: typeof userId });
+  
   const { data: user, error } = await supabase
     .from('users')
     .select('plan, credits')
     .eq('id', userId)
     .single();
 
-  if (error || !user) {
+  if (error) {
+    console.error('checkUserLimits: Supabase query error:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      userId: userId
+    });
+    throw new Error(`User lookup failed: ${error.message}`);
+  }
+
+  if (!user) {
+    console.error('checkUserLimits: User not found in database:', { userId: userId });
     throw new Error('User not found');
   }
+
+  console.log('checkUserLimits: User found:', { id: user.id, plan: user.plan, credits: user.credits || 0 });
 
   // Check if user has tokens or credits remaining
   // tokensRemaining column doesn't exist - assume tokens available if user exists
