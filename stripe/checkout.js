@@ -55,7 +55,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
-          userId: userId.toString(),
+          userId: numericUserId.toString(),
           service: userService
         }
       });
@@ -69,10 +69,14 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       };
       
       // Use the column name format that exists in the database
-      // Check which one was returned (even if null, the key exists if the column exists)
-      if ('stripeCustomerId' in user) {
+      // Check which one exists by looking at the user object keys
+      const userKeys = Object.keys(user);
+      const hasCamelCase = userKeys.includes('stripeCustomerId');
+      const hasSnakeCase = userKeys.includes('stripe_customer_id');
+      
+      if (hasCamelCase) {
         updateData.stripeCustomerId = customerId;
-      } else if ('stripe_customer_id' in user) {
+      } else if (hasSnakeCase) {
         updateData.stripe_customer_id = customerId;
       } else {
         // Fallback: try both (Supabase will ignore non-existent columns)
