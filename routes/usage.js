@@ -56,16 +56,18 @@ router.get('/', authenticateToken, async (req, res) => {
     // Calculate remaining tokens (column doesn't exist, use limit - used)
     const remaining = Math.max(0, limit - usageCount);
 
-    // Get credits from credits table
+    // Get credits from credits table (or use default limits)
     const { data: creditsData } = await supabase
       .from('credits')
       .select('monthly_limit, used_this_month')
       .eq('user_id', req.user.id)
       .single();
 
-    const creditsRemaining = creditsData 
-      ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
-      : 0;
+    // Use default limits if no credits record exists
+    const defaultMonthlyLimit = limit; // limit already calculated based on plan
+    const monthlyLimit = creditsData?.monthly_limit || defaultMonthlyLimit;
+    const usedThisMonth = creditsData?.used_this_month || 0;
+    const creditsRemaining = Math.max(0, monthlyLimit - usedThisMonth);
 
     res.json({
       success: true,
@@ -220,6 +222,24 @@ async function checkUserLimits(userId) {
     throw new Error('User not found');
   }
 
+  // Service-specific plan limits
+  const planLimits = {
+    'alttext-ai': {
+      free: 50,
+      pro: 1000,
+      agency: 10000
+    },
+    'seo-ai-meta': {
+      free: 10,
+      pro: 100,
+      agency: 1000
+    }
+  };
+
+  // Default to alttext-ai service (service column doesn't exist in users table)
+  const serviceLimits = planLimits['alttext-ai'];
+  const defaultMonthlyLimit = serviceLimits[user.plan] || serviceLimits.free;
+
   // Query credits from credits table
   const { data: creditsData, error: creditsError } = await supabase
     .from('credits')
@@ -227,17 +247,18 @@ async function checkUserLimits(userId) {
     .eq('user_id', userId)
     .single();
 
-  // Credits might not exist for all users, so we don't throw on error
-  const creditsRemaining = creditsData 
-    ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
-    : 0;
+  // If no credits record exists, use default limits based on plan
+  const monthlyLimit = creditsData?.monthly_limit || defaultMonthlyLimit;
+  const usedThisMonth = creditsData?.used_this_month || 0;
+  const creditsRemaining = Math.max(0, monthlyLimit - usedThisMonth);
 
   console.log('checkUserLimits: User found:', { 
     id: userId, 
     plan: user.plan, 
     creditsRemaining,
-    monthlyLimit: creditsData?.monthly_limit || 0,
-    usedThisMonth: creditsData?.used_this_month || 0
+    monthlyLimit,
+    usedThisMonth,
+    hasCreditsRecord: !!creditsData
   });
 
   // Check if user has tokens or credits remaining
@@ -252,7 +273,8 @@ async function checkUserLimits(userId) {
     hasCredits,
     plan: user.plan,
     tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
-    credits: creditsRemaining
+    credits: creditsRemaining,
+    monthlyLimit: monthlyLimit
   };
 }
 
