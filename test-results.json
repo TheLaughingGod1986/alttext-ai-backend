@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-11-20T17:05:30.204Z",
+  "timestamp": "2025-11-20T17:08:07.259Z",
   "baseUrl": "https://alttext-ai-backend.onrender.com",
   "summary": {
     "total": 14,
@@ -21,7 +21,7 @@
           "statusField": "ok"
         },
         "notes": "Health check should return status ok",
-        "timestamp": "2025-11-20T17:05:22.679Z"
+        "timestamp": "2025-11-20T17:07:58.790Z"
       },
       {
         "name": "SUPABASE_URL is set",
@@ -29,7 +29,7 @@
         "expected": true,
         "actual": true,
         "notes": "Required for Supabase connection",
-        "timestamp": "2025-11-20T17:05:22.681Z"
+        "timestamp": "2025-11-20T17:07:58.792Z"
       },
       {
         "name": "SUPABASE_SERVICE_ROLE_KEY is set",
@@ -37,7 +37,7 @@
         "expected": true,
         "actual": true,
         "notes": "Required for Supabase operations",
-        "timestamp": "2025-11-20T17:05:22.681Z"
+        "timestamp": "2025-11-20T17:07:58.792Z"
       },
       {
         "name": "POST /auth/register",
@@ -55,13 +55,13 @@
           "hasUser": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:24.679Z"
+        "timestamp": "2025-11-20T17:08:01.444Z"
       },
       {
         "name": "POST /auth/login",
         "passed": {
-          "id": "89b346f8-4528-4478-986b-85ede831e0ca",
-          "email": "test_1763658322681@example.com",
+          "id": "23ea6855-3042-45fe-889f-24c6aa7d6bd2",
+          "email": "test_1763658478792@example.com",
           "plan": "free",
           "tokensRemaining": 50,
           "credits": 0,
@@ -80,15 +80,15 @@
           "hasUser": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:26.478Z"
+        "timestamp": "2025-11-20T17:08:03.200Z"
       },
       {
         "name": "GET /auth/me",
         "passed": {
-          "id": "89b346f8-4528-4478-986b-85ede831e0ca",
-          "email": "test_1763658322681@example.com",
+          "id": "23ea6855-3042-45fe-889f-24c6aa7d6bd2",
+          "email": "test_1763658478792@example.com",
           "plan": "free",
-          "created_at": "2025-11-20T17:05:19.118177+00:00",
+          "created_at": "2025-11-20T17:07:55.861238+00:00",
           "credits": 0
         },
         "expected": {
@@ -102,7 +102,7 @@
           "hasUser": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:27.161Z"
+        "timestamp": "2025-11-20T17:08:03.605Z"
       },
       {
         "name": "GET /usage",
@@ -120,7 +120,7 @@
           "hasNumericFields": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:27.858Z"
+        "timestamp": "2025-11-20T17:08:04.191Z"
       },
       {
         "name": "GET /usage/history",
@@ -134,7 +134,7 @@
           "success": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:28.278Z"
+        "timestamp": "2025-11-20T17:08:05.292Z"
       },
       {
         "name": "GET /billing/plans",
@@ -150,7 +150,7 @@
           "hasPlansArray": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:28.472Z"
+        "timestamp": "2025-11-20T17:08:05.466Z"
       },
       {
         "name": "GET /billing/info",
@@ -164,7 +164,7 @@
           "success": true
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:28.884Z"
+        "timestamp": "2025-11-20T17:08:05.857Z"
       },
       {
         "name": "POST /auth/login (invalid credentials)",
@@ -178,7 +178,7 @@
           "code": "INVALID_CREDENTIALS"
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:29.259Z"
+        "timestamp": "2025-11-20T17:08:06.272Z"
       },
       {
         "name": "GET /usage (no auth)",
@@ -190,7 +190,7 @@
           "status": 401
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:29.450Z"
+        "timestamp": "2025-11-20T17:08:06.445Z"
       },
       {
         "name": "GET /nonexistent (404)",
@@ -202,7 +202,7 @@
           "status": 404
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:29.642Z"
+        "timestamp": "2025-11-20T17:08:06.651Z"
       },
       {
         "name": "Usage response structure",
@@ -221,7 +221,7 @@
           ]
         },
         "notes": "",
-        "timestamp": "2025-11-20T17:05:30.204Z"
+        "timestamp": "2025-11-20T17:08:07.259Z"
       }
     ],
     "failed": [],
