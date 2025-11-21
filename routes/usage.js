@@ -56,29 +56,27 @@ router.get('/', authenticateToken, async (req, res) => {
     // Calculate remaining tokens (column doesn't exist, use limit - used)
     const remaining = Math.max(0, limit - usageCount);
 
+    // Get credits from credits table
+    const { data: creditsData } = await supabase
+      .from('credits')
+      .select('monthly_limit, used_this_month')
+      .eq('user_id', req.user.id)
+      .single();
+
+    const creditsRemaining = creditsData 
+      ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
+      : 0;
+
     res.json({
-      // Get credits from credits table
-      const { data: creditsData } = await supabase
-        .from('credits')
-        .select('monthly_limit, used_this_month')
-        .eq('user_id', req.user.id)
-        .single();
-
-      const creditsRemaining = creditsData 
-        ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
-        : 0;
-
-      res.json({
-        success: true,
-        usage: {
-          used: usageCount,
-          limit: limit,
-          remaining: remaining,
-          plan: user.plan,
-          credits: creditsRemaining,
-          service: 'alttext-ai' // service column doesn't exist
-        }
-      });
+      success: true,
+      usage: {
+        used: usageCount,
+        limit: limit,
+        remaining: remaining,
+        plan: user.plan,
+        credits: creditsRemaining,
+        service: 'alttext-ai' // service column doesn't exist
+      }
     });
 
   } catch (error) {
