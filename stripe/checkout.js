@@ -13,6 +13,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  */
 async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
   try {
+    console.log('createCheckoutSession called with:', { userId, priceId, service, successUrl, cancelUrl });
+    
     // Validate userId exists
     if (!userId) {
       console.error('Invalid userId provided:', userId);
@@ -20,6 +22,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
     }
 
     // Try both camelCase and snake_case column names for compatibility
+    console.log('Querying Supabase for user:', userId);
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, email, stripeCustomerId, stripe_customer_id, service')
@@ -41,6 +44,8 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       console.error('User not found in database:', { userId: userId });
       throw new Error('User not found');
     }
+
+    console.log('User found:', { id: user.id, email: user.email, hasStripeCustomer: !!(user.stripeCustomerId || user.stripe_customer_id) });
 
     // Use service from request or user's stored service
     const userService = service || user.service || 'alttext-ai';
@@ -88,9 +93,13 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
         .eq('id', userId);
 
       if (updateError) throw updateError;
+      console.log('Stripe customer created and user updated:', { customerId, userId });
+    } else {
+      console.log('Using existing Stripe customer:', customerId);
     }
 
     // Create checkout session
+    console.log('Creating Stripe checkout session with:', { customerId, priceId, mode: priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? 'payment' : 'subscription' });
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
@@ -114,10 +123,19 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       } : undefined
     });
 
+    console.log('Stripe checkout session created successfully:', { sessionId: session.id, url: session.url });
     return session;
 
   } catch (error) {
-    console.error('Error creating checkout session:', error);
+    console.error('Error creating checkout session:', {
+      message: error.message,
+      stack: error.stack,
+      type: error.type,
+      code: error.code,
+      userId,
+      priceId,
+      service
+    });
     throw error;
   }
 }
