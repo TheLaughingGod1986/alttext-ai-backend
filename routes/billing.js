@@ -15,6 +15,20 @@ const router = express.Router();
  */
 router.post('/checkout', authenticateToken, async (req, res) => {
   try {
+    // Log user info for debugging
+    console.log('Checkout request received:', {
+      userId: req.user?.id,
+      userIdType: typeof req.user?.id,
+      userEmail: req.user?.email
+    });
+
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        error: 'User authentication required',
+        code: 'AUTHENTICATION_REQUIRED'
+      });
+    }
+
     const { priceId, price_id, successUrl, cancelUrl, service = 'alttext-ai' } = req.body;
     
     // Use price_id if provided, otherwise priceId (for backward compatibility)

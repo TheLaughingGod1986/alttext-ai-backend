@@ -13,20 +13,42 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  */
 async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
   try {
+    // Ensure userId is a number (Supabase IDs are integers)
+    const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    
+    if (isNaN(numericUserId)) {
+      console.error('Invalid userId provided:', userId);
+      throw new Error('Invalid user ID');
+    }
+
+    // Try both camelCase and snake_case column names for compatibility
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('email, stripeCustomerId, service')
-      .eq('id', userId)
+      .select('id, email, stripeCustomerId, stripe_customer_id, service')
+      .eq('id', numericUserId)
       .single();
 
-    if (userError || !user) {
+    if (userError) {
+      console.error('Supabase query error:', {
+        message: userError.message,
+        code: userError.code,
+        details: userError.details,
+        hint: userError.hint,
+        userId: numericUserId
+      });
+      throw new Error(`User lookup failed: ${userError.message}`);
+    }
+
+    if (!user) {
+      console.error('User not found in database:', { userId: numericUserId });
       throw new Error('User not found');
     }
 
     // Use service from request or user's stored service
     const userService = service || user.service || 'alttext-ai';
 
-    let customerId = user.stripeCustomerId;
+    // Handle both camelCase and snake_case column names
+    let customerId = user.stripeCustomerId || user.stripe_customer_id;
 
     // Create Stripe customer if doesn't exist
     if (!customerId) {
@@ -41,13 +63,27 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       customerId = customer.id;
 
       // Update user with customer ID
+      // Determine which column name format exists in the database
+      const updateData = { 
+        service: userService // Update service if not set
+      };
+      
+      // Use the column name format that exists in the database
+      // Check which one was returned (even if null, the key exists if the column exists)
+      if ('stripeCustomerId' in user) {
+        updateData.stripeCustomerId = customerId;
+      } else if ('stripe_customer_id' in user) {
+        updateData.stripe_customer_id = customerId;
+      } else {
+        // Fallback: try both (Supabase will ignore non-existent columns)
+        updateData.stripeCustomerId = customerId;
+        updateData.stripe_customer_id = customerId;
+      }
+      
       const { error: updateError } = await supabase
         .from('users')
-        .update({ 
-          stripeCustomerId: customerId,
-          service: userService // Update service if not set
-        })
-        .eq('id', userId);
+        .update(updateData)
+        .eq('id', numericUserId);
 
       if (updateError) throw updateError;
     }
@@ -66,7 +102,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
-        userId: userId.toString(),
+        userId: numericUserId.toString(),
         service: userService
       },
       subscription_data: priceId !== process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? {
@@ -89,18 +125,38 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
  */
 async function createCustomerPortalSession(userId, returnUrl) {
   try {
+    // Ensure userId is a number
+    const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    
+    if (isNaN(numericUserId)) {
+      throw new Error('Invalid user ID');
+    }
+
+    // Try both camelCase and snake_case column names
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('stripeCustomerId')
-      .eq('id', userId)
+      .select('stripeCustomerId, stripe_customer_id')
+      .eq('id', numericUserId)
       .single();
 
-    if (userError || !user || !user.stripeCustomerId) {
+    if (userError) {
+      console.error('Supabase query error in portal session:', {
+        message: userError.message,
+        code: userError.code,
+        userId: numericUserId
+      });
+      throw new Error(`User lookup failed: ${userError.message}`);
+    }
+
+    // Handle both camelCase and snake_case column names
+    const customerId = user?.stripeCustomerId || user?.stripe_customer_id;
+
+    if (!user || !customerId) {
       throw new Error('No Stripe customer found for user');
     }
 
     const session = await stripe.billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
+      customer: customerId,
       return_url: returnUrl,
     });
 
