@@ -57,15 +57,28 @@ router.get('/', authenticateToken, async (req, res) => {
     const remaining = Math.max(0, limit - usageCount);
 
     res.json({
-      success: true,
-      usage: {
-        used: usageCount,
-        limit: limit,
-        remaining: remaining,
-        plan: user.plan,
-        credits: user.credits,
-        service: 'alttext-ai' // service column doesn't exist
-      }
+      // Get credits from credits table
+      const { data: creditsData } = await supabase
+        .from('credits')
+        .select('monthly_limit, used_this_month')
+        .eq('user_id', req.user.id)
+        .single();
+
+      const creditsRemaining = creditsData 
+        ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
+        : 0;
+
+      res.json({
+        success: true,
+        usage: {
+          used: usageCount,
+          limit: limit,
+          remaining: remaining,
+          plan: user.plan,
+          credits: creditsRemaining,
+          service: 'alttext-ai' // service column doesn't exist
+        }
+      });
     });
 
   } catch (error) {
@@ -191,21 +204,22 @@ async function checkUserLimits(userId) {
 
   console.log('checkUserLimits: Querying user:', { userId, userIdType: typeof userId });
   
-  const { data: user, error } = await supabase
+  // Query user for plan
+  const { data: user, error: userError } = await supabase
     .from('users')
-    .select('plan, credits')
+    .select('plan')
     .eq('id', userId)
     .single();
 
-  if (error) {
+  if (userError) {
     console.error('checkUserLimits: Supabase query error:', {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
+      message: userError.message,
+      code: userError.code,
+      details: userError.details,
+      hint: userError.hint,
       userId: userId
     });
-    throw new Error(`User lookup failed: ${error.message}`);
+    throw new Error(`User lookup failed: ${userError.message}`);
   }
 
   if (!user) {
@@ -213,12 +227,30 @@ async function checkUserLimits(userId) {
     throw new Error('User not found');
   }
 
-  console.log('checkUserLimits: User found:', { id: user.id, plan: user.plan, credits: user.credits || 0 });
+  // Query credits from credits table
+  const { data: creditsData, error: creditsError } = await supabase
+    .from('credits')
+    .select('monthly_limit, used_this_month')
+    .eq('user_id', userId)
+    .single();
+
+  // Credits might not exist for all users, so we don't throw on error
+  const creditsRemaining = creditsData 
+    ? Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0))
+    : 0;
+
+  console.log('checkUserLimits: User found:', { 
+    id: userId, 
+    plan: user.plan, 
+    creditsRemaining,
+    monthlyLimit: creditsData?.monthly_limit || 0,
+    usedThisMonth: creditsData?.used_this_month || 0
+  });
 
   // Check if user has tokens or credits remaining
   // tokensRemaining column doesn't exist - assume tokens available if user exists
   const hasTokens = true;
-  const hasCredits = (user.credits || 0) > 0;
+  const hasCredits = creditsRemaining > 0;
   const hasAccess = hasTokens || hasCredits;
 
   return {
@@ -227,7 +259,7 @@ async function checkUserLimits(userId) {
     hasCredits,
     plan: user.plan,
     tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
-    credits: user.credits || 0
+    credits: creditsRemaining
   };
 }
 
@@ -236,22 +268,28 @@ async function checkUserLimits(userId) {
  */
 async function useCredit(userId) {
   try {
-    // Get current credits
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('credits')
-      .eq('id', userId)
+    // Get current credits from credits table
+    const { data: creditsData, error: creditsError } = await supabase
+      .from('credits')
+      .select('monthly_limit, used_this_month')
+      .eq('user_id', userId)
       .single();
 
-    if (userError || !user || (user.credits || 0) <= 0) {
+    if (creditsError || !creditsData) {
+      return false; // No credits record found
+    }
+
+    const creditsRemaining = Math.max(0, (creditsData.monthly_limit || 0) - (creditsData.used_this_month || 0));
+    
+    if (creditsRemaining <= 0) {
       return false; // No credits available
     }
 
-    // Decrement credits
+    // Increment used_this_month in credits table
     const { error: updateError } = await supabase
-      .from('users')
-      .update({ credits: (user.credits || 0) - 1 })
-      .eq('id', userId);
+      .from('credits')
+      .update({ used_this_month: (creditsData.used_this_month || 0) + 1 })
+      .eq('user_id', userId);
 
     if (updateError) throw updateError;
 
