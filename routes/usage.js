@@ -175,14 +175,9 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
 
     if (userError) throw userError;
 
-    // Decrement user's remaining tokens
-    const { error: updateError } = await supabase
-      .from('users')
-      // Note: tokensRemaining column doesn't exist, so we can't update it
-      // Usage is tracked via usage_logs table instead
-      .eq('id', userId);
-
-    if (updateError) throw updateError;
+    // Note: tokensRemaining column doesn't exist in users table
+    // Usage is tracked via usage_logs table instead
+    // No need to update users table
 
   } catch (error) {
     console.error('Error recording usage:', error);
