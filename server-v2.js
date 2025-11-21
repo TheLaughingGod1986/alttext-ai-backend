@@ -96,11 +96,11 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     let limits;
     if (req.organization) {
       limits = await checkOrganizationLimits(req.organization.id);
-      console.log(`[Generate] Using organization ${req.organization.id} quota: ${limits.tokensRemaining} remaining`);
+      console.log(`[Generate] Using organization ${req.organization.id} quota: ${limits.credits || 0} remaining`);
     } else if (userId) {
       console.log(`[Generate] Checking user limits for userId: ${userId} (type: ${typeof userId})`);
       limits = await checkUserLimits(userId);
-      console.log(`[Generate] Using user ${userId} quota: ${limits.tokensRemaining} remaining`);
+      console.log(`[Generate] Using user ${userId} quota: ${limits.credits || 0} remaining`);
     } else {
       return res.status(401).json({
         error: 'Authentication required',
@@ -116,7 +116,7 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         error: 'Monthly limit reached',
         code: 'LIMIT_REACHED',
         usage: {
-          used: planLimit - limits.tokensRemaining,
+          used: planLimit - (limits.credits || 0),
           limit: planLimit,
           plan: limits.plan,
           resetDate: getNextResetDate()
@@ -167,37 +167,12 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       }
       }
 
-      // Get updated info (organization or user)
-      let plan, tokensRemaining, credits, resetDate;
-      if (req.organization) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('plan, tokensRemaining, credits, resetDate')
-          .eq('id', req.organization.id)
-          .single();
-        
-        if (orgError || !org) throw orgError || new Error('Organization not found');
-        plan = org.plan;
-        tokensRemaining = org.tokensRemaining;
-        credits = org.credits;
-        resetDate = org.resetDate;
-      } else {
-        const { data: user, error: userError } = await supabase
-          .from('users')
-          .select('plan, tokensRemaining, credits, resetDate')
-          .eq('id', userId)
-          .single();
-        
-        if (userError || !user) throw userError || new Error('User not found');
-        plan = user.plan;
-        tokensRemaining = user.tokensRemaining;
-        credits = user.credits;
-        resetDate = user.resetDate;
-      }
-
+      // Use limits already calculated from checkUserLimits/checkOrganizationLimits
+      // No need to query database again - limits object has all the info we need
       const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
-      const limit = planLimits[plan] || 10;
-      const used = limit - tokensRemaining;
+      const limit = planLimits[limits.plan] || 10;
+      const remaining = limits.credits || 0; // Use credits from limits (which includes monthly limit calculation)
+      const used = limit - remaining;
 
       // Return the raw content (JSON string) for meta generation
       return res.json({
@@ -207,9 +182,9 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         usage: {
           used,
           limit,
-          remaining: tokensRemaining,
-          plan: plan,
-          credits: credits,
+          remaining: remaining,
+          plan: limits.plan,
+          credits: limits.credits || 0,
           resetDate: getNextResetDate()
         },
         tokens: openaiResponse.usage
@@ -276,37 +251,12 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     }
     }
 
-    // Get updated info (organization or user)
-    let plan, tokensRemaining, credits, resetDate;
-    if (req.organization) {
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .select('plan, tokensRemaining, credits, resetDate')
-        .eq('id', req.organization.id)
-        .single();
-      
-      if (orgError || !org) throw orgError || new Error('Organization not found');
-      plan = org.plan;
-      tokensRemaining = org.tokensRemaining;
-      credits = org.credits;
-      resetDate = org.resetDate;
-    } else {
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('plan, tokensRemaining, credits, resetDate')
-        .eq('id', userId)
-        .single();
-      
-      if (userError || !user) throw userError || new Error('User not found');
-      plan = user.plan;
-      tokensRemaining = user.tokensRemaining;
-      credits = user.credits;
-      resetDate = user.resetDate;
-    }
-
+    // Use limits already calculated from checkUserLimits/checkOrganizationLimits
+    // No need to query database again - limits object has all the info we need
     const planLimits = { free: 50, pro: 1000, agency: 10000 };
-    const limit = planLimits[plan] || 50;
-    const used = limit - tokensRemaining;
+    const limit = planLimits[limits.plan] || 50;
+    const remaining = limits.credits || 0; // Use credits from limits (which includes monthly limit calculation)
+    const used = limit - remaining;
     
     // Return response with usage data
     res.json({
@@ -315,9 +265,9 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       usage: {
         used,
         limit,
-        remaining: tokensRemaining,
-        plan: plan,
-        credits: credits,
+        remaining: remaining,
+        plan: limits.plan,
+        credits: limits.credits || 0,
         resetDate: getNextResetDate()
       },
       tokens: openaiResponse.usage
