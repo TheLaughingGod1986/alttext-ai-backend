@@ -13,10 +13,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
  */
 async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
   try {
-    // Ensure userId is a number (Supabase IDs are integers)
-    const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    
-    if (isNaN(numericUserId)) {
+    // Validate userId exists
+    if (!userId) {
       console.error('Invalid userId provided:', userId);
       throw new Error('Invalid user ID');
     }
@@ -25,7 +23,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, email, stripeCustomerId, stripe_customer_id, service')
-      .eq('id', numericUserId)
+      .eq('id', userId)
       .single();
 
     if (userError) {
@@ -34,13 +32,13 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
         code: userError.code,
         details: userError.details,
         hint: userError.hint,
-        userId: numericUserId
+        userId: userId
       });
       throw new Error(`User lookup failed: ${userError.message}`);
     }
 
     if (!user) {
-      console.error('User not found in database:', { userId: numericUserId });
+      console.error('User not found in database:', { userId: userId });
       throw new Error('User not found');
     }
 
@@ -55,7 +53,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
-          userId: numericUserId.toString(),
+          userId: userId.toString(),
           service: userService
         }
       });
@@ -87,7 +85,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       const { error: updateError } = await supabase
         .from('users')
         .update(updateData)
-        .eq('id', numericUserId);
+        .eq('id', userId);
 
       if (updateError) throw updateError;
     }
@@ -106,7 +104,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
-        userId: numericUserId.toString(),
+        userId: userId.toString(),
         service: userService
       },
       subscription_data: priceId !== process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? {
@@ -129,10 +127,8 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
  */
 async function createCustomerPortalSession(userId, returnUrl) {
   try {
-    // Ensure userId is a number
-    const numericUserId = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    
-    if (isNaN(numericUserId)) {
+    // Validate userId exists
+    if (!userId) {
       throw new Error('Invalid user ID');
     }
 
@@ -140,14 +136,14 @@ async function createCustomerPortalSession(userId, returnUrl) {
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('stripeCustomerId, stripe_customer_id')
-      .eq('id', numericUserId)
+      .eq('id', userId)
       .single();
 
     if (userError) {
       console.error('Supabase query error in portal session:', {
         message: userError.message,
         code: userError.code,
-        userId: numericUserId
+        userId: userId
       });
       throw new Error(`User lookup failed: ${userError.message}`);
     }
@@ -177,7 +173,11 @@ async function createCustomerPortalSession(userId, returnUrl) {
  */
 async function handleSuccessfulCheckout(session) {
   try {
-    const userId = parseInt(session.metadata.userId);
+    const userId = session.metadata.userId;
+    
+    if (!userId) {
+      throw new Error('User ID not found in session metadata');
+    }
 
     // Retrieve session with line_items expanded if not already present
     let sessionWithItems = session;
