@@ -18,6 +18,7 @@ const app = createTestServer();
 describe('Generate endpoint', () => {
   beforeAll(() => {
     process.env.ALTTEXT_OPENAI_API_KEY = 'test-openai-key';
+    process.env.SEO_META_OPENAI_API_KEY = 'test-seo-meta-key';
   });
 
   beforeEach(() => {
