@@ -469,7 +469,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
+      expect(res.body.code).toBe('GENERATION_ERROR');
       expect(res.body.message || res.body.error).toMatch(/Missing OpenAI API key/i);
 
       // Restore
@@ -585,7 +585,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
+      expect(res.body.code).toBe('GENERATION_ERROR');
     });
 
     test('handles OpenAI API error 503 (Service Unavailable)', async () => {
@@ -614,7 +614,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
+      expect(res.body.code).toBe('GENERATION_ERROR');
     });
 
     test('handles malformed OpenAI response (null data)', async () => {
