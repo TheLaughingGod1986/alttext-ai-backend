@@ -1,134 +1,93 @@
-# Deployment
+# Deployment Guide
 
-## Environment Setup
+## Overview
 
-### Required Environment Variables
+This document describes the deployment process for the AltText AI backend API.
 
-See `config/env.example` for all required variables. Key variables:
+## Current Deployment Setup
 
-```env
-# Supabase (Required)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+The backend is deployed to **Render.com** and automatically deploys on every push to the `main` branch.
 
-# OpenAI (Required)
-ALTTEXT_OPENAI_API_KEY=sk-...
-SEO_META_OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
+## ⚠️ IMPORTANT: Deployment Protection
 
-# JWT (Required)
-JWT_SECRET=your-secret-key
-JWT_EXPIRES_IN=7d
+**Currently, Render is configured to auto-deploy on every push, regardless of GitHub Actions test status.**
 
-# Stripe (Required)
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+### Problem
+If GitHub Actions tests fail, Render will still deploy the broken code to production. This is a **critical security and quality issue**.
 
-# Email (Required)
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=noreply@yourdomain.com
-```
+### Solution: Require GitHub Actions Status Checks
 
-### Local Development
+To prevent deployments when tests fail, you need to configure Render to require GitHub Actions status checks:
 
-```bash
-# Install dependencies
-npm install
+#### Option 1: Configure Render Dashboard (Recommended)
 
-# Copy environment template
-cp config/env.example .env
+1. Go to your Render dashboard: https://dashboard.render.com
+2. Navigate to your service: `alttext-ai-phase2`
+3. Go to **Settings** → **Build & Deploy**
+4. Under **Deploy Hooks** or **Auto-Deploy**, look for **"Required Status Checks"** or **"Branch Protection"**
+5. Add the required status check: `Backend Tests / test (18.x)` and `Backend Tests / test (20.x)`
+6. Save changes
 
-# Edit .env and add your API keys
-# Start development server
-npm start
-```
+#### Option 2: Use Render API (Advanced)
 
-## Deployment Platforms
+If the dashboard doesn't have this option, you can use the Render API to configure deployment protection.
 
-### Railway
+#### Option 3: Manual Deployment Only
 
-1. Create new project on Railway
-2. Add GitHub repo
-3. Set environment variables in Railway dashboard
-4. Deploy automatically on push
+As a temporary measure, you can:
+1. Disable auto-deploy in Render
+2. Manually trigger deployments only after verifying GitHub Actions passes
 
-Railway will automatically:
-- Detect Node.js project
-- Run `npm install`
-- Start with `npm start`
+## GitHub Actions Workflow
 
-### Render
+The `.github/workflows/tests.yml` workflow runs on every push to `main` and:
+- Tests on Node.js 18.x and 20.x
+- Runs unit tests
+- Runs integration tests
+- Uploads coverage reports
 
-1. Create new Web Service on Render
-2. Connect GitHub repo
-3. Configure:
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-4. Add environment variables in Render dashboard
-5. Deploy
+**The workflow must pass before deployment should be allowed.**
 
-### Docker
+## Manual Deployment
 
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+If auto-deploy is disabled:
 
-## Monthly Reset Cron Job
+1. Verify GitHub Actions workflow passes: https://github.com/TheLaughingGod1986/optiap-backend/actions
+2. Go to Render dashboard
+3. Click **"Manual Deploy"** → **"Deploy latest commit"**
 
-Set up a cron job to reset monthly usage limits:
+## Environment Variables
 
-```bash
-curl -X POST https://your-api.com/api/webhook/reset \
-  -H "Content-Type: application/json" \
-  -d '{"secret": "your-webhook-secret"}'
-```
+All required environment variables must be set in Render dashboard under **Environment**:
 
-### Using cron-job.org
+### Required Variables
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ALTTEXT_OPENAI_API_KEY`
+- `SEO_META_OPENAI_API_KEY`
+- `JWT_SECRET`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
 
-1. Create account at cron-job.org
-2. Add new cron job
-3. Set schedule: `0 0 1 * *` (first day of each month at midnight)
-4. Set URL: `https://your-api.com/api/webhook/reset`
-5. Set method: POST
-6. Add headers: `Content-Type: application/json`
-7. Add body: `{"secret": "your-webhook-secret"}`
+See `config/env.example` for the complete list.
 
-### Using EasyCron
+## Health Check
 
-Similar setup to cron-job.org, with monthly schedule.
+The service exposes a health check endpoint at `/health` which Render uses to verify the service is running.
 
-## Health Checks
+## Rollback
 
-The backend includes health check endpoints for monitoring:
+If a deployment fails or causes issues:
 
-- `GET /health` - Basic health check
-- `GET /api/health` - API health check
+1. Go to Render dashboard
+2. Navigate to **Deploys** tab
+3. Find the previous successful deployment
+4. Click **"Rollback to this deploy"**
 
 ## Monitoring
 
-Recommended monitoring:
-- Application logs (check for errors)
-- Database connection health
-- API response times
-- Error rates
-- Stripe webhook delivery
-
-## Security Checklist
-
-Before deploying to production:
-
-- [ ] All environment variables set
-- [ ] JWT_SECRET is strong and unique
-- [ ] Stripe keys are production keys (not test keys)
-- [ ] CORS configured for your frontend domain
-- [ ] Rate limiting enabled
-- [ ] Helmet security headers enabled
-- [ ] Database credentials are secure
-- [ ] API keys are not exposed in logs
-
+- **Render Dashboard**: https://dashboard.render.com
+- **GitHub Actions**: https://github.com/TheLaughingGod1986/optiap-backend/actions
+- **Application Logs**: Available in Render dashboard under **Logs** tab
