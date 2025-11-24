@@ -4,8 +4,9 @@
  */
 
 const express = require('express');
-const { supabase } = require('../supabase-client');
+const { supabase } = require('../db/supabase-client');
 const { randomUUID } = require('crypto');
+const { authenticateToken } = require('../auth/jwt');
 
 const router = express.Router();
 
@@ -198,18 +199,9 @@ router.post('/activate', async (req, res) => {
  *   siteId: number  // or siteHash: string
  * }
  */
-router.post('/deactivate', async (req, res) => {
+router.post('/deactivate', authenticateToken, async (req, res) => {
   try {
     const { siteId, siteHash } = req.body;
-
-    // This endpoint requires authentication (middleware will be added)
-    // For now, we'll assume req.user is populated by auth middleware
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
-    }
 
     if (!siteId && !siteHash) {
       return res.status(400).json({

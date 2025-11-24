@@ -3,8 +3,8 @@
  * Supports both JWT token authentication and license key authentication
  */
 
-const { supabase } = require('../supabase-client');
-const { verifyToken } = require('./jwt');
+const { supabase } = require('../../db/supabase-client');
+const { verifyToken } = require('../../auth/jwt');
 
 /**
  * Authenticate using either JWT token OR license key

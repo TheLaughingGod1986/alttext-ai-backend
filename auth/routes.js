@@ -4,9 +4,10 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { supabase } = require('../supabase-client');
+const { supabase } = require('../db/supabase-client');
 const { generateToken, hashPassword, comparePassword, authenticateToken } = require('./jwt');
 const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email');
+const licenseService = require('../services/licenseService');
 
 const router = express.Router();
 
@@ -22,7 +23,7 @@ function generateResetToken() {
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, service = 'alttext-ai' } = req.body;
+    const { email, password, service = 'alttext-ai', siteUrl, siteHash, installId } = req.body;
 
     // Validate input
     if (!email || !password) {
@@ -100,25 +101,60 @@ router.post('/register', async (req, res) => {
     // Generate JWT token
     const token = generateToken(user);
 
+    // Create free-tier license
+    let license = null;
+    let licenseSnapshot = null;
+    try {
+      console.log(`📋 Creating free license for user ${user.id}`);
+
+      license = await licenseService.createLicense({
+        plan: 'free',
+        service: userService,
+        userId: user.id,
+        siteUrl: siteUrl || null,
+        siteHash: siteHash || null,
+        installId: installId || null,
+        email: user.email,
+        name: user.email.split('@')[0]
+      });
+
+      // Get license snapshot
+      licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
+
+      console.log(`✅ Free license created: ${license.licenseKey}`);
+    } catch (licenseError) {
+      console.error('Error creating free license (non-critical):', licenseError);
+      // Don't fail registration if license creation fails
+      // User can still use the system
+    }
+
     // Send welcome email (non-blocking)
     sendWelcomeEmail(user.email, user.email).catch(err => {
       console.error('Failed to send welcome email (non-critical):', err);
       // Don't fail registration if email fails
     });
 
-    res.status(201).json({
+    // Build response with license info if available
+    const response = {
       success: true,
       token,
       user: {
         id: user.id,
         email: user.email,
         plan: user.plan,
-        tokensRemaining: user.tokens_remaining || user.tokensRemaining || initialLimits[userService] || 50,
+        tokensRemaining: licenseSnapshot?.tokensRemaining || initialLimits[userService] || 50,
         credits: user.credits || 0,
         resetDate: user.reset_date || user.resetDate,
         service: user.service || userService
       }
-    });
+    };
+
+    // Include license in response if created
+    if (licenseSnapshot) {
+      response.license = licenseSnapshot;
+    }
+
+    res.status(201).json(response);
 
   } catch (error) {
     console.error('Registration error:', error);

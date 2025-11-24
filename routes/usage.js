@@ -3,7 +3,7 @@
  */
 
 const express = require('express');
-const { supabase, handleSupabaseResponse } = require('../supabase-client');
+const { supabase, handleSupabaseResponse } = require('../db/supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 
 const router = express.Router();
@@ -155,16 +155,26 @@ router.get('/history', authenticateToken, async (req, res) => {
 /**
  * Record usage for a generation request
  */
-async function recordUsage(userId, imageId = null, endpoint = null, service = 'alttext-ai') {
+async function recordUsage(userId, imageId = null, endpoint = null, service = 'alttext-ai', wpUserId = null, wpUserName = null) {
   try {
     // Create usage log
+    const logData = {
+      user_id: userId,
+      image_id: imageId,
+      endpoint
+    };
+
+    // Add WordPress user info if provided
+    if (wpUserId !== null) {
+      logData.wp_user_id = wpUserId;
+    }
+    if (wpUserName !== null) {
+      logData.wp_user_name = wpUserName;
+    }
+
     const { error: logError } = await supabase
       .from('usage_logs')
-      .insert({
-        user_id: userId,
-        image_id: imageId,
-        endpoint
-      });
+      .insert(logData);
 
     if (logError) throw logError;
 
@@ -421,17 +431,27 @@ async function checkOrganizationLimits(organizationId) {
 /**
  * Record usage for an organization (shared quota)
  */
-async function recordOrganizationUsage(organizationId, userId, imageId = null, endpoint = null, service = 'alttext-ai') {
+async function recordOrganizationUsage(organizationId, userId, imageId = null, endpoint = null, service = 'alttext-ai', wpUserId = null, wpUserName = null) {
   try {
     // Create usage log
+    const logData = {
+      user_id: userId,
+      organization_id: organizationId,
+      image_id: imageId,
+      endpoint
+    };
+
+    // Add WordPress user info if provided
+    if (wpUserId !== null) {
+      logData.wp_user_id = wpUserId;
+    }
+    if (wpUserName !== null) {
+      logData.wp_user_name = wpUserName;
+    }
+
     const { error: logError } = await supabase
       .from('usage_logs')
-      .insert({
-        user_id: userId,
-        organization_id: organizationId,
-        image_id: imageId,
-        endpoint
-      });
+      .insert(logData);
 
     if (logError) throw logError;
 

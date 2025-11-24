@@ -3,10 +3,167 @@
  */
 
 const express = require('express');
-const { supabase } = require('../supabase-client');
-const { dualAuthenticate } = require('../auth/dual-auth');
+const { supabase } = require('../db/supabase-client');
+const { dualAuthenticate, combinedAuth } = require('../src/middleware/dual-auth');
+const licenseService = require('../services/licenseService');
 
 const router = express.Router();
+
+/**
+ * POST /licenses/auto-attach
+ * Auto-attach a license to a site
+ * 
+ * Inputs: siteUrl, siteHash, installId
+ * Action: Associates license with site, returns licenseKey + snapshot
+ * 
+ * Authentication:
+ * - JWT token (Bearer token in Authorization header)
+ * - License key (X-License-Key header)
+ * - Site hash (X-Site-Hash header)
+ */
+router.post('/auto-attach', combinedAuth, async (req, res) => {
+  try {
+    const { siteUrl, siteHash, installId } = req.body;
+
+    // Validate at least one site identifier
+    if (!siteUrl && !siteHash && !installId) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one of siteUrl, siteHash, or installId is required',
+        code: 'MISSING_SITE_INFO'
+      });
+    }
+
+    // Determine license to attach
+    let license = null;
+    let licenseId = null;
+
+    // If license key provided in header or body, use it
+    const licenseKey = req.headers['x-license-key'] || req.body.licenseKey;
+
+    if (licenseKey) {
+      // Find license by key
+      const { data: licenseData, error: licenseError } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('licenseKey', licenseKey)
+        .single();
+
+      if (licenseError || !licenseData) {
+        return res.status(404).json({
+          success: false,
+          error: 'License not found',
+          code: 'LICENSE_NOT_FOUND'
+        });
+      }
+
+      license = licenseData;
+      licenseId = license.id;
+    } else if (req.user && req.user.id) {
+      // JWT auth - find user's license
+      const { data: userLicense, error: userLicenseError } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('userId', req.user.id)
+        .order('createdAt', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!userLicenseError && userLicense) {
+        license = userLicense;
+        licenseId = license.id;
+      } else {
+        // No license found for user - create one
+        const { data: user } = await supabase
+          .from('users')
+          .select('email, plan, service')
+          .eq('id', req.user.id)
+          .single();
+
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            error: 'User not found',
+            code: 'USER_NOT_FOUND'
+          });
+        }
+
+        license = await licenseService.createLicense({
+          plan: user.plan || 'free',
+          service: user.service || 'alttext-ai',
+          userId: req.user.id,
+          siteUrl,
+          siteHash,
+          installId
+        });
+
+        licenseId = license.id;
+      }
+    } else if (req.organization && req.organization.id) {
+      // Organization auth - find org's license
+      const { data: orgLicense, error: orgLicenseError } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('organizationId', req.organization.id)
+        .order('createdAt', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!orgLicenseError && orgLicense) {
+        license = orgLicense;
+        licenseId = license.id;
+      } else {
+        // No license found for org - create one
+        license = await licenseService.createLicense({
+          plan: req.organization.plan || 'free',
+          service: req.organization.service || 'alttext-ai',
+          organizationId: req.organization.id,
+          siteUrl,
+          siteHash,
+          installId
+        });
+
+        licenseId = license.id;
+      }
+    } else {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+
+    // Auto-attach license to site
+    const attachResult = await licenseService.autoAttachLicense(licenseId, {
+      siteUrl,
+      siteHash,
+      installId
+    });
+
+    // Get license snapshot
+    const licenseSnapshot = await licenseService.getLicenseSnapshot(attachResult.license.id);
+
+    res.json({
+      success: true,
+      message: 'License attached successfully',
+      license: licenseSnapshot,
+      site: {
+        siteUrl: attachResult.site.siteUrl,
+        siteHash: attachResult.site.siteHash,
+        installId: attachResult.site.installId,
+        isActive: attachResult.site.isActive
+      }
+    });
+
+  } catch (error) {
+    console.error('Auto-attach error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to auto-attach license',
+      code: 'AUTO_ATTACH_ERROR'
+    });
+  }
+});
 
 /**
  * Get all sites using the authenticated user's license or organization

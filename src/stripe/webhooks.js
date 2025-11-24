@@ -3,7 +3,7 @@
  */
 
 const Stripe = require('stripe');
-const { supabase } = require('../supabase-client');
+const { supabase } = require('../../db/supabase-client');
 const { 
   handleSuccessfulCheckout, 
   handleSubscriptionUpdate, 
@@ -75,7 +75,29 @@ async function handleWebhookEvent(event) {
  */
 async function handleCheckoutSessionCompleted(session) {
   console.log(`✅ Checkout completed for session ${session.id}`);
-  await handleSuccessfulCheckout(session);
+  
+  try {
+    // Check if license already exists for this session (idempotency)
+    const userId = session.metadata?.userId;
+    if (userId) {
+      // Check for existing license with this subscription
+      const { data: existingLicense } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('stripeSubscriptionId', session.subscription)
+        .single();
+
+      if (existingLicense) {
+        console.log(`ℹ️  License already exists for subscription ${session.subscription}, skipping creation`);
+        return;
+      }
+    }
+
+    await handleSuccessfulCheckout(session);
+  } catch (error) {
+    console.error('Error in checkout session completed handler:', error);
+    throw error;
+  }
 }
 
 /**

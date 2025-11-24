@@ -3,8 +3,9 @@
  */
 
 const Stripe = require('stripe');
-const { supabase } = require('../supabase-client');
-const emailService = require('../services/emailService');
+const { supabase } = require('../../db/supabase-client');
+const emailService = require('../../services/emailService');
+const licenseService = require('../../services/licenseService');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -259,69 +260,104 @@ async function handleSuccessfulCheckout(session) {
 
     console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
-    // If agency plan, create organization and send license key email
-    if (plan === 'agency') {
+    // Create license for all paid plans (pro, agency) and free if needed
+    // Extract site metadata from session metadata if provided
+    const siteUrl = session.metadata.siteUrl || null;
+    const siteHash = session.metadata.siteHash || null;
+    const installId = session.metadata.installId || null;
+
+    let license = null;
+    if (plan !== 'free' || session.metadata.createFreeLicense === 'true') {
       try {
-        console.log(`📋 Creating agency organization for user ${userId}`);
+        console.log(`📋 Creating license for user ${userId} (plan: ${plan})`);
 
-        // Create organization with generated license key
-        const { data: organization, error: orgError } = await supabase
-          .from('organizations')
-          .insert({
-            name: `${updatedUser.email.split('@')[0]}'s Agency`,
-            plan: 'agency',
-            service: service,
-            maxSites: 10,
-            tokensRemaining: serviceLimits.agency,
-            stripeCustomerId: updatedUser.stripeCustomerId,
-            stripeSubscriptionId: sessionWithItems.subscription,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          })
-          .select()
-          .single();
+        // Get user's organization if exists (for agency plans)
+        let organizationId = null;
+        if (plan === 'agency') {
+          const { data: membership } = await supabase
+            .from('organization_members')
+            .select('organizationId')
+            .eq('userId', userId)
+            .eq('role', 'owner')
+            .limit(1)
+            .single();
 
-        if (orgError) throw orgError;
+          if (membership) {
+            organizationId = membership.organizationId;
+          } else {
+            // Create organization for agency plan
+            const { data: organization, error: orgError } = await supabase
+              .from('organizations')
+              .insert({
+                name: `${updatedUser.email.split('@')[0]}'s Agency`,
+                plan: 'agency',
+                service: service,
+                maxSites: 10,
+                tokensRemaining: serviceLimits.agency,
+                stripeCustomerId: updatedUser.stripe_customer_id,
+                stripeSubscriptionId: sessionWithItems.subscription,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              })
+              .select()
+              .single();
 
-        console.log(`✅ Organization created: ${organization.id}, License: ${organization.licenseKey}`);
+            if (orgError) throw orgError;
 
-        // Create organization member (owner role)
-        const { error: memberError } = await supabase
-          .from('organization_members')
-          .insert({
-            organizationId: organization.id,
-            userId: userId,
-            role: 'owner',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
+            // Create organization member (owner role)
+            const { error: memberError } = await supabase
+              .from('organization_members')
+              .insert({
+                organizationId: organization.id,
+                userId: userId,
+                role: 'owner',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              });
 
-        if (memberError) throw memberError;
+            if (memberError) throw memberError;
 
-        console.log(`✅ Organization owner added: user ${userId}`);
-
-        // Send license key email
-        const emailResult = await emailService.sendLicenseKey({
-          email: updatedUser.email,
-          name: updatedUser.email.split('@')[0],
-          licenseKey: organization.licenseKey,
-          plan: 'agency',
-          maxSites: 10,
-          monthlyQuota: serviceLimits.agency
-        });
-
-        if (emailResult.success) {
-          console.log(`✅ License key email sent to ${updatedUser.email}`);
-        } else {
-          console.error(`❌ Failed to send license email: ${emailResult.error}`);
+            organizationId = organization.id;
+            console.log(`✅ Organization created: ${organization.id}`);
+          }
         }
 
-      } catch (orgError) {
-        console.error('Error creating organization/sending email:', orgError);
-        // Don't fail the whole checkout if organization creation fails
+        // Create license via license service
+        license = await licenseService.createLicense({
+          plan,
+          service,
+          userId: plan === 'agency' ? null : userId, // Agency licenses are org-based
+          organizationId,
+          siteUrl,
+          siteHash,
+          installId,
+          stripeCustomerId: updatedUser.stripe_customer_id,
+          stripeSubscriptionId: sessionWithItems.subscription,
+          email: updatedUser.email,
+          name: updatedUser.email.split('@')[0]
+        });
+
+        console.log(`✅ License created: ${license.licenseKey}`);
+
+        // If site info was provided, auto-attach should have been attempted
+        // Get updated license snapshot
+        const licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
+        license = { ...license, ...licenseSnapshot };
+
+      } catch (licenseError) {
+        console.error('Error creating license:', licenseError);
+        // Don't fail the whole checkout if license creation fails
         // User still gets their plan upgrade
       }
     }
+
+    // Return license info for webhook response (if needed)
+    return {
+      userId,
+      plan,
+      service,
+      license: license ? await licenseService.getLicenseSnapshot(license.id) : null
+    };
 
   } catch (error) {
     console.error('Error handling successful checkout:', error);

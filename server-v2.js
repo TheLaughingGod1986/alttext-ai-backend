@@ -9,10 +9,10 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
-const { supabase } = require('./supabase-client');
+const { supabase } = require('./db/supabase-client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
-const { combinedAuth } = require('./auth/dual-auth');
-const { getServiceApiKey, getReviewApiKey } = require('./utils/apiKey');
+const { combinedAuth } = require('./src/middleware/dual-auth');
+const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
 const billingRoutes = require('./routes/billing');
@@ -152,16 +152,20 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
       const content = openaiResponse.choices[0].message.content.trim();
 
+      // Extract WordPress user info from headers
+      const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
+      const wpUserName = req.headers['x-wp-user-name'] || null;
+
       // Record usage - organization or user based
       if (req.organization) {
         if (limits.hasTokens) {
-          await recordOrganizationUsage(req.organization.id, userId, null, 'generate', 'seo-ai-meta');
+          await recordOrganizationUsage(req.organization.id, userId, null, 'generate', 'seo-ai-meta', wpUserId, wpUserName);
         } else if (limits.hasCredits) {
           await useOrganizationCredit(req.organization.id, userId);
         }
       } else {
       if (limits.hasTokens) {
-        await recordUsage(userId, null, 'generate', 'seo-ai-meta');
+        await recordUsage(userId, null, 'generate', 'seo-ai-meta', wpUserId, wpUserName);
       } else if (limits.hasCredits) {
         await useCredit(userId);
       }
@@ -236,16 +240,20 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     
     const altText = openaiResponse.choices[0].message.content.trim();
 
+    // Extract WordPress user info from headers
+    const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
+    const wpUserName = req.headers['x-wp-user-name'] || null;
+
     // Record usage - organization or user based
     if (req.organization) {
       if (limits.hasTokens) {
-        await recordOrganizationUsage(req.organization.id, userId, image_data?.image_id, 'generate', service);
+        await recordOrganizationUsage(req.organization.id, userId, image_data?.image_id, 'generate', service, wpUserId, wpUserName);
       } else if (limits.hasCredits) {
         await useOrganizationCredit(req.organization.id, userId);
       }
     } else {
     if (limits.hasTokens) {
-      await recordUsage(userId, image_data?.image_id, 'generate', service);
+      await recordUsage(userId, image_data?.image_id, 'generate', service, wpUserId, wpUserName);
     } else if (limits.hasCredits) {
       await useCredit(userId);
     }
@@ -610,9 +618,10 @@ async function requestChatCompletion(messages, overrides = {}) {
     );
     
     console.log(`[OpenAI] Request successful, received response`);
+    const payload = response && response.data ? response.data : response || {};
     return {
-      choices: response.data.choices,
-      usage: response.data.usage
+      choices: payload?.choices || [],
+      usage: payload?.usage || null
     };
   } catch (error) {
     console.error('[OpenAI] Request failed:', {
@@ -852,18 +861,20 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - let the server continue running
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
-  console.log(`📅 Version: 2.0.0 (Monetization)`);
-  console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-  console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
+    console.log(`📅 Version: 2.0.0 (Monetization)`);
+    console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+    console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+  });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down gracefully...');
-  // Supabase client doesn't require explicit disconnection
-  process.exit(0);
-});
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    process.exit(0);
+  });
+}
+
+module.exports = app;
