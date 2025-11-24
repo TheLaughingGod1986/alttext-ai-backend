@@ -313,13 +313,31 @@ describe('usage route helpers', () => {
 
   // Additional tests for uncovered lines
 
-  test('recordUsage handles WordPress user info', async () => {
+  test('recordUsage inserts only valid columns (no wp_user_id)', async () => {
+    supabaseMock.__clearInsertedData('usage_logs');
     supabaseMock.__queueResponse('usage_logs', 'insert', { data: { id: 1 }, error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 1, plan: 'free' }, error: null });
 
     await recordUsage(1, 'img1', 'generate', 'alttext-ai', 123, 'wpuser');
-    // Should not throw
-    expect(true).toBe(true);
+    
+    // Verify what was actually inserted
+    const insertedData = supabaseMock.__getInsertedData('usage_logs');
+    expect(insertedData).toHaveLength(1);
+    const logEntry = insertedData[0];
+    
+    // Verify only valid columns are present
+    expect(logEntry).toHaveProperty('user_id');
+    expect(logEntry).toHaveProperty('image_id');
+    expect(logEntry).toHaveProperty('endpoint');
+    
+    // Verify wp_user_id and wp_user_name are NOT present (they don't exist in schema)
+    expect(logEntry).not.toHaveProperty('wp_user_id');
+    expect(logEntry).not.toHaveProperty('wp_user_name');
+    
+    // Verify correct values
+    expect(logEntry.user_id).toBe(1);
+    expect(logEntry.image_id).toBe('img1');
+    expect(logEntry.endpoint).toBe('generate');
   });
 
   test('checkUserLimits throws when userId is null', async () => {
@@ -383,14 +401,34 @@ describe('usage route helpers', () => {
     await expect(checkOrganizationLimits(999)).rejects.toThrow('Organization not found');
   });
 
-  test('recordOrganizationUsage handles WordPress user info', async () => {
+  test('recordOrganizationUsage inserts only valid columns (no wp_user_id)', async () => {
+    supabaseMock.__clearInsertedData('usage_logs');
     supabaseMock.__queueResponse('usage_logs', 'insert', { data: { id: 1 }, error: null });
     supabaseMock.__queueResponse('organizations', 'select', { data: { id: 1, plan: 'agency' }, error: null });
     supabaseMock.__queueResponse('organizations', 'update', { data: { id: 1 }, error: null });
 
     await recordOrganizationUsage(1, 2, 'img1', 'generate', 'alttext-ai', 123, 'wpuser');
-    // Should not throw
-    expect(true).toBe(true);
+    
+    // Verify what was actually inserted
+    const insertedData = supabaseMock.__getInsertedData('usage_logs');
+    expect(insertedData).toHaveLength(1);
+    const logEntry = insertedData[0];
+    
+    // Verify only valid columns are present
+    expect(logEntry).toHaveProperty('user_id');
+    expect(logEntry).toHaveProperty('organization_id');
+    expect(logEntry).toHaveProperty('image_id');
+    expect(logEntry).toHaveProperty('endpoint');
+    
+    // Verify wp_user_id and wp_user_name are NOT present (they don't exist in schema)
+    expect(logEntry).not.toHaveProperty('wp_user_id');
+    expect(logEntry).not.toHaveProperty('wp_user_name');
+    
+    // Verify correct values
+    expect(logEntry.user_id).toBe(2);
+    expect(logEntry.organization_id).toBe(1);
+    expect(logEntry.image_id).toBe('img1');
+    expect(logEntry.endpoint).toBe('generate');
   });
 
   test('useOrganizationCredit returns false when orgError exists', async () => {

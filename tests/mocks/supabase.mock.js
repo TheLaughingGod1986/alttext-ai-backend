@@ -1,6 +1,26 @@
 const jestMock = require('jest-mock');
 
 const responseQueue = {};
+const insertDataCapture = {}; // Capture all insert data for validation
+
+function captureInsertData(table, data) {
+  if (!insertDataCapture[table]) {
+    insertDataCapture[table] = [];
+  }
+  insertDataCapture[table].push(data);
+}
+
+function getInsertedData(table) {
+  return insertDataCapture[table] || [];
+}
+
+function clearInsertedData(table = null) {
+  if (table) {
+    delete insertDataCapture[table];
+  } else {
+    Object.keys(insertDataCapture).forEach(key => delete insertDataCapture[key]);
+  }
+}
 
 function queueResponse(table, method, payload) {
   if (!responseQueue[table]) {
@@ -21,15 +41,21 @@ function getNextResponse(table, method) {
 }
 
 function createQueryBuilder(table) {
-  const state = { lastMethod: 'select' };
+  const state = { lastMethod: 'select', insertData: null };
 
   const builder = {
     select: jestMock.fn(() => {
       state.lastMethod = 'select';
       return builder;
     }),
-    insert: jestMock.fn(() => {
+    insert: jestMock.fn((data) => {
       state.lastMethod = 'insert';
+      state.insertData = data; // Capture the data being inserted
+      if (Array.isArray(data)) {
+        data.forEach(item => captureInsertData(table, item));
+      } else if (data) {
+        captureInsertData(table, data);
+      }
       return builder;
     }),
     update: jestMock.fn(() => {
@@ -86,6 +112,7 @@ function resetQueue() {
   Object.keys(responseQueue).forEach((table) => {
     responseQueue[table] = {};
   });
+  clearInsertedData();
   supabase.from.mockClear();
   supabase.rpc.mockClear();
   supabase.auth.signUp.mockClear();
@@ -96,6 +123,8 @@ function resetQueue() {
 module.exports = {
   supabase,
   __queueResponse: queueResponse,
-  __reset: resetQueue
+  __reset: resetQueue,
+  __getInsertedData: getInsertedData,
+  __clearInsertedData: clearInsertedData
 };
 
