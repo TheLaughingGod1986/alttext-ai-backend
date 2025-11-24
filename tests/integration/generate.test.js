@@ -499,7 +499,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
+      expect(res.body.code).toBe('GENERATION_ERROR');
     });
 
     test('handles OpenAI network timeout (ETIMEDOUT)', async () => {
