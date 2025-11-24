@@ -469,7 +469,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
       expect(res.body.message || res.body.error).toMatch(/Missing OpenAI API key/i);
 
       // Restore
@@ -499,7 +499,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
 
     test('handles OpenAI network timeout (ETIMEDOUT)', async () => {
@@ -585,7 +585,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
 
     test('handles OpenAI API error 503 (Service Unavailable)', async () => {
@@ -614,7 +614,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
 
     test('handles malformed OpenAI response (null data)', async () => {
@@ -637,7 +637,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
 
     test('handles OpenAI response with empty choices array', async () => {
@@ -664,7 +664,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
 
     test('handles OpenAI response with missing content field', async () => {
@@ -691,7 +691,7 @@ describe('Generate endpoint', () => {
         });
 
       expect(res.status).toBe(500);
-      expect(res.body.code).toBe('GENERATION_ERROR');
+      expect(res.body.code).toBe('INVALID_AI_RESPONSE');
     });
   });
 });

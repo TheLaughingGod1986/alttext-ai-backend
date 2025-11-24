@@ -150,6 +150,22 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         throw error;
       }
 
+      // Validate OpenAI response structure for meta generation
+      if (!openaiResponse?.choices?.[0]?.message?.content) {
+        console.error('[Generate] Invalid OpenAI response structure for meta generation:', {
+          hasResponse: !!openaiResponse,
+          hasChoices: !!openaiResponse?.choices,
+          choicesLength: openaiResponse?.choices?.length,
+          hasMessage: !!openaiResponse?.choices?.[0]?.message,
+          hasContent: !!openaiResponse?.choices?.[0]?.message?.content
+        });
+        return res.status(500).json({
+          error: 'Invalid response from AI service',
+          code: 'INVALID_AI_RESPONSE',
+          message: 'The AI service returned an unexpected response format'
+        });
+      }
+
       const content = openaiResponse.choices[0].message.content.trim();
 
       // Extract WordPress user info from headers
@@ -236,6 +252,23 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       } else {
         throw error;
       }
+    }
+    
+    // Validate OpenAI response structure
+    if (!openaiResponse?.choices?.[0]?.message?.content) {
+      console.error('[Generate] Invalid OpenAI response structure:', {
+        hasResponse: !!openaiResponse,
+        hasChoices: !!openaiResponse?.choices,
+        choicesLength: openaiResponse?.choices?.length,
+        hasMessage: !!openaiResponse?.choices?.[0]?.message,
+        hasContent: !!openaiResponse?.choices?.[0]?.message?.content,
+        response: JSON.stringify(openaiResponse, null, 2)
+      });
+      return res.status(500).json({
+        error: 'Invalid response from AI service',
+        code: 'INVALID_AI_RESPONSE',
+        message: 'The AI service returned an unexpected response format'
+      });
     }
     
     const altText = openaiResponse.choices[0].message.content.trim();
