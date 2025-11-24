@@ -36,8 +36,9 @@ function getTokenLimit(plan, service) {
  */
 async function findLicenseByIdOrKey(licenseId) {
   const isLicenseKey = typeof licenseId === 'string' && licenseId.includes('-');
+  // Use snake_case field name for database query
   const query = isLicenseKey
-    ? supabase.from('licenses').select('*').eq('licenseKey', licenseId)
+    ? supabase.from('licenses').select('*').eq('license_key', licenseId)
     : supabase.from('licenses').select('*').eq('id', licenseId);
 
   const { data: licenseData, error: licenseError } = await query.single();
@@ -78,17 +79,19 @@ async function getOrCreateUserOrganization(userId, license) {
   }
 
   const orgName = `${user.email.split('@')[0]}'s Organization`;
+  const tokenLimit = license.token_limit || license.tokenLimit || getTokenLimit(license.plan, license.service);
   const { data: org, error: orgError } = await supabase
     .from('organizations')
     .insert({
       name: orgName,
-      licenseKey: randomUUID(),
+      license_key: randomUUID(),
       plan: license.plan,
       service: license.service,
-      maxSites: license.plan === 'agency' ? 10 : 1,
-      tokensRemaining: license.tokenLimit,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      max_sites: license.plan === 'agency' ? 10 : 1,
+      tokens_remaining: tokenLimit,
+      credits: tokenLimit, // Initialize credits with token limit
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     })
     .select()
     .single();
@@ -255,24 +258,25 @@ async function createLicense(options = {}) {
   const autoAttachStatus = (siteUrl || siteHash || installId) ? 'pending' : 'manual';
   const now = new Date().toISOString();
 
+  // Use snake_case for Supabase database fields
   const licenseData = {
-    licenseKey,
+    license_key: licenseKey,
     plan,
     service,
-    tokenLimit,
-    tokensRemaining: tokenLimit,
-    siteUrl,
-    siteHash,
-    installId,
-    autoAttachStatus,
-    userId,
-    organizationId,
-    stripeCustomerId,
-    stripeSubscriptionId,
-    licenseEmailSentAt: null,
-    emailStatus: 'pending',
-    createdAt: now,
-    updatedAt: now
+    token_limit: tokenLimit,
+    tokens_remaining: tokenLimit,
+    site_url: siteUrl,
+    site_hash: siteHash,
+    install_id: installId,
+    auto_attach_status: autoAttachStatus,
+    user_id: userId,
+    organization_id: organizationId,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: stripeSubscriptionId,
+    license_email_sent_at: null,
+    email_status: 'pending',
+    created_at: now,
+    updated_at: now
   };
 
   const { data: license, error } = await supabase
@@ -410,14 +414,18 @@ async function sendLicenseEmail(license, recipient) {
   }
 
   // Send email via email service
+  // Map snake_case to camelCase for email service
+  const tokenLimit = license.token_limit || license.tokenLimit || getTokenLimit(license.plan, license.service);
+  const tokensRemaining = license.tokens_remaining !== undefined ? license.tokens_remaining : (license.tokensRemaining !== undefined ? license.tokensRemaining : tokenLimit);
+  
   const emailResult = await emailService.sendLicenseIssuedEmail({
     email,
     name: name || email.split('@')[0],
-    licenseKey: license.licenseKey,
+    licenseKey: license.license_key || license.licenseKey,
     plan: license.plan,
-    tokenLimit: license.tokenLimit,
-    tokensRemaining: license.tokensRemaining,
-    siteUrl: attachedSite?.siteUrl || license.siteUrl,
+    tokenLimit,
+    tokensRemaining,
+    siteUrl: attachedSite?.siteUrl || license.site_url || license.siteUrl,
     isAttached: !!attachedSite
   });
 
@@ -452,7 +460,7 @@ async function getLicenseSnapshot(license) {
     const { data: licenseData, error } = await supabase
       .from('licenses')
       .select('*')
-      .eq('licenseKey', license)
+      .eq('license_key', license)
       .single();
 
     if (error || !licenseData) {
@@ -480,17 +488,22 @@ async function getLicenseSnapshot(license) {
     }
   }
 
+  // Map snake_case database fields to camelCase for API response
+  // Supabase returns: token_limit, tokens_remaining, license_key, etc.
+  const tokenLimit = licenseRecord.token_limit || licenseRecord.tokenLimit || getTokenLimit(licenseRecord.plan, licenseRecord.service);
+  const tokensRemaining = licenseRecord.tokens_remaining !== undefined ? licenseRecord.tokens_remaining : (licenseRecord.tokensRemaining !== undefined ? licenseRecord.tokensRemaining : tokenLimit);
+
   return {
-    licenseKey: licenseRecord.licenseKey,
+    licenseKey: licenseRecord.license_key || licenseRecord.licenseKey,
     plan: licenseRecord.plan,
-    tokenLimit: licenseRecord.tokenLimit,
-    tokensRemaining: licenseRecord.tokensRemaining,
-    siteUrl: siteInfo?.siteUrl || licenseRecord.siteUrl,
-    siteHash: siteInfo?.siteHash || licenseRecord.siteHash,
-    autoAttachStatus: licenseRecord.autoAttachStatus,
-    createdAt: licenseRecord.createdAt,
-    updatedAt: licenseRecord.updatedAt,
-    licenseEmailSentAt: licenseRecord.licenseEmailSentAt
+    tokenLimit,
+    tokensRemaining,
+    siteUrl: siteInfo?.siteUrl || licenseRecord.site_url || licenseRecord.siteUrl,
+    siteHash: siteInfo?.siteHash || licenseRecord.site_hash || licenseRecord.siteHash,
+    autoAttachStatus: licenseRecord.auto_attach_status || licenseRecord.autoAttachStatus,
+    createdAt: licenseRecord.created_at || licenseRecord.createdAt,
+    updatedAt: licenseRecord.updated_at || licenseRecord.updatedAt,
+    licenseEmailSentAt: licenseRecord.license_email_sent_at || licenseRecord.licenseEmailSentAt
   };
 }
 

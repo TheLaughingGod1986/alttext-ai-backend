@@ -58,7 +58,7 @@ router.post('/activate', async (req, res) => {
     const { data: organization, error: orgError } = await supabase
       .from('organizations')
       .select('*')
-      .eq('licenseKey', licenseKey)
+        .eq('license_key', licenseKey)
       .single();
 
     if (orgError || !organization) {
@@ -117,9 +117,9 @@ router.post('/activate', async (req, res) => {
           id: organization.id,
           name: organization.name,
           plan: organization.plan,
-          tokensRemaining: organization.tokensRemaining,
-          maxSites: organization.maxSites,
-          resetDate: organization.resetDate
+          tokensRemaining: organization.tokens_remaining !== undefined ? organization.tokens_remaining : (organization.tokensRemaining !== undefined ? organization.tokensRemaining : 0),
+          maxSites: organization.max_sites || organization.maxSites,
+          resetDate: organization.reset_date || organization.resetDate
         },
         site: {
           id: updatedSite.id,
@@ -132,12 +132,13 @@ router.post('/activate', async (req, res) => {
 
     // New site - check if organization has reached site limit
     const activeSiteCount = activeSites.length;
-    if (activeSiteCount >= organization.maxSites) {
+    const maxSites = organization.max_sites || organization.maxSites || 1;
+    if (activeSiteCount >= maxSites) {
       return res.status(403).json({
         success: false,
-        error: `Site limit reached. This license allows ${organization.maxSites} active site(s). Please deactivate an existing site first.`,
+        error: `Site limit reached. This license allows ${maxSites} active site(s). Please deactivate an existing site first.`,
         activeSiteCount,
-        maxSites: organization.maxSites
+        maxSites
       });
     }
 
@@ -168,7 +169,7 @@ router.post('/activate', async (req, res) => {
         name: organization.name,
         plan: organization.plan,
         tokensRemaining: organization.tokensRemaining,
-        maxSites: organization.maxSites,
+          maxSites: organization.max_sites || organization.maxSites,
         resetDate: organization.resetDate
       },
       site: {
@@ -310,7 +311,7 @@ router.post('/generate', async (req, res) => {
         name: organization.name,
         licenseKey: organization.licenseKey,
         plan: organization.plan,
-        maxSites: organization.maxSites,
+          maxSites: organization.max_sites || organization.maxSites,
         tokensRemaining: organization.tokensRemaining
       }
     });
@@ -335,7 +336,7 @@ router.get('/info/:licenseKey', async (req, res) => {
     const { data: organization, error: orgError } = await supabase
       .from('organizations')
       .select('*')
-      .eq('licenseKey', licenseKey)
+        .eq('license_key', licenseKey)
       .single();
 
     if (orgError || !organization) {
@@ -379,7 +380,7 @@ router.get('/info/:licenseKey', async (req, res) => {
         id: organization.id,
         name: organization.name,
         plan: organization.plan,
-        maxSites: organization.maxSites,
+          maxSites: organization.max_sites || organization.maxSites,
         tokensRemaining: organization.tokensRemaining,
         resetDate: organization.resetDate,
         activeSites: (sites || []).length,

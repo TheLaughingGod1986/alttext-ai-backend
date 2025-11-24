@@ -46,7 +46,7 @@ router.post('/auto-attach', combinedAuth, async (req, res) => {
       const { data: licenseData, error: licenseError } = await supabase
         .from('licenses')
         .select('*')
-        .eq('licenseKey', licenseKey)
+        .eq('license_key', licenseKey)
         .single();
 
       if (licenseError || !licenseData) {
@@ -104,7 +104,7 @@ router.post('/auto-attach', combinedAuth, async (req, res) => {
       const { data: orgLicense, error: orgLicenseError } = await supabase
         .from('licenses')
         .select('*')
-        .eq('organizationId', req.organization.id)
+        .eq('organization_id', req.organization.id)
         .order('createdAt', { ascending: false })
         .limit(1)
         .single();

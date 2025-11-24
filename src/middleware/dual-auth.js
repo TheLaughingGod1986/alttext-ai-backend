@@ -70,7 +70,7 @@ async function dualAuthenticate(req, res, next) {
       const { data: organization, error: orgError } = await supabase
         .from('organizations')
         .select('*')
-        .eq('licenseKey', licenseKey)
+        .eq('license_key', licenseKey)
         .single();
 
       if (orgError || !organization) {
@@ -148,7 +148,7 @@ async function optionalDualAuth(req, res, next) {
       const { data: organization, error: orgError } = await supabase
         .from('organizations')
         .select('*')
-        .eq('licenseKey', licenseKey)
+        .eq('license_key', licenseKey)
         .single();
 
       if (!orgError && organization) {

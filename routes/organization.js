@@ -84,14 +84,15 @@ router.get('/my-organizations', async (req, res) => {
       const activeSites = (allSites || []).filter(s => s.organizationId === org.id);
       const orgMembers = (allMembers || []).filter(m => m.organizationId === org.id);
 
+      // Map snake_case database fields to camelCase for API response
       return {
         id: org.id,
         name: org.name,
-        licenseKey: membership?.role === 'owner' ? org.licenseKey : undefined, // Only owners see license key
+        licenseKey: membership?.role === 'owner' ? (org.license_key || org.licenseKey) : undefined, // Only owners see license key
         plan: org.plan,
-        maxSites: org.maxSites,
-        tokensRemaining: org.tokensRemaining,
-        resetDate: org.resetDate,
+        maxSites: org.max_sites || org.maxSites,
+        tokensRemaining: org.tokens_remaining !== undefined ? org.tokens_remaining : (org.tokensRemaining !== undefined ? org.tokensRemaining : 0),
+        resetDate: org.reset_date || org.resetDate,
         myRole: membership?.role,
         activeSites: activeSites.length,
         memberCount: orgMembers.length
@@ -225,7 +226,7 @@ router.get('/:orgId/usage', async (req, res) => {
       .from('usage_logs')
       .select('*')
       .eq('organizationId', orgId)
-      .gte('createdAt', organization.resetDate)
+      .gte('created_at', organization.reset_date || organization.resetDate)
       .order('createdAt', { ascending: false })
       .limit(100); // Last 100 entries
 
@@ -243,9 +244,9 @@ router.get('/:orgId/usage', async (req, res) => {
     res.json({
       success: true,
       usage: {
-        tokensRemaining: organization.tokensRemaining,
+        tokensRemaining: organization.tokens_remaining !== undefined ? organization.tokens_remaining : (organization.tokensRemaining !== undefined ? organization.tokensRemaining : 0),
         tokensUsed: totalUsed,
-        resetDate: organization.resetDate,
+        resetDate: organization.reset_date || organization.resetDate,
         plan: organization.plan,
         recentLogs: (usageLogs || []).slice(0, 20).map(log => ({
           imageId: log.imageId,

@@ -401,7 +401,7 @@ function getNextResetDate() {
 async function checkOrganizationLimits(organizationId) {
   const { data: organization, error } = await supabase
     .from('organizations')
-    .select('plan, credits, service')
+    .select('plan, credits, service, tokens_remaining')
     .eq('id', organizationId)
     .single();
 
@@ -409,22 +409,24 @@ async function checkOrganizationLimits(organizationId) {
     throw new Error('Organization not found');
   }
 
-  // tokensRemaining column doesn't exist - assume tokens available if org exists
-  const hasTokens = true;
-  const hasCredits = (organization.credits || 0) > 0;
+  // Map snake_case to camelCase for consistency
+  const credits = organization.credits !== undefined ? organization.credits : 0;
+  const tokensRemaining = organization.tokens_remaining !== undefined ? organization.tokens_remaining : 0;
+  
+  // Check if organization has credits or tokens remaining
+  const hasCredits = credits > 0;
+  const hasTokens = tokensRemaining > 0;
 
-  // Pro and Agency plans have access as long as they have SOME quota (even if low)
-  // This allows them to continue using the service throughout the month
-  const isPremiumPlan = organization.plan === 'pro' || organization.plan === 'agency';
-  const hasAccess = isPremiumPlan ? (hasTokens || hasCredits) : (hasTokens || hasCredits);
+  // Organization has access if it has credits OR tokens remaining
+  const hasAccess = hasCredits || hasTokens;
 
   return {
     hasAccess,
     hasTokens,
     hasCredits,
     plan: organization.plan,
-    tokensRemaining: 0, // Column doesn't exist - calculate from usage_logs if needed
-    credits: organization.credits || 0
+    tokensRemaining,
+    credits
   };
 }
 
