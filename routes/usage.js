@@ -164,14 +164,6 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
       endpoint
     };
 
-    // Add WordPress user info if provided
-    if (wpUserId !== null) {
-      logData.wp_user_id = wpUserId;
-    }
-    if (wpUserName !== null) {
-      logData.wp_user_name = wpUserName;
-    }
-
     const { error: logError } = await supabase
       .from('usage_logs')
       .insert(logData);
@@ -442,14 +434,6 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
       image_id: imageId,
       endpoint
     };
-
-    // Add WordPress user info if provided
-    if (wpUserId !== null) {
-      logData.wp_user_id = wpUserId;
-    }
-    if (wpUserName !== null) {
-      logData.wp_user_name = wpUserName;
-    }
 
     const { error: logError } = await supabase
       .from('usage_logs')
