@@ -301,24 +301,20 @@ router.post('/low-credit-warning', async (req, res) => {
  * POST /email/receipt
  * Body: { email, amount, planName, invoiceUrl?, pluginName? }
  */
-  router.post('/receipt', authenticateToken, async (req, res) => {
-    try {
-      // Validate input with Zod
-      const validationResult = receiptEmailSchema.safeParse(req.body);
+router.post('/receipt', authenticateToken, async (req, res) => {
+  try {
+    // Validate input with Zod
+    const validationResult = receiptEmailSchema.safeParse(req.body);
 
-  if (!validationResult.success) {
-    const firstError = validationResult.error?.errors?.[0];
-    console.log('[Receipt Route] Validation error:', firstError);
-    const fallbackAmountError = (typeof req.body.amount === 'number' && req.body.amount <= 0)
-      ? 'Amount must be a positive number'
-      : undefined;
-    return res.status(400).json({
-      ok: false,
-      error: firstError?.message || fallbackAmountError || 'Validation failed',
-    });
-  }
+    if (!validationResult.success) {
+      const firstError = validationResult.error.errors[0];
+      return res.status(400).json({
+        ok: false,
+        error: firstError.message || 'Validation failed',
+      });
+    }
 
-  const { email, amount, planName, invoiceUrl, pluginName } = validationResult.data;
+    const { email, amount, planName, invoiceUrl, pluginName } = validationResult.data;
 
   // Send receipt email
   const result = await emailService.sendReceipt({
