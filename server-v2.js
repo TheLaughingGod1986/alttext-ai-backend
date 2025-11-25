@@ -19,6 +19,8 @@ const billingRoutes = require('./routes/billing');
 const licensesRoutes = require('./routes/licenses');
 const licenseRoutes = require('./routes/license');
 const organizationRoutes = require('./routes/organization');
+const emailRoutes = require('./routes/email'); // Legacy routes
+const newEmailRoutes = require('./src/routes/email'); // New email routes
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +51,8 @@ app.use('/billing', billingRoutes);
 app.use('/api/licenses', licensesRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/organization', authenticateToken, organizationRoutes);
+app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
+app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
 
 // Health check
 app.get('/health', (req, res) => {

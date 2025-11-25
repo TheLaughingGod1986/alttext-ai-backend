@@ -1,4 +1,16 @@
 /**
+ * Mock express-rate-limit globally for all tests
+ * This prevents real rate limiting from running during tests
+ * Must be at top level for Jest hoisting
+ */
+jest.mock('express-rate-limit', () => {
+  return jest.fn(() => {
+    // Return a middleware function that just calls next() - no rate limiting
+    return (req, res, next) => next();
+  });
+});
+
+/** 
  * Create a fresh test server instance
  * Clears module cache to ensure clean state
  */
@@ -13,7 +25,9 @@ function createTestServer() {
     '../../routes/billing',
     '../../routes/licenses',
     '../../routes/license',
-    '../../routes/organization'
+    '../../routes/organization',
+    '../../routes/email',
+    '../../src/routes/email'
   ];
   
   routeModules.forEach(modulePath => {
@@ -61,4 +75,3 @@ module.exports = {
   createTestServer,
   resetTestState
 };
-
