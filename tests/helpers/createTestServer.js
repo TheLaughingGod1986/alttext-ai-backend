@@ -1,12 +1,29 @@
 /**
  * Mock express-rate-limit globally for all tests
- * This prevents real rate limiting from running during tests
+ * This mock implements basic rate limiting for testing
  * Must be at top level for Jest hoisting
  */
 jest.mock('express-rate-limit', () => {
-  return jest.fn(() => {
-    // Return a middleware function that just calls next() - no rate limiting
-    return (req, res, next) => next();
+  return jest.fn((options) => {
+    // Track requests per route/IP combination
+    const requestCounts = new Map();
+
+    return (req, res, next) => {
+      const key = `${req.path}:${req.ip}`;
+      const count = (requestCounts.get(key) || 0) + 1;
+      requestCounts.set(key, count);
+
+      // Check if limit is exceeded (default to 10 if not specified)
+      const limit = options?.max || 10;
+      if (count > limit) {
+        return res.status(429).json({
+          ok: false,
+          error: 'Too Many Requests'
+        });
+      }
+
+      next();
+    };
   });
 });
 
