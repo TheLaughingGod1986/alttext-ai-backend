@@ -42,7 +42,10 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 # Email (Required)
 RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=noreply@yourdomain.com
+EMAIL_FROM=OpttiAI <hello@optti.dev>
+EMAIL_BRAND_NAME=OpttiAI
+RESEND_FROM_EMAIL=noreply@yourdomain.com  # Legacy support, use EMAIL_FROM
+RESEND_AUDIENCE_ID=aud_xxx  # Optional: For subscriber management
 ```
 
 ## Documentation

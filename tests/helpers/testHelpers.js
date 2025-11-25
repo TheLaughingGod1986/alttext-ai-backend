@@ -14,7 +14,8 @@ function createTestUser(overrides = {}) {
 }
 
 function createTestToken(payload = {}) {
-  const secret = process.env.JWT_SECRET || 'test_secret';
+  // Use the same default as auth/jwt.js to ensure tokens are valid
+  const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
   const tokenPayload = {
     id: payload.id || 1,
     email: payload.email || 'test@example.com',
@@ -43,8 +44,9 @@ function waitForAsync(ms = 0) {
  */
 function resetTestEnvironment() {
   // Set test environment variables if not already set
+  // Use the same default as auth/jwt.js to ensure tokens are valid
   if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
   }
   if (!process.env.JWT_EXPIRES_IN) {
     process.env.JWT_EXPIRES_IN = '1h';

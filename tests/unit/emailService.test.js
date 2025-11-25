@@ -1,290 +1,259 @@
-describe('emailService', () => {
-  const MODULE_PATH = '../../services/emailService';
+/**
+ * Unit tests for emailService (new implementation)
+ */
+
+describe('emailService (new)', () => {
+  const MODULE_PATH = '../../src/services/emailService';
+
+  let mockResendClient;
+  let mockTemplates;
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    // Mock resendClient
+    mockResendClient = {
+      sendEmail: jest.fn(),
+    };
+    jest.mock('../../src/utils/resendClient', () => ({
+      sendEmail: mockResendClient.sendEmail,
+    }));
+
+    // Mock templates
+    mockTemplates = {
+      welcomeWaitlistEmail: jest.fn().mockReturnValue({
+        subject: 'Welcome!',
+        html: '<p>Welcome</p>',
+        text: 'Welcome',
+      }),
+      welcomeDashboardEmail: jest.fn().mockReturnValue({
+        subject: 'Welcome!',
+        html: '<p>Welcome</p>',
+        text: 'Welcome',
+      }),
+      licenseActivatedEmail: jest.fn().mockReturnValue({
+        subject: 'License Activated',
+        html: '<p>License</p>',
+        text: 'License',
+      }),
+      lowCreditWarningEmail: jest.fn().mockReturnValue({
+        subject: 'Low Credits',
+        html: '<p>Low</p>',
+        text: 'Low',
+      }),
+      receiptEmail: jest.fn().mockReturnValue({
+        subject: 'Receipt',
+        html: '<p>Receipt</p>',
+        text: 'Receipt',
+      }),
+      pluginSignupEmail: jest.fn().mockReturnValue({
+        subject: 'Plugin Signup',
+        html: '<p>Plugin</p>',
+        text: 'Plugin',
+      }),
+    };
+    jest.mock('../../src/emails/templates', () => mockTemplates);
+  });
 
   afterEach(() => {
-    jest.resetModules();
+    jest.clearAllMocks();
   });
 
-  test('subscribe returns warning when not configured', async () => {
-    delete process.env.RESEND_API_KEY;
-    delete process.env.RESEND_AUDIENCE_ID;
+  describe('sendWaitlistWelcome', () => {
+    test('calls template with correct parameters', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendWaitlistWelcome } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendWaitlistWelcome({
+        email: 'test@example.com',
+        plugin: 'AltText AI',
+        source: 'website',
+      });
 
-    const result = await service.subscribe({ email: 'user@example.com' });
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Email service not configured');
-  });
-
-  test('subscribe uses Resend when configured', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_AUDIENCE_ID = 'aud_123';
-
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const result = await service.subscribe({ email: 'user@example.com' });
-    expect(result.success).toBe(true);
-
-    const instance = resendMock.__getLastInstance();
-    expect(instance.contacts.create).toHaveBeenCalled();
-  });
-
-  test('sendLicenseKey sends email when configured', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
-
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123',
-      plan: 'agency',
-      maxSites: 5,
-      monthlyQuota: 1000
+      expect(mockTemplates.welcomeWaitlistEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        source: 'website',
+      });
     });
 
-    expect(result.success).toBe(true);
-    const instance = resendMock.__getLastInstance();
-    expect(instance.emails.send).toHaveBeenCalled();
-  });
+    test('calls resendClient with template output and tags', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendWaitlistWelcome } = require(MODULE_PATH);
 
-  test('sendLicenseKey surfaces Resend failures', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
+      await sendWaitlistWelcome({
+        email: 'test@example.com',
+        plugin: 'AltText AI',
+        source: 'website',
+      });
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const instance = resendMock.__getLastInstance();
-    instance.emails.send.mockRejectedValueOnce(new Error('Timeout contacting Resend'));
-
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
+      expect(mockResendClient.sendEmail).toHaveBeenCalledWith({
+        to: 'test@example.com',
+        subject: 'Welcome!',
+        html: '<p>Welcome</p>',
+        text: 'Welcome',
+        tags: [
+          { name: 'event', value: 'waitlist_signup' },
+          { name: 'plugin', value: 'AltText AI' },
+          { name: 'source', value: 'website' },
+        ],
+      });
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Timeout/);
-  });
+    test('returns success when email sent', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendWaitlistWelcome } = require(MODULE_PATH);
 
-  // Email fallback flow tests
+      const result = await sendWaitlistWelcome({
+        email: 'test@example.com',
+      });
 
-  test('sendLicenseKey handles Resend rate limiting', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
-
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const instance = resendMock.__getLastInstance();
-    const rateLimitError = new Error('Rate limit exceeded');
-    rateLimitError.statusCode = 429;
-    instance.emails.send.mockRejectedValueOnce(rateLimitError);
-
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
+      expect(result.success).toBe(true);
+      expect(result.emailId).toBe('email_123');
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Rate limit/);
-  });
+    test('handles resend errors gracefully', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({
+        success: false,
+        error: 'Rate limit exceeded',
+      });
+      const { sendWaitlistWelcome } = require(MODULE_PATH);
 
-  test('sendLicenseKey handles Resend API errors gracefully', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
+      const result = await sendWaitlistWelcome({
+        email: 'test@example.com',
+      });
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const instance = resendMock.__getLastInstance();
-    instance.emails.send.mockRejectedValueOnce(new Error('Resend API error'));
-
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Rate limit exceeded');
     });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Resend API error');
+    test('handles exceptions', async () => {
+      mockResendClient.sendEmail.mockRejectedValue(new Error('Network error'));
+      const { sendWaitlistWelcome } = require(MODULE_PATH);
+
+      const result = await sendWaitlistWelcome({
+        email: 'test@example.com',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Network error');
+    });
   });
 
-  test('sendLicenseKey handles missing email configuration', async () => {
-    delete process.env.RESEND_API_KEY;
-    delete process.env.RESEND_FROM_EMAIL;
+  describe('sendDashboardWelcome', () => {
+    test('calls template and resendClient correctly', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendDashboardWelcome } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendDashboardWelcome({
+        email: 'test@example.com',
+      });
 
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
+      expect(mockTemplates.welcomeDashboardEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+      });
+      expect(mockResendClient.sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'test@example.com',
+          tags: [{ name: 'event', value: 'dashboard_welcome' }],
+        })
+      );
     });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
   });
 
-  test('subscribe handles Resend rate limiting', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_AUDIENCE_ID = 'aud_123';
+  describe('sendLicenseActivated', () => {
+    test('calls template and resendClient with plan tags', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendLicenseActivated } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendLicenseActivated({
+        email: 'test@example.com',
+        planName: 'Pro',
+        siteUrl: 'https://example.com',
+      });
 
-    const instance = resendMock.__getLastInstance();
-    const rateLimitError = new Error('Rate limit exceeded');
-    rateLimitError.statusCode = 429;
-    instance.contacts.create.mockRejectedValueOnce(rateLimitError);
-
-    const result = await service.subscribe({ email: 'user@example.com' });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Rate limit/);
+      expect(mockTemplates.licenseActivatedEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        planName: 'Pro',
+        siteUrl: 'https://example.com',
+      });
+      expect(mockResendClient.sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: expect.arrayContaining([
+            { name: 'event', value: 'license_activated' },
+            { name: 'plan', value: 'pro' },
+            { name: 'site_url', value: 'https://example.com' },
+          ]),
+        })
+      );
+    });
   });
 
-  test('subscribe handles Resend API errors gracefully', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_AUDIENCE_ID = 'aud_123';
+  describe('sendLowCreditWarning', () => {
+    test('calls template and resendClient with credits info', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendLowCreditWarning } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendLowCreditWarning({
+        email: 'test@example.com',
+        remainingCredits: 10,
+        pluginName: 'AltText AI',
+      });
 
-    const instance = resendMock.__getLastInstance();
-    instance.contacts.create.mockRejectedValueOnce(new Error('Resend API unavailable'));
-
-    const result = await service.subscribe({ email: 'user@example.com' });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Resend API unavailable');
+      expect(mockTemplates.lowCreditWarningEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        remainingCredits: 10,
+        pluginName: 'AltText AI',
+      });
+      expect(mockResendClient.sendEmail).toHaveBeenCalled();
+    });
   });
 
-  // PHASE 1: Email send failure tests
-  test('sendLicenseKey handles Resend.send() returning success: false', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
+  describe('sendReceipt', () => {
+    test('calls template and resendClient with receipt data', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendReceipt } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendReceipt({
+        email: 'test@example.com',
+        amount: 29.99,
+        planName: 'Pro',
+        invoiceUrl: 'https://example.com/invoice',
+      });
 
-    const instance = resendMock.__getLastInstance();
-    // Mock send to return { success: false, error: 'Rate limit exceeded' }
-    instance.emails.send.mockResolvedValueOnce({ 
-      success: false, 
-      error: 'Rate limit exceeded' 
+      expect(mockTemplates.receiptEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        amount: 29.99,
+        planName: 'Pro',
+        invoiceUrl: 'https://example.com/invoice',
+      });
+      expect(mockResendClient.sendEmail).toHaveBeenCalled();
     });
-
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
-    });
-
-    // The code currently doesn't check for success: false, so it will try to access result.id
-    // This tests the current behavior - if result.id is undefined, it will still return success: true
-    // But we're testing that no crash occurs
-    expect(result).toBeDefined();
-    expect(typeof result).toBe('object');
-    // Verify error was logged (no crash)
-    expect(instance.emails.send).toHaveBeenCalled();
   });
 
-  test('triggerEmail handles Resend.send() returning success: false', async () => {
-    process.env.RESEND_API_KEY = 'test_key';
-    process.env.RESEND_FROM_EMAIL = 'Test <test@example.com>';
+  describe('sendPluginSignup', () => {
+    test('calls template and resendClient with plugin info', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendPluginSignup } = require(MODULE_PATH);
 
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
+      await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: 'https://example.com',
+      });
 
-    const instance = resendMock.__getLastInstance();
-    // Mock send to return { success: false, error: 'Rate limit exceeded' }
-    instance.emails.send.mockResolvedValueOnce({ 
-      success: false, 
-      error: 'Rate limit exceeded' 
+      expect(mockTemplates.pluginSignupEmail).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: 'https://example.com',
+      });
+      expect(mockResendClient.sendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: expect.arrayContaining([
+            { name: 'event', value: 'plugin_signup' },
+            { name: 'plugin', value: 'AltText AI' },
+          ]),
+        })
+      );
     });
-
-    const result = await service.triggerEmail({
-      email: 'user@example.com',
-      event_type: 'welcome'
-    });
-
-    // The code currently doesn't check for success: false, so it will try to access result.id
-    // This tests the current behavior - if result.id is undefined, it will still return success: true
-    // But we're testing that no crash occurs
-    expect(result).toBeDefined();
-    expect(typeof result).toBe('object');
-    // Verify error was logged (no crash)
-    expect(instance.emails.send).toHaveBeenCalled();
-  });
-
-  test('EmailService handles expired resend key (empty string)', async () => {
-    process.env.RESEND_API_KEY = '';
-    delete process.env.RESEND_FROM_EMAIL;
-
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    // Constructor should handle empty string gracefully
-    expect(service.resend).toBeNull();
-
-    // Methods should handle missing resend gracefully
-    const result = await service.sendLicenseKey({
-      email: 'customer@example.com',
-      name: 'Customer',
-      licenseKey: 'key-123'
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Email service not configured');
-  });
-
-  test('EmailService handles expired resend key in triggerEmail', async () => {
-    process.env.RESEND_API_KEY = '';
-
-    const resendMock = require('../mocks/resend.mock');
-    resendMock.__resetResend();
-    const { EmailService } = require(MODULE_PATH);
-    const service = new EmailService();
-
-    const result = await service.triggerEmail({
-      email: 'user@example.com',
-      event_type: 'welcome'
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Email service not configured');
   });
 });
-
