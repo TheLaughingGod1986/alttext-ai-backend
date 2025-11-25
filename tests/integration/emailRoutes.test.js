@@ -265,7 +265,8 @@ describe('Email Routes (new)', () => {
       expect(mockEmailService.sendReceipt).toHaveBeenCalledWith({
         email: 'test@example.com',
         amount: 29.99,
-        plan: 'Pro',
+        planName: 'Pro',
+        invoiceUrl: 'https://example.com/invoice',
       });
     });
 

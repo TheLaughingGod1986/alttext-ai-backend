@@ -280,11 +280,11 @@ router.post('/low-credit-warning', async (req, res) => {
 /**
  * Zod schema for receipt email validation
  */
-  const receiptEmailSchema = z.object({
-    email: z.string().email('Invalid email format'),
-    amount: z.preprocess(
-      (val) => {
-        if (typeof val === 'string') {
+const receiptEmailSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  amount: z.preprocess(
+    (val) => {
+      if (typeof val === 'string') {
         const parsed = parseFloat(val);
         return isNaN(parsed) ? val : parsed;
       }
@@ -307,21 +307,25 @@ router.post('/receipt', authenticateToken, async (req, res) => {
     const validationResult = receiptEmailSchema.safeParse(req.body);
 
     if (!validationResult.success) {
-      const firstError = validationResult.error.errors[0];
+      // Zod uses 'issues' property for errors
+      const issues = validationResult.error.issues || [];
+      const firstIssue = issues[0];
+      const errorMessage = firstIssue?.message || 'Validation failed';
       return res.status(400).json({
         ok: false,
-        error: firstError.message || 'Validation failed',
+        error: errorMessage,
       });
     }
 
     const { email, amount, planName, invoiceUrl, pluginName } = validationResult.data;
 
-  // Send receipt email
-  const result = await emailService.sendReceipt({
-    email,
-    amount,
-    plan: planName,
-  });
+    // Send receipt email
+    const result = await emailService.sendReceipt({
+      email,
+      amount,
+      planName,
+      invoiceUrl,
+    });
 
     if (!result.success) {
       return res.status(500).json({
