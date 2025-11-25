@@ -212,7 +212,7 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] License activated email error:', error);
     res.status(500).json({
