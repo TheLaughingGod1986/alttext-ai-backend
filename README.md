@@ -1,6 +1,6 @@
-# AltText AI - Backend API
+# Oppti Backend
 
-Production-ready Node.js backend API for the AltText AI WordPress plugin.
+Production-ready Node.js backend API for Oppti services.
 
 ## Quick Start
 
@@ -73,4 +73,4 @@ npm start
 
 ## License
 
-Proprietary - AltText AI
+Proprietary - Oppti
