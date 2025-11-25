@@ -61,7 +61,7 @@ router.post('/waitlist', async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Waitlist email error:', error);
     res.status(500).json({
@@ -104,7 +104,7 @@ router.post('/dashboard-welcome', async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Dashboard welcome email error:', error);
     res.status(500).json({
@@ -158,7 +158,7 @@ router.post('/plugin-signup', async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Plugin signup email error:', error);
     res.status(500).json({
@@ -267,7 +267,7 @@ router.post('/low-credit-warning', async (req, res) => {
       });
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Low credit warning error:', error);
     res.status(500).json({
