@@ -1,15 +1,26 @@
 /**
  * Email Service for Marketing Automation
  * Integrates with Resend.com for subscriber management and transactional emails
+ * Now supports React Email templates with fallback to inline HTML
  */
 
 const { Resend } = require('resend');
+
+// Try to load React Email render helper (may fail if templates not compiled)
+let emailRenderHelper = null;
+try {
+  emailRenderHelper = require('../src/emails/renderHelper');
+} catch (error) {
+  console.warn('[Email Service] React Email templates not available, using inline HTML templates');
+}
 
 class EmailService {
   constructor() {
     this.resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
     this.audienceId = process.env.RESEND_AUDIENCE_ID || null;
-    this.fromEmail = process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>';
+    this.fromEmail = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>';
+    this.brandName = process.env.EMAIL_BRAND_NAME || 'AltText AI';
+    this.useReactEmail = !!emailRenderHelper;
   }
 
   /**
@@ -1047,6 +1058,572 @@ The AltText AI Team
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 This email contains your license key. Please save it in a secure location.
     `.trim();
+  }
+
+  // ===== New React Email Methods =====
+
+  /**
+   * Send welcome email using React Email template
+   * @param {Object} data - Email data
+   * @param {string} data.email - Recipient email
+   * @param {string} [data.name] - Recipient name
+   * @param {string} [data.plugin] - Plugin name
+   * @param {Object} [data.metadata] - Additional metadata
+   * @returns {Promise<Object>}
+   */
+  async sendWelcomeEmail(data) {
+    const { email, name, plugin, metadata } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - welcome email not sent');
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending welcome email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderWelcomeEmail({ name, plugin });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            subject = `Welcome to ${this.brandName}! 🎉`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to inline HTML
+      if (!html) {
+        html = this.getWelcomeEmailHTML({ name, plugin });
+        text = this.getWelcomeEmailText({ name, plugin });
+        subject = `Welcome to ${this.brandName}! 🎉`;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ Welcome email sent to ${email} (ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'Welcome email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] Welcome email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send welcome email'
+      };
+    }
+  }
+
+  /**
+   * Send low credit warning email using React Email template
+   * @param {Object} data - Email data
+   * @param {string} data.email - Recipient email
+   * @param {number} data.used - Credits used
+   * @param {number} data.limit - Credit limit
+   * @param {string} [data.plan] - User plan
+   * @param {string} [data.resetDate] - Reset date
+   * @returns {Promise<Object>}
+   */
+  async sendLowCreditWarning(data) {
+    const { email, used, limit, plan = 'free', resetDate } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - low credit warning not sent');
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending low credit warning to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderLowCreditWarningEmail({ used, limit, plan, resetDate });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            const percentage = Math.round((used / limit) * 100);
+            subject = `You're ${percentage}% Through Your Free Plan! ⚡`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to inline HTML
+      if (!html) {
+        html = this.getUsage70EmailHTML({ used, limit, plan });
+        text = this.getUsage70EmailText({ used, limit, plan });
+        subject = 'You\'re 70% Through Your Free Plan! ⚡';
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ Low credit warning sent to ${email} (ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'Low credit warning sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] Low credit warning error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send low credit warning'
+      };
+    }
+  }
+
+  /**
+   * Send receipt email using React Email template
+   * @param {Object} data - Email data
+   * @param {string} data.email - Recipient email
+   * @param {string} [data.name] - Recipient name
+   * @param {number} data.amount - Payment amount
+   * @param {string} [data.currency] - Currency code
+   * @param {string} data.plan - Plan name
+   * @param {string} data.transactionId - Transaction ID
+   * @param {string} data.date - Payment date
+   * @returns {Promise<Object>}
+   */
+  async sendReceipt(data) {
+    const { email, name, amount, currency = 'USD', plan, transactionId, date } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - receipt email not sent');
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending receipt email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderReceiptEmail({ name, amount, currency, plan, transactionId, date });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            const formattedAmount = new Intl.NumberFormat('en-US', {
+              style: 'currency',
+              currency: currency,
+            }).format(amount);
+            subject = `Payment Receipt - ${formattedAmount}`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback - create simple receipt HTML
+      if (!html) {
+        const formattedAmount = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: currency,
+        }).format(amount);
+        html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1>Payment Receipt</h1>
+  <p>${name ? `Hi ${name},` : 'Hi there,'}</p>
+  <p>Thank you for your payment!</p>
+  <p><strong>Amount:</strong> ${formattedAmount}</p>
+  <p><strong>Plan:</strong> ${plan}</p>
+  <p><strong>Transaction ID:</strong> ${transactionId}</p>
+  <p><strong>Date:</strong> ${date}</p>
+</body>
+</html>`;
+        text = `Payment Receipt\n\nAmount: ${formattedAmount}\nPlan: ${plan}\nTransaction ID: ${transactionId}\nDate: ${date}`;
+        subject = `Payment Receipt - ${formattedAmount}`;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ Receipt email sent to ${email} (ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'Receipt email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] Receipt email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send receipt email'
+      };
+    }
+  }
+
+  /**
+   * Send plugin signup email using React Email template
+   * @param {Object} data - Email data
+   * @param {string} data.email - Recipient email
+   * @param {string} [data.name] - Recipient name
+   * @param {string} [data.plugin] - Plugin name
+   * @param {string} [data.installId] - Installation ID
+   * @returns {Promise<Object>}
+   */
+  async sendPluginSignup(data) {
+    const { email, name, plugin, installId } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - plugin signup email not sent');
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending plugin signup email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderPluginSignupEmail({ name, plugin, installId });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            subject = `Welcome to ${plugin || this.brandName}! 🎉`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to welcome email template
+      if (!html) {
+        html = this.getWelcomeEmailHTML({ name, plugin });
+        text = this.getWelcomeEmailText({ name, plugin });
+        subject = `Welcome to ${plugin || this.brandName}! 🎉`;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ Plugin signup email sent to ${email} (ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'Plugin signup email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] Plugin signup email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send plugin signup email'
+      };
+    }
+  }
+
+  /**
+   * Refactored triggerEmail to use React Email when available
+   */
+  async triggerEmail(data) {
+    const { email, event_type, event_data = {}, install_id } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - email not sent');
+      console.log(`📧 Would have sent ${event_type} email to ${email}`);
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Triggering ${event_type} email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email for supported event types
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          let rendered = null;
+          switch (event_type) {
+            case 'welcome':
+              rendered = await emailRenderHelper.renderWelcomeEmail(event_data);
+              subject = `Welcome to ${this.brandName}! 🎉`;
+              break;
+            case 'usage_70':
+              rendered = await emailRenderHelper.renderLowCreditWarningEmail(event_data);
+              const percentage = event_data.used && event_data.limit 
+                ? Math.round((event_data.used / event_data.limit) * 100) 
+                : 70;
+              subject = `You're ${percentage}% Through Your Free Plan! ⚡`;
+              break;
+            case 'usage_100':
+              rendered = await emailRenderHelper.renderUsageLimitReachedEmail(event_data);
+              subject = 'You\'ve Reached Your Free Plan Limit 🚀';
+              break;
+            case 'upgrade':
+              rendered = await emailRenderHelper.renderUpgradeEmail(event_data);
+              subject = 'Thank You for Upgrading! 🎊';
+              break;
+            case 'inactive_30d':
+              rendered = await emailRenderHelper.renderInactiveEmail(event_data);
+              subject = `We Miss You! Come Back to ${this.brandName} 💙`;
+              break;
+          }
+
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to existing HTML templates
+      if (!html) {
+        const emailConfig = this.getEmailConfig(event_type, event_data);
+        html = emailConfig.html;
+        text = emailConfig.text;
+        subject = emailConfig.subject;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ Email sent: ${event_type} to ${email} (ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        event_type,
+        message: 'Email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] Trigger email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send email'
+      };
+    }
+  }
+
+  /**
+   * Refactored sendLicenseIssuedEmail to use React Email when available
+   */
+  async sendLicenseIssuedEmail(data) {
+    const {
+      email,
+      name,
+      licenseKey,
+      plan = 'free',
+      tokenLimit = 50,
+      tokensRemaining = 50,
+      siteUrl = null,
+      isAttached = false
+    } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - license issued email not sent');
+      console.log(`📧 Would have sent license issued email to ${email}: ${licenseKey}`);
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending license issued email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderLicenseActivatedEmail({
+            name,
+            licenseKey,
+            plan,
+            tokenLimit,
+            tokensRemaining,
+            siteUrl,
+            isAttached
+          });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+            subject = `🎉 Your ${this.brandName} ${planName} License Key`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to existing HTML
+      if (!html) {
+        html = this.getLicenseIssuedEmailHtml(data);
+        text = this.getLicenseIssuedEmailText(data);
+        const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+        subject = `🎉 Your ${this.brandName} ${planName} License Key`;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ License issued email sent to ${email} (email ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'License issued email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] License issued email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send license issued email'
+      };
+    }
+  }
+
+  /**
+   * Refactored sendLicenseKey to use React Email when available
+   */
+  async sendLicenseKey(data) {
+    const { email, name, licenseKey, plan = 'agency', maxSites = 10, monthlyQuota = 10000 } = data;
+
+    if (!this.resend) {
+      console.warn('⚠️  Resend not configured - license email not sent');
+      console.log(`📧 Would have sent license key to ${email}: ${licenseKey}`);
+      return {
+        success: false,
+        error: 'Email service not configured',
+        message: 'RESEND_API_KEY not set'
+      };
+    }
+
+    try {
+      console.log(`[Email Service] Sending license key email to ${email}`);
+
+      let html, text, subject;
+
+      // Try React Email first
+      if (this.useReactEmail && emailRenderHelper) {
+        try {
+          const rendered = await emailRenderHelper.renderLicenseKeyEmail({
+            name,
+            licenseKey,
+            plan,
+            maxSites,
+            monthlyQuota
+          });
+          if (rendered) {
+            html = rendered.html;
+            text = rendered.text;
+            const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+            subject = `🎉 Your ${this.brandName} ${planName} License Key`;
+          }
+        } catch (error) {
+          console.warn('[Email Service] React Email rendering failed, using fallback:', error.message);
+        }
+      }
+
+      // Fallback to existing HTML
+      if (!html) {
+        html = this.getLicenseEmailHtml(data);
+        text = this.getLicenseEmailText(data);
+        const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+        subject = `🎉 Your ${this.brandName} ${planName} License Key`;
+      }
+
+      const result = await this.resend.emails.send({
+        from: this.fromEmail,
+        to: email,
+        subject,
+        html,
+        text
+      });
+
+      console.log(`✅ License key email sent to ${email} (email ID: ${result.id})`);
+
+      return {
+        success: true,
+        email_id: result.id,
+        message: 'License key email sent successfully'
+      };
+    } catch (error) {
+      console.error('[Email Service] License email error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to send license email'
+      };
+    }
   }
 }
 
