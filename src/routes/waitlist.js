@@ -93,6 +93,24 @@ router.post('/submit', async (req, res) => {
       source: source || 'website',
     });
 
+    // Subscribe to Resend audience (non-blocking)
+    // This ensures users are added to the audience for marketing emails
+    const subscribeResult = await emailService.subscribe({
+      email,
+      name: email.split('@')[0], // Use email prefix as name
+      metadata: {
+        plugin: plugin || null,
+        source: source || 'website',
+        waitlist: true,
+      },
+    });
+
+    if (!subscribeResult.success && subscribeResult.error !== 'Email service not configured') {
+      console.warn(`[Waitlist] Failed to subscribe ${email} to audience (non-critical):`, subscribeResult.error);
+    } else if (subscribeResult.success) {
+      console.log(`[Waitlist] Subscribed ${email} to Resend audience`);
+    }
+
     if (!emailResult.success) {
       console.error(`[Waitlist] Failed to send welcome email to ${email}:`, emailResult.error);
       // Still return success if we stored the record, but log the email failure
@@ -101,6 +119,7 @@ router.post('/submit', async (req, res) => {
           ok: true,
           message: 'Added to waitlist, but welcome email failed to send',
           emailSent: false,
+          subscribed: subscribeResult.success || false,
         });
       }
       // If both failed, return error
@@ -110,11 +129,12 @@ router.post('/submit', async (req, res) => {
       });
     }
 
-    // Success - record stored (if table exists) and email sent
+    // Success - record stored (if table exists), email sent, and subscribed to audience
     return res.status(200).json({
       ok: true,
       message: 'Successfully added to waitlist',
       emailSent: true,
+      subscribed: subscribeResult.success || false,
     });
   } catch (error) {
     console.error('[Waitlist] Error processing waitlist signup:', error);

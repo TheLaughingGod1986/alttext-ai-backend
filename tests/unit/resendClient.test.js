@@ -61,7 +61,7 @@ describe('resendClient', () => {
 
   test('sendEmail calls Resend with correct payload', async () => {
     process.env.RESEND_API_KEY = 're_test_key';
-    process.env.EMAIL_FROM = 'Test <test@example.com>';
+    process.env.TRANSACTIONAL_FROM_EMAIL = 'Test <test@example.com>';
     mockResendInstance.emails.send.mockResolvedValue({ data: { id: 'email_123' } });
 
     const { sendEmail } = require(MODULE_PATH);
@@ -89,7 +89,7 @@ describe('resendClient', () => {
 
   test('sendEmail uses default from email when not provided', async () => {
     process.env.RESEND_API_KEY = 're_test_key';
-    process.env.EMAIL_FROM = 'Default <default@example.com>';
+    process.env.TRANSACTIONAL_FROM_EMAIL = 'Default <default@example.com>';
     mockResendInstance.emails.send.mockResolvedValue({ data: { id: 'email_123' } });
 
     const { sendEmail } = require(MODULE_PATH);
@@ -109,7 +109,7 @@ describe('resendClient', () => {
 
   test('sendEmail uses custom from email when provided', async () => {
     process.env.RESEND_API_KEY = 're_test_key';
-    process.env.EMAIL_FROM = 'Default <default@example.com>';
+    process.env.TRANSACTIONAL_FROM_EMAIL = 'Default <default@example.com>';
     mockResendInstance.emails.send.mockResolvedValue({ data: { id: 'email_123' } });
 
     const { sendEmail } = require(MODULE_PATH);

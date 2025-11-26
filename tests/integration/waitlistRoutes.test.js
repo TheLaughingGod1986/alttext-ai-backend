@@ -10,6 +10,7 @@ const { supabase } = require('../../db/supabase-client');
 // Mock emailService
 jest.mock('../../src/services/emailService', () => ({
   sendWaitlistWelcome: jest.fn(),
+  subscribe: jest.fn(),
 }));
 
 // Mock Supabase
@@ -37,6 +38,14 @@ describe('POST /waitlist/submit', () => {
     emailService.sendWaitlistWelcome.mockResolvedValue({
       success: true,
       emailId: 'test-email-id',
+    });
+    
+    // Default successful subscribe mock
+    emailService.subscribe.mockResolvedValue({
+      success: true,
+      contact_id: 'contact-123',
+      audience_id: 'audience-123',
+      message: 'Subscriber added successfully',
     });
 
     // Default successful Supabase mock
@@ -77,6 +86,7 @@ describe('POST /waitlist/submit', () => {
         ok: true,
         message: 'Successfully added to waitlist',
         emailSent: true,
+        subscribed: true,
       });
 
       expect(emailService.sendWaitlistWelcome).toHaveBeenCalledWith({
@@ -171,6 +181,12 @@ describe('POST /waitlist/submit', () => {
         success: false,
         error: 'Email service unavailable',
       });
+      
+      // Mock subscribe to also fail (non-critical)
+      emailService.subscribe.mockResolvedValue({
+        success: false,
+        error: 'Subscribe failed',
+      });
 
       // Mock Supabase to also fail
       supabase.from.mockReturnValue({
@@ -194,6 +210,12 @@ describe('POST /waitlist/submit', () => {
       emailService.sendWaitlistWelcome.mockResolvedValue({
         success: false,
         error: 'Email service unavailable',
+      });
+      
+      // Mock subscribe to succeed (non-critical)
+      emailService.subscribe.mockResolvedValue({
+        success: true,
+        contact_id: 'contact-123',
       });
 
       // Mock successful Supabase insert
@@ -222,6 +244,7 @@ describe('POST /waitlist/submit', () => {
 
       expect(response.body.ok).toBe(true);
       expect(response.body.emailSent).toBe(false);
+      expect(response.body.subscribed).toBe(true);
       expect(response.body.message).toContain('email failed');
     });
   });

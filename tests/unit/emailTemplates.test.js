@@ -245,6 +245,84 @@ describe('emailTemplates', () => {
       expect(result.html).toContain('AltText AI');
       expect(result.html).toContain('example.com');
     });
+
+    test('does not throw with required data', () => {
+      const { pluginSignupEmail } = require(MODULE_PATH);
+      expect(() => {
+        pluginSignupEmail({ email: 'test@example.com', pluginName: 'TestPlugin' });
+      }).not.toThrow();
+    });
+  });
+
+  describe('passwordResetEmail', () => {
+    test('returns email with subject, html, and text', () => {
+      const { passwordResetEmail } = require(MODULE_PATH);
+      const result = passwordResetEmail({
+        email: 'test@example.com',
+        resetUrl: 'https://example.com/reset?token=abc123',
+      });
+
+      expect(result).toHaveProperty('subject');
+      expect(result).toHaveProperty('html');
+      expect(result).toHaveProperty('text');
+    });
+
+    test('subject contains brand name', () => {
+      const { passwordResetEmail } = require(MODULE_PATH);
+      const result = passwordResetEmail({
+        email: 'test@example.com',
+        resetUrl: 'https://example.com/reset?token=abc123',
+      });
+
+      expect(result.subject).toContain('TestBrand');
+    });
+
+    test('html contains reset URL', () => {
+      const { passwordResetEmail } = require(MODULE_PATH);
+      const resetUrl = 'https://example.com/reset?token=abc123';
+      const result = passwordResetEmail({
+        email: 'test@example.com',
+        resetUrl,
+      });
+
+      expect(result.html).toContain(resetUrl);
+      expect(result.html).toContain('Reset Password');
+    });
+
+    test('does not throw with required data', () => {
+      const { passwordResetEmail } = require(MODULE_PATH);
+      expect(() => {
+        passwordResetEmail({
+          email: 'test@example.com',
+          resetUrl: 'https://example.com/reset?token=abc123',
+        });
+      }).not.toThrow();
+    });
+  });
+
+  describe('usageSummaryEmail', () => {
+    test('returns email with subject, html, and text', () => {
+      const { usageSummaryEmail } = require(MODULE_PATH);
+      const result = usageSummaryEmail({ email: 'test@example.com' });
+
+      expect(result).toHaveProperty('subject');
+      expect(result).toHaveProperty('html');
+      expect(result).toHaveProperty('text');
+    });
+
+    test('subject contains brand name', () => {
+      const { usageSummaryEmail } = require(MODULE_PATH);
+      const result = usageSummaryEmail({ email: 'test@example.com' });
+
+      expect(result.subject).toContain('TestBrand');
+    });
+
+    test('does not throw with required data', () => {
+      const { usageSummaryEmail } = require(MODULE_PATH);
+      expect(() => {
+        usageSummaryEmail({ email: 'test@example.com' });
+      }).not.toThrow();
+    });
   });
 });
 

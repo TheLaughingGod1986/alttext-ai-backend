@@ -52,7 +52,8 @@ try {
  * Get brand name from environment variable
  */
 function getBrandName() {
-  return process.env.EMAIL_BRAND_NAME || 'AltText AI';
+  const { brandName } = require('./emailConfig');
+  return brandName;
 }
 
 /**

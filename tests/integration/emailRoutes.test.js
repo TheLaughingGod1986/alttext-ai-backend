@@ -95,6 +95,21 @@ describe('Email Routes (new)', () => {
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toBe('Rate limit exceeded');
     });
+
+    test('returns deduplication response when email is deduped', async () => {
+      mockEmailService.sendWaitlistWelcome.mockResolvedValue({ success: true, deduped: true });
+      
+      const res = await request(app)
+        .post('/email/waitlist')
+        .send({
+          email: 'test@example.com',
+          plugin: 'AltText AI',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.deduped).toBe(true);
+    });
   });
 
   describe('POST /email/dashboard-welcome', () => {
@@ -119,6 +134,20 @@ describe('Email Routes (new)', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
+    });
+
+    test('returns deduplication response when email is deduped', async () => {
+      mockEmailService.sendDashboardWelcome.mockResolvedValue({ success: true, deduped: true });
+      
+      const res = await request(app)
+        .post('/email/dashboard-welcome')
+        .send({
+          email: 'test@example.com',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.deduped).toBe(true);
     });
   });
 
@@ -151,6 +180,51 @@ describe('Email Routes (new)', () => {
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toContain('Plugin name is required');
+    });
+
+    test('returns deduplication response when email is deduped', async () => {
+      mockEmailService.sendPluginSignup.mockResolvedValue({ success: true, deduped: true });
+      
+      const res = await request(app)
+        .post('/email/plugin-signup')
+        .send({
+          email: 'test@example.com',
+          pluginName: 'AltText AI',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.deduped).toBe(true);
+    });
+
+    test('supports both plugin and pluginName parameters', async () => {
+      const res = await request(app)
+        .post('/email/plugin-signup')
+        .send({
+          email: 'test@example.com',
+          plugin: 'AltText AI',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(mockEmailService.sendPluginSignup).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: undefined,
+      });
+    });
+
+    test('validates email format with Zod', async () => {
+      const res = await request(app)
+        .post('/email/plugin-signup')
+        .send({
+          email: 'invalid-email',
+          pluginName: 'AltText AI',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toContain('Invalid email format');
     });
   });
 

@@ -7,6 +7,7 @@ describe('emailService (new)', () => {
 
   let mockResendClient;
   let mockTemplates;
+  let mockEmailEventService;
 
   beforeEach(() => {
     jest.resetModules();
@@ -18,6 +19,14 @@ describe('emailService (new)', () => {
     jest.mock('../../src/utils/resendClient', () => ({
       sendEmail: mockResendClient.sendEmail,
     }));
+
+    // Mock emailEventService
+    mockEmailEventService = {
+      hasRecentEvent: jest.fn().mockResolvedValue(false),
+      hasRecentEventForPlugin: jest.fn().mockResolvedValue(false),
+      logEvent: jest.fn().mockResolvedValue({ success: true }),
+    };
+    jest.mock('../../src/services/emailEventService', () => mockEmailEventService);
 
     // Mock templates
     mockTemplates = {
@@ -252,6 +261,50 @@ describe('emailService (new)', () => {
             { name: 'event', value: 'plugin_signup' },
             { name: 'plugin', value: 'AltText AI' },
           ]),
+        })
+      );
+      expect(mockEmailEventService.logEvent).toHaveBeenCalled();
+    });
+
+    test('returns deduplicated response when recent event exists', async () => {
+      mockEmailEventService.hasRecentEventForPlugin.mockResolvedValue(true);
+      const { sendPluginSignup } = require(MODULE_PATH);
+
+      const result = await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.deduped).toBe(true);
+      expect(mockResendClient.sendEmail).not.toHaveBeenCalled();
+      expect(mockEmailEventService.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'test@example.com',
+          pluginSlug: 'AltText AI',
+          eventType: 'plugin_signup',
+          context: expect.objectContaining({ deduped: true }),
+          success: true,
+        })
+      );
+    });
+
+    test('handles resend failure gracefully', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: false, error: 'Rate limit exceeded' });
+      const { sendPluginSignup } = require(MODULE_PATH);
+
+      const result = await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Rate limit exceeded');
+      expect(mockEmailEventService.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          errorMessage: 'Rate limit exceeded',
         })
       );
     });

@@ -68,8 +68,20 @@ All required environment variables must be set in Render dashboard under **Envir
 - `JWT_SECRET`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`
+
+### Email Service (Resend)
+- `RESEND_API_KEY` - Resend API key (required)
+- `EMAIL_FROM` - Default from email address
+- `TRANSACTIONAL_FROM_EMAIL` - From email for general emails (defaults to `EMAIL_FROM`)
+- `BILLING_FROM_EMAIL` - From email for receipts (defaults to `EMAIL_FROM`)
+- `RESEND_AUDIENCE_ID` - Optional: Resend audience ID for subscriber management
+
+### Branding Configuration
+- `BRAND_NAME` - Brand name (defaults to "AltText AI")
+- `BRAND_DOMAIN` - Brand domain (defaults to "optti.dev")
+- `SUPPORT_EMAIL` - Support email (defaults to `support@${BRAND_DOMAIN}`)
+- `FRONTEND_DASHBOARD_URL` - Dashboard URL (defaults to `https://app.${BRAND_DOMAIN}`)
+- `PUBLIC_API_DOMAIN` - Public API domain (defaults to `api.${BRAND_DOMAIN}`)
 
 See `config/env.example` for the complete list.
 

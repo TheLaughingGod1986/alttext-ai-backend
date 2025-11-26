@@ -6,7 +6,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { supabase } = require('../db/supabase-client');
 const { generateToken, hashPassword, comparePassword, authenticateToken } = require('./jwt');
-const { sendPasswordResetEmail, sendWelcomeEmail } = require('./email');
+const emailService = require('../src/services/emailService');
 const licenseService = require('../services/licenseService');
 
 const router = express.Router();
@@ -129,7 +129,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Send welcome email (non-blocking)
-    sendWelcomeEmail(user.email, user.email).catch(err => {
+    emailService.sendDashboardWelcome({ email: user.email }).catch(err => {
       console.error('Failed to send welcome email (non-critical):', err);
       // Don't fail registration if email fails
     });
@@ -407,9 +407,12 @@ router.post('/forgot-password', async (req, res) => {
       resetUrl = `?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
     }
 
-    // Send email (mock for now)
+    // Send password reset email (non-blocking)
     try {
-      await sendPasswordResetEmail(email.toLowerCase(), resetUrl);
+      await emailService.sendPasswordReset({
+        email: email.toLowerCase(),
+        resetUrl,
+      });
     } catch (emailError) {
       console.error('Failed to send password reset email:', emailError);
       // Don't fail the request if email fails - token is still created
