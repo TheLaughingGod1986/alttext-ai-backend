@@ -71,6 +71,16 @@ app.use('/billing/webhook', express.raw({ type: 'application/json' }));
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
 app.use(express.json({ limit: '2mb' }));
 
+// Health check - MUST be before rate limiting to avoid 429 errors on health checks
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    phase: 'monetization'
+  });
+});
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -91,16 +101,6 @@ app.use('/api/organization', authenticateToken, organizationRoutes);
 app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
 app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
 app.use('/waitlist', waitlistRoutes); // Waitlist routes
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    version: '2.0.0',
-    phase: 'monetization'
-  });
-});
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, async (req, res) => {
