@@ -3,7 +3,7 @@
  * HTML template functions for all email types
  */
 
-const { getEmailConfig } = require('../../config/emailConfig');
+const { getEmailConfig } = require('../emailConfig');
 
 /**
  * Generate email footer HTML
@@ -369,6 +369,104 @@ The ${brandName} Team
   };
 }
 
+/**
+ * Password reset email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} params.resetUrl - Password reset URL with token
+ * @returns {Object} Email content with subject, html, and text
+ */
+function passwordResetEmail({ email, resetUrl }) {
+  const config = getEmailConfig();
+  const { brandName } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>You requested to reset your password for ${brandName}.</p>
+    <p>Click the button below to reset your password:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 600;">Reset Password</a>
+    </div>
+    
+    <p style="font-size: 14px; color: #6b7280;">Or copy and paste this link into your browser:</p>
+    <p style="font-size: 12px; word-break: break-all; color: #9ca3af; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetUrl}</p>
+    
+    <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">This link will expire in 1 hour.</p>
+    <p style="font-size: 14px; color: #6b7280;">If you didn't request this, please ignore this email.</p>
+  `;
+
+  const html = getBaseEmailHTML(config, 'Reset Your Password', '667eea', content);
+
+  const text = `
+Reset Your Password
+
+You requested to reset your password for ${brandName}.
+
+Click the link below to reset your password:
+${resetUrl}
+
+This link will expire in 1 hour.
+
+If you didn't request this, please ignore this email.
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Reset Your ${brandName} Password`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Usage summary email (placeholder for future feature)
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.pluginName] - Plugin name
+ * @param {Object} [params.stats] - Usage statistics
+ * @returns {Object} Email content with subject, html, and text
+ */
+function usageSummaryEmail({ email, pluginName, stats = {} }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.</p>
+    
+    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+      <p style="margin: 0;"><strong>Usage Summary:</strong></p>
+      <p style="margin: 10px 0 0 0;">View detailed analytics in your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></p>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, 'Your Usage Summary', '667eea', content);
+
+  const text = `
+Your Usage Summary
+
+Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.
+
+View detailed analytics in your dashboard: ${dashboardUrl}
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Your ${brandName} Usage Summary`,
+    html,
+    text,
+  };
+}
+
 module.exports = {
   welcomeWaitlistEmail,
   welcomeDashboardEmail,
@@ -376,5 +474,7 @@ module.exports = {
   lowCreditWarningEmail,
   receiptEmail,
   pluginSignupEmail,
+  passwordResetEmail,
+  usageSummaryEmail,
 };
 

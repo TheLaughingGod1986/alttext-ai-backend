@@ -2,9 +2,15 @@ const request = require('supertest');
 const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const licenseServiceMock = require('../mocks/licenseService.mock');
-const authEmailMock = require('../../auth/email');
+const emailService = require('../../src/services/emailService');
 const { generateToken, hashPassword } = require('../../auth/jwt');
 const { createLicenseSnapshot, createLicenseCreationResponse } = require('../mocks/createLicenseMock');
+
+// Mock emailService
+jest.mock('../../src/services/emailService', () => ({
+  sendDashboardWelcome: jest.fn(),
+  sendPasswordReset: jest.fn(),
+}));
 
 const app = createTestServer();
 
@@ -12,7 +18,8 @@ describe('Auth routes', () => {
   beforeEach(() => {
     supabaseMock.__reset();
     licenseServiceMock.__reset();
-    authEmailMock.sendWelcomeEmail.mockClear().mockResolvedValue();
+    emailService.sendDashboardWelcome.mockClear().mockResolvedValue({ success: true });
+    emailService.sendPasswordReset.mockClear().mockResolvedValue({ success: true });
     
     // Use standardized license mocks
     const defaultLicense = createLicenseCreationResponse({
@@ -138,7 +145,7 @@ describe('Auth routes', () => {
     licenseServiceMock.getLicenseSnapshot.mockResolvedValueOnce(snapshot);
 
     // Mock email failure
-    authEmailMock.sendWelcomeEmail.mockRejectedValueOnce(new Error('Email service unavailable'));
+    emailService.sendDashboardWelcome.mockRejectedValueOnce(new Error('Email service unavailable'));
 
     const res = await request(app)
       .post('/auth/register')
@@ -147,7 +154,7 @@ describe('Auth routes', () => {
     // Registration should succeed even if email fails
     expect(res.status).toBe(201);
     expect(res.body.user.email).toBe('emailfail@example.com');
-    expect(authEmailMock.sendWelcomeEmail).toHaveBeenCalled();
+    expect(emailService.sendDashboardWelcome).toHaveBeenCalled();
   });
 
   test('registration handles email timeout gracefully', async () => {
@@ -173,7 +180,7 @@ describe('Auth routes', () => {
     licenseServiceMock.getLicenseSnapshot.mockResolvedValueOnce(snapshot);
 
     // Mock email timeout
-    authEmailMock.sendWelcomeEmail.mockImplementationOnce(() =>
+    emailService.sendDashboardWelcome.mockImplementationOnce(() =>
       new Promise((resolve, reject) => setTimeout(() => reject(new Error('Email timeout')), 100))
     );
 
@@ -386,7 +393,7 @@ describe('Auth routes', () => {
     });
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
     supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
-    authEmailMock.sendPasswordResetEmail.mockResolvedValueOnce(true);
+    emailService.sendPasswordReset.mockResolvedValueOnce({ success: true });
 
     const res = await request(app)
       .post('/auth/forgot-password')
@@ -394,7 +401,7 @@ describe('Auth routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(authEmailMock.sendPasswordResetEmail).toHaveBeenCalled();
+    expect(emailService.sendPasswordReset).toHaveBeenCalled();
   });
 
   test('reset-password requires all fields', async () => {
@@ -504,7 +511,7 @@ describe('Auth routes', () => {
     supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
 
     // Mock email failure
-    authEmailMock.sendPasswordResetEmail.mockRejectedValueOnce(new Error('Email service unavailable'));
+    emailService.sendPasswordReset.mockRejectedValueOnce(new Error('Email service unavailable'));
 
     const res = await request(app)
       .post('/auth/forgot-password')
@@ -513,7 +520,7 @@ describe('Auth routes', () => {
     // Should still return success even if email fails (token is created)
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(authEmailMock.sendPasswordResetEmail).toHaveBeenCalled();
+    expect(emailService.sendPasswordReset).toHaveBeenCalled();
   });
 
   test('forgot-password handles rate limit rejection from Resend', async () => {
@@ -531,7 +538,7 @@ describe('Auth routes', () => {
     // Mock Resend rate limit error
     const rateLimitError = new Error('Rate limit exceeded');
     rateLimitError.statusCode = 429;
-    authEmailMock.sendPasswordResetEmail.mockRejectedValueOnce(rateLimitError);
+    emailService.sendPasswordReset.mockRejectedValueOnce(rateLimitError);
 
     const res = await request(app)
       .post('/auth/forgot-password')
@@ -540,7 +547,7 @@ describe('Auth routes', () => {
     // Should still return success even if email rate limited (token is created)
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(authEmailMock.sendPasswordResetEmail).toHaveBeenCalled();
+    expect(emailService.sendPasswordReset).toHaveBeenCalled();
   });
 
   test('forgot-password handles missing RESEND_API_KEY', async () => {
@@ -558,8 +565,8 @@ describe('Auth routes', () => {
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
     supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
 
-    // sendPasswordResetEmail will handle missing key gracefully
-    authEmailMock.sendPasswordResetEmail.mockResolvedValueOnce(false);
+    // sendPasswordReset will handle missing key gracefully
+    emailService.sendPasswordReset.mockResolvedValueOnce({ success: false, error: 'Resend API key not configured' });
 
     const res = await request(app)
       .post('/auth/forgot-password')

@@ -21,6 +21,7 @@ const licenseRoutes = require('./routes/license');
 const organizationRoutes = require('./routes/organization');
 const emailRoutes = require('./routes/email'); // Legacy routes
 const newEmailRoutes = require('./src/routes/email'); // New email routes
+const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
 const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
 
 const app = express();
@@ -79,6 +80,8 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Routes
+// Backward compatibility routes (registered first at root level)
+app.use('/', emailCompatibilityRoutes);
 app.use('/auth', authRoutes);
 app.use('/usage', usageRoutes);
 app.use('/billing', billingRoutes);

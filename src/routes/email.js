@@ -61,6 +61,11 @@ router.post('/waitlist', async (req, res) => {
       });
     }
 
+    // Check for deduplication
+    if (result.deduped) {
+      return res.status(200).json({ ok: true, deduped: true });
+    }
+
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Waitlist email error:', error);
@@ -104,6 +109,11 @@ router.post('/dashboard-welcome', async (req, res) => {
       });
     }
 
+    // Check for deduplication
+    if (result.deduped) {
+      return res.status(200).json({ ok: true, deduped: true });
+    }
+
     return res.status(200).json({ ok: true });
   } catch (error) {
     console.error('[Email Routes] Dashboard welcome email error:', error);
@@ -115,40 +125,52 @@ router.post('/dashboard-welcome', async (req, res) => {
 });
 
 /**
+ * Zod schema for plugin signup email validation
+ * Supports both 'plugin'/'pluginName' and 'site'/'siteUrl' for backward compatibility
+ */
+const pluginSignupEmailSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  plugin: z.string().min(1, 'Plugin name is required').optional(),
+  pluginName: z.string().min(1, 'Plugin name is required').optional(),
+  site: z.string().url('Invalid site URL format').optional().or(z.literal('')),
+  siteUrl: z.string().url('Invalid site URL format').optional().or(z.literal('')),
+}).refine(
+  (data) => data.plugin || data.pluginName,
+  { message: 'Plugin name is required (use "plugin" or "pluginName")' }
+);
+
+/**
  * POST /email/plugin-signup
- * Body: { email, pluginName, siteUrl }
+ * Body: { email, plugin/pluginName, site/siteUrl? }
  */
 router.post('/plugin-signup', async (req, res) => {
   try {
-    const { email, pluginName, siteUrl } = req.body;
+    // Validate input with Zod
+    const validationResult = pluginSignupEmailSchema.safeParse(req.body);
 
-    // Validate input
-    if (!email || typeof email !== 'string') {
+    if (!validationResult.success) {
+      const issues = validationResult.error.issues || [];
+      const firstIssue = issues[0];
+      const errorMessage = firstIssue?.message || 'Validation failed';
       return res.status(400).json({
         ok: false,
-        error: 'Email is required',
+        error: errorMessage,
       });
     }
 
-    if (!validateEmail(email)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid email format',
-      });
-    }
-
-    if (!pluginName || typeof pluginName !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Plugin name is required',
-      });
-    }
+    const { email, plugin, pluginName, site, siteUrl } = validationResult.data;
+    
+    // Normalize plugin name (support both 'plugin' and 'pluginName')
+    const normalizedPluginName = pluginName || plugin;
+    
+    // Normalize site URL (support both 'site' and 'siteUrl')
+    const normalizedSiteUrl = siteUrl || site || undefined;
 
     // Send plugin signup email
     const result = await emailService.sendPluginSignup({
       email,
-      pluginName,
-      siteUrl,
+      pluginName: normalizedPluginName,
+      siteUrl: normalizedSiteUrl,
     });
 
     if (!result.success) {
@@ -156,6 +178,11 @@ router.post('/plugin-signup', async (req, res) => {
         ok: false,
         error: result.error || 'Failed to send email',
       });
+    }
+
+    // Check for deduplication
+    if (result.deduped) {
+      return res.status(200).json({ ok: true, deduped: true });
     }
 
     return res.status(200).json({ ok: true });

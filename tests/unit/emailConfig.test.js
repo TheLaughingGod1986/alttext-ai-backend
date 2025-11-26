@@ -3,7 +3,7 @@
  */
 
 describe('emailConfig', () => {
-  const MODULE_PATH = '../../src/config/emailConfig';
+  const MODULE_PATH = '../../src/emails/emailConfig';
 
   beforeEach(() => {
     // Reset environment variables
@@ -16,6 +16,8 @@ describe('emailConfig', () => {
     delete process.env.PUBLIC_API_DOMAIN;
     delete process.env.EMAIL_FROM;
     delete process.env.RESEND_FROM_EMAIL;
+    delete process.env.TRANSACTIONAL_FROM_EMAIL;
+    delete process.env.BILLING_FROM_EMAIL;
     jest.resetModules();
   });
 
@@ -28,6 +30,10 @@ describe('emailConfig', () => {
     expect(config.supportEmail).toBe('support@optti.dev');
     expect(config.dashboardUrl).toBe('https://app.optti.dev');
     expect(config.publicApiDomain).toBe('api.optti.dev');
+    expect(config.transactionalFromEmail).toContain('AltText AI');
+    expect(config.transactionalFromEmail).toContain('hello@optti.dev');
+    expect(config.billingFromEmail).toContain('AltText AI');
+    expect(config.billingFromEmail).toContain('billing@optti.dev');
   });
 
   test('uses BRAND_NAME when set', () => {
@@ -92,6 +98,38 @@ describe('emailConfig', () => {
 
     expect(emailConfig.brandName).toBe('TestBrand');
     expect(emailConfig.brandDomain).toBe('optti.dev');
+  });
+
+  test('uses TRANSACTIONAL_FROM_EMAIL when set', () => {
+    process.env.TRANSACTIONAL_FROM_EMAIL = 'transactions@example.com';
+    const { getEmailConfig } = require(MODULE_PATH);
+    const config = getEmailConfig();
+
+    expect(config.transactionalFromEmail).toBe('transactions@example.com');
+  });
+
+  test('uses BILLING_FROM_EMAIL when set', () => {
+    process.env.BILLING_FROM_EMAIL = 'billing@example.com';
+    const { getEmailConfig } = require(MODULE_PATH);
+    const config = getEmailConfig();
+
+    expect(config.billingFromEmail).toBe('billing@example.com');
+  });
+
+  test('falls back to EMAIL_FROM for transactionalFromEmail', () => {
+    process.env.EMAIL_FROM = 'noreply@example.com';
+    const { getEmailConfig } = require(MODULE_PATH);
+    const config = getEmailConfig();
+
+    expect(config.transactionalFromEmail).toBe('noreply@example.com');
+  });
+
+  test('falls back to EMAIL_FROM for billingFromEmail', () => {
+    process.env.EMAIL_FROM = 'noreply@example.com';
+    const { getEmailConfig } = require(MODULE_PATH);
+    const config = getEmailConfig();
+
+    expect(config.billingFromEmail).toBe('noreply@example.com');
   });
 });
 

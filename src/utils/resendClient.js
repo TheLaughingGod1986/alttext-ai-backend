@@ -4,7 +4,7 @@
  */
 
 const { Resend } = require('resend');
-const { fromEmail } = require('../config/emailConfig');
+const { transactionalFromEmail } = require('../emails/emailConfig');
 
 let resendInstance = null;
 
@@ -54,7 +54,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
     console.log(`[Resend Client] Sending email to ${to} with subject: ${subject}`);
 
     const emailData = {
-      from: from || fromEmail,
+      from: from || transactionalFromEmail,
       to,
       subject,
       html,
