@@ -26,9 +26,11 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:unit
+        timeout-minutes: 5
 
       - name: Run integration tests
         run: npm run test:integration
+        timeout-minutes: 10
 
       - name: Upload coverage
         if: always()
