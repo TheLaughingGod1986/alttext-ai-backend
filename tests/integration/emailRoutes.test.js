@@ -16,13 +16,20 @@ jest.mock('../../src/services/emailService', () => ({
   sendPluginSignup: jest.fn(),
 }));
 
+// Mock pluginInstallationService at top level for Jest hoisting
+jest.mock('../../src/services/pluginInstallationService', () => ({
+  recordInstallation: jest.fn(),
+}));
+
 describe('Email Routes (new)', () => {
   let app;
   let mockEmailService;
+  let mockPluginInstallationService;
 
   beforeAll(() => {
     app = createTestServer();
     mockEmailService = require('../../src/services/emailService');
+    mockPluginInstallationService = require('../../src/services/pluginInstallationService');
   });
 
   beforeEach(() => {
@@ -34,6 +41,7 @@ describe('Email Routes (new)', () => {
     mockEmailService.sendLowCreditWarning.mockResolvedValue({ success: true, emailId: 'email_123' });
     mockEmailService.sendReceipt.mockResolvedValue({ success: true, emailId: 'email_123' });
     mockEmailService.sendPluginSignup.mockResolvedValue({ success: true, emailId: 'email_123' });
+    mockPluginInstallationService.recordInstallation.mockResolvedValue({ success: true, record: { id: '123' } });
   });
 
   describe('POST /email/waitlist', () => {
@@ -167,6 +175,14 @@ describe('Email Routes (new)', () => {
         email: 'test@example.com',
         pluginName: 'AltText AI',
         siteUrl: 'https://example.com',
+        meta: {
+          version: undefined,
+          wpVersion: undefined,
+          phpVersion: undefined,
+          language: undefined,
+          timezone: undefined,
+          installSource: undefined,
+        },
       });
     });
 
@@ -211,6 +227,14 @@ describe('Email Routes (new)', () => {
         email: 'test@example.com',
         pluginName: 'AltText AI',
         siteUrl: undefined,
+        meta: {
+          version: undefined,
+          wpVersion: undefined,
+          phpVersion: undefined,
+          language: undefined,
+          timezone: undefined,
+          installSource: undefined,
+        },
       });
     });
 
@@ -225,6 +249,67 @@ describe('Email Routes (new)', () => {
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toContain('Invalid email format');
+    });
+
+    test('accepts and passes metadata fields', async () => {
+      const res = await request(app)
+        .post('/email/plugin-signup')
+        .send({
+          email: 'test@example.com',
+          pluginName: 'AltText AI',
+          siteUrl: 'https://example.com',
+          version: '1.0.0',
+          wpVersion: '6.0',
+          phpVersion: '8.0',
+          language: 'en_US',
+          timezone: 'America/New_York',
+          installSource: 'website',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(mockEmailService.sendPluginSignup).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: 'https://example.com',
+        meta: {
+          version: '1.0.0',
+          wpVersion: '6.0',
+          phpVersion: '8.0',
+          language: 'en_US',
+          timezone: 'America/New_York',
+          installSource: 'website',
+        },
+      });
+    });
+
+    test('logs plugin installation via plugin-signup', async () => {
+      // Note: This test verifies the route accepts metadata
+      // The actual installation recording happens inside emailService.sendPluginSignup
+      // which is mocked here, so we verify the metadata is passed correctly
+      const res = await request(app)
+        .post('/email/plugin-signup')
+        .send({
+          email: 'test@example.com',
+          plugin: 'beepbeep-ai',
+          site: 'https://example.com',
+          version: '1.0.0',
+          wpVersion: '6.0',
+        });
+
+      expect([200, 201]).toContain(res.status);
+      expect(res.body.ok).toBe(true);
+      expect(mockEmailService.sendPluginSignup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'test@example.com',
+          pluginName: 'beepbeep-ai',
+          siteUrl: 'https://example.com',
+          meta: expect.objectContaining({
+            version: '1.0.0',
+            wpVersion: '6.0',
+          }),
+        })
+      );
     });
   });
 

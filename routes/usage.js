@@ -1,85 +1,161 @@
 /**
  * Usage and billing routes
+ * Site-based usage tracking: All users on the same site (same X-Site-Hash) share the same quota
  */
 
 const express = require('express');
 const { supabase, handleSupabaseResponse } = require('../db/supabase-client');
-const { authenticateToken } = require('../auth/jwt');
+const { optionalAuth, authenticateToken } = require('../auth/jwt');
+const siteService = require('../src/services/siteService');
+const licenseService = require('../services/licenseService');
 
 const router = express.Router();
 
 /**
- * Get user's current usage and plan info
+ * Get site's current usage and plan info
+ * CRITICAL: Tracks usage by X-Site-Hash, NOT by X-WP-User-ID
+ * All users on the same site (same X-Site-Hash) must receive the same usage
  */
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id, plan, created_at')
-      .eq('id', req.user.id)
-      .single();
-
-    if (userError || !user) {
-      return res.status(404).json({
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
+    // X-Site-Hash is REQUIRED for quota tracking
+    const siteHash = req.headers['x-site-hash'];
+    
+    if (!siteHash) {
+      return res.status(400).json({
+        success: false,
+        error: 'X-Site-Hash header is required',
+        code: 'MISSING_SITE_HASH'
       });
     }
 
-    // Get usage count
-    const { count: usageCount, error: countError } = await supabase
-      .from('usage_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', req.user.id)
+    // Get site URL from header (optional)
+    const siteUrl = req.headers['x-site-url'];
 
-    if (countError) {
-      throw countError;
+    // Get or create site
+    const site = await siteService.getOrCreateSite(siteHash, siteUrl);
+
+    // Get site usage (this handles monthly resets automatically)
+    const usage = await siteService.getSiteUsage(siteHash);
+
+    // Determine quota source (priority order):
+    // 1. X-License-Key → use license-based quota
+    // 2. Authorization (JWT) → use user account quota
+    // 3. Neither → use site-based free quota (50 credits/month)
+
+    let license = null;
+    let licenseKey = null;
+    let quotaSource = 'site-free'; // Default to site-based free quota
+
+    // Check for X-License-Key header
+    const headerLicenseKey = req.headers['x-license-key'];
+    if (headerLicenseKey) {
+      const { data: licenseData, error: licenseError } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('license_key', headerLicenseKey)
+        .single();
+
+      if (!licenseError && licenseData) {
+        license = licenseData;
+        licenseKey = headerLicenseKey;
+        quotaSource = 'license';
+        // Update site with license key if different
+        if (site.license_key !== headerLicenseKey) {
+          await supabase
+            .from('sites')
+            .update({
+              license_key: headerLicenseKey,
+              plan: licenseData.plan || 'free',
+              token_limit: licenseData.token_limit || 50,
+              updated_at: new Date().toISOString()
+            })
+            .eq('site_hash', siteHash);
+        }
+      }
     }
 
-    // Service-specific plan limits
-    const planLimits = {
-      'alttext-ai': {
-        free: 50,
-        pro: 1000,
-        agency: 10000
-      },
-      'seo-ai-meta': {
-        free: 10,
-        pro: 100,
-        agency: 1000
+    // If no license key in header, check site's license
+    if (!license && site.license_key) {
+      license = await siteService.getSiteLicense(siteHash);
+      if (license) {
+        licenseKey = site.license_key;
+        quotaSource = 'license';
+      }
+    }
+
+    // Check for JWT authentication (Authorization header)
+    if (!license && req.user && req.user.id) {
+      // User account quota - get user's plan
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, plan, service')
+        .eq('id', req.user.id)
+        .single();
+
+      if (!userError && user) {
+        quotaSource = 'user-account';
+        // Use user's plan limits
+        const serviceLimits = siteService.PLAN_LIMITS[user.service || 'alttext-ai'] || siteService.PLAN_LIMITS['alttext-ai'];
+        const userLimit = serviceLimits[user.plan] || serviceLimits.free;
+        
+        // Override usage with user's quota if higher
+        if (userLimit > usage.limit) {
+          usage.limit = userLimit;
+          usage.remaining = Math.max(0, userLimit - usage.used);
+          usage.plan = user.plan;
+        }
+      }
+    }
+
+    // Calculate reset timestamp
+    const resetDate = usage.resetDate || siteService.getNextResetDate();
+    const resetTimestamp = usage.resetTimestamp || Math.floor(new Date(resetDate).getTime() / 1000);
+
+    // Build response with licenseKey in multiple locations
+    const response = {
+      success: true,
+      data: {
+        usage: {
+          used: usage.used,
+          limit: usage.limit,
+          remaining: usage.remaining,
+          plan: usage.plan,
+          resetDate: resetDate,
+          resetTimestamp: resetTimestamp
+        },
+        organization: {
+          plan: usage.plan,
+          tokenLimit: usage.limit,
+          tokensRemaining: usage.remaining,
+          tokensUsed: usage.used,
+          resetDate: resetDate
+        },
+        site: {
+          siteHash: siteHash,
+          siteUrl: site.site_url || siteUrl || null,
+          licenseKey: licenseKey || site.license_key || null,
+          autoAttachStatus: license ? (license.auto_attach_status || 'attached') : 'pending'
+        }
       }
     };
 
-    // service column doesn't exist in users table, default to alttext-ai
-    const serviceLimits = planLimits['alttext-ai'];
-    const limit = serviceLimits[user.plan] || serviceLimits.free;
-    // Calculate remaining tokens (column doesn't exist, use limit - used)
-    const remaining = Math.max(0, limit - usageCount);
+    // Add license object if license exists
+    if (license) {
+      response.data.license = {
+        licenseKey: license.license_key || licenseKey,
+        plan: license.plan || usage.plan,
+        tokenLimit: license.token_limit || usage.limit,
+        tokensRemaining: license.tokens_remaining !== undefined ? license.tokens_remaining : usage.remaining
+      };
+      // Also add licenseKey at root level
+      response.data.licenseKey = license.license_key || licenseKey;
+    } else if (site.license_key) {
+      // Site has license key but license not found - still include it
+      response.data.licenseKey = site.license_key;
+    }
 
-    // Get credits from credits table (or use default limits)
-    const { data: creditsData } = await supabase
-      .from('credits')
-      .select('monthly_limit, used_this_month')
-      .eq('user_id', req.user.id)
-      .single();
-
-    // Use default limits if no credits record exists
-    const defaultMonthlyLimit = limit; // limit already calculated based on plan
-    const monthlyLimit = creditsData?.monthly_limit || defaultMonthlyLimit;
-    const usedThisMonth = creditsData?.used_this_month || 0;
-    const creditsRemaining = Math.max(0, monthlyLimit - usedThisMonth);
-
-    res.json({
-      success: true,
-      usage: {
-        used: usageCount,
-        limit: limit,
-        remaining: remaining,
-        plan: user.plan,
-        credits: creditsRemaining,
-        service: 'alttext-ai' // service column doesn't exist
-      }
-    });
+    res.json(response);
 
   } catch (error) {
     console.error('Get usage error:', error);
@@ -90,6 +166,7 @@ router.get('/', authenticateToken, async (req, res) => {
       hint: error.hint
     });
     res.status(500).json({
+      success: false,
       error: 'Failed to get usage info',
       code: 'USAGE_ERROR',
       message: error.message || 'Unknown error'

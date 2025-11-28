@@ -471,19 +471,20 @@ async function getLicenseSnapshot(license) {
 
   // Get site info if attached
   let siteInfo = null;
-  if (licenseRecord.siteHash) {
+  const siteHash = licenseRecord.site_hash || licenseRecord.siteHash;
+  if (siteHash) {
     const { data: site } = await supabase
       .from('sites')
-      .select('siteUrl, siteHash, installId, isActive')
-      .eq('siteHash', licenseRecord.siteHash)
+      .select('site_url, site_hash, install_id, is_active')
+      .eq('site_hash', siteHash)
       .single();
 
     if (site) {
       siteInfo = {
-        siteUrl: site.siteUrl,
-        siteHash: site.siteHash,
-        installId: site.installId,
-        isActive: site.isActive
+        siteUrl: site.site_url || site.siteUrl,
+        siteHash: site.site_hash || site.siteHash,
+        installId: site.install_id || site.installId,
+        isActive: site.is_active !== undefined ? site.is_active : site.isActive
       };
     }
   }
