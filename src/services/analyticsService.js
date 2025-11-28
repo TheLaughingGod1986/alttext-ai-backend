@@ -170,14 +170,27 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
     }
 
     // Validate input with Zod schema
-    const validation = analyticsEventSchema.safeParse({
-      email: normalizedEmail,
-      eventName,
-      plugin,
-      source,
-      eventData,
-      identityId,
-    });
+    let validation;
+    try {
+      if (!analyticsEventSchema) {
+        throw new Error('Analytics event schema not loaded');
+      }
+      validation = analyticsEventSchema.safeParse({
+        email: normalizedEmail,
+        eventName,
+        plugin,
+        source,
+        eventData,
+        identityId,
+      });
+    } catch (validationError) {
+      console.error('[AnalyticsService] Schema validation error:', validationError);
+      return {
+        success: false,
+        error: 'Validation failed',
+        details: { message: validationError.message },
+      };
+    }
 
     if (!validation.success) {
       return {
