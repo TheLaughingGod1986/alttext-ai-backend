@@ -399,6 +399,9 @@ describe('Analytics Service', () => {
           ip: '127.0.0.1',
         });
         if (i < 100) {
+          if (!result.success) {
+            console.error(`Event ${i} failed:`, result);
+          }
           expect(result.success).toBe(true);
         }
       }
