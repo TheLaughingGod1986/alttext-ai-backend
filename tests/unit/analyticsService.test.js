@@ -392,10 +392,11 @@ describe('Analytics Service', () => {
       }
 
       // Log 100 events (should succeed)
+      // Use unique event names to avoid duplicate detection
       for (let i = 0; i < 100; i++) {
         const result = await analyticsService.logEvent({
           email,
-          eventName,
+          eventName: `${eventName}_${i}`, // Make each event unique to avoid duplicate detection
           ip: '127.0.0.1',
         });
         if (i < 100) {
@@ -406,10 +407,10 @@ describe('Analytics Service', () => {
         }
       }
 
-      // 101st event should be throttled
+      // 101st event should be throttled (use same event name as the last one to test rate limit, not duplicate)
       const throttledResult = await analyticsService.logEvent({
         email,
-        eventName,
+        eventName: `${eventName}_99`, // Use same as last event to test rate limit
         ip: '127.0.0.1',
       });
 
