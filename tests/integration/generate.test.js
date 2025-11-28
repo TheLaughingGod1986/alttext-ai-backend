@@ -100,6 +100,7 @@ describe('Generate endpoint', () => {
   test('generate requires authentication', async () => {
     const res = await request(app)
       .post('/api/generate')
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
