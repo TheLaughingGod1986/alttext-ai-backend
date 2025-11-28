@@ -7,6 +7,7 @@ describe('Analytics Service', () => {
   beforeEach(() => {
     supabaseMock.__reset();
     // Clear throttle maps before each test
+    analyticsService.clearThrottleMaps();
     jest.clearAllMocks();
   });
 
