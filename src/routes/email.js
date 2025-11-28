@@ -127,6 +127,7 @@ router.post('/dashboard-welcome', async (req, res) => {
 /**
  * Zod schema for plugin signup email validation
  * Supports both 'plugin'/'pluginName' and 'site'/'siteUrl' for backward compatibility
+ * Includes optional metadata fields for installation tracking
  */
 const pluginSignupEmailSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -134,6 +135,13 @@ const pluginSignupEmailSchema = z.object({
   pluginName: z.string().min(1, 'Plugin name is required').optional(),
   site: z.string().url('Invalid site URL format').optional().or(z.literal('')),
   siteUrl: z.string().url('Invalid site URL format').optional().or(z.literal('')),
+  // Metadata fields for installation tracking
+  version: z.string().optional(),
+  wpVersion: z.string().optional(),
+  phpVersion: z.string().optional(),
+  language: z.string().optional(),
+  timezone: z.string().optional(),
+  installSource: z.string().optional(),
 }).refine(
   (data) => data.plugin || data.pluginName,
   { message: 'Plugin name is required (use "plugin" or "pluginName")' }
@@ -158,7 +166,7 @@ router.post('/plugin-signup', async (req, res) => {
       });
     }
 
-    const { email, plugin, pluginName, site, siteUrl } = validationResult.data;
+    const { email, plugin, pluginName, site, siteUrl, version, wpVersion, phpVersion, language, timezone, installSource } = validationResult.data;
     
     // Normalize plugin name (support both 'plugin' and 'pluginName')
     const normalizedPluginName = pluginName || plugin;
@@ -166,11 +174,19 @@ router.post('/plugin-signup', async (req, res) => {
     // Normalize site URL (support both 'site' and 'siteUrl')
     const normalizedSiteUrl = siteUrl || site || undefined;
 
-    // Send plugin signup email
+    // Send plugin signup email with metadata
     const result = await emailService.sendPluginSignup({
       email,
       pluginName: normalizedPluginName,
       siteUrl: normalizedSiteUrl,
+      meta: {
+        version,
+        wpVersion,
+        phpVersion,
+        language,
+        timezone,
+        installSource,
+      },
     });
 
     if (!result.success) {

@@ -1,8 +1,10 @@
 /**
  * Billing routes for Stripe integration
+ * SECURITY: All routes require authentication and validate user ownership
  */
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { supabase } = require('../db/supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 const { createCheckoutSession, createCustomerPortalSession } = require('../src/stripe/checkout');
@@ -10,26 +12,58 @@ const { webhookMiddleware, webhookHandler, testWebhook } = require('../src/strip
 
 const router = express.Router();
 
+// Rate limiting for billing endpoints to prevent abuse
+const billingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 checkout requests per 15 minutes
+  message: 'Too many billing requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 /**
  * Create Stripe Checkout Session
+ * SECURITY: Requires authentication, validates user ownership, and rate limiting
  */
-router.post('/checkout', authenticateToken, async (req, res) => {
+router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res) => {
   try {
     // Log user info for debugging
-    console.log('Checkout request received:', {
+    console.log('[Billing Security] Checkout request received:', {
       userId: req.user?.id,
       userIdType: typeof req.user?.id,
-      userEmail: req.user?.email
+      userEmail: req.user?.email,
+      ip: req.ip,
+      userAgent: req.get('user-agent')
     });
 
     if (!req.user || !req.user.id) {
+      console.warn('[Billing Security] Unauthenticated checkout attempt');
       return res.status(401).json({
         error: 'User authentication required',
         code: 'AUTHENTICATION_REQUIRED'
       });
     }
 
-    const { priceId, price_id, successUrl, cancelUrl, service = 'alttext-ai' } = req.body;
+    // SECURITY: If email is provided in body, verify it matches authenticated user
+    const { priceId, price_id, successUrl, cancelUrl, service = 'alttext-ai', email } = req.body;
+    
+    if (email) {
+      const authenticatedEmail = req.user.email?.toLowerCase();
+      const requestedEmail = email.toLowerCase();
+      
+      if (authenticatedEmail !== requestedEmail) {
+        console.error('[Billing Security] Email mismatch in checkout:', {
+          authenticated: authenticatedEmail,
+          requested: requestedEmail,
+          userId: req.user.id,
+          ip: req.ip
+        });
+        return res.status(403).json({
+          error: 'You can only create checkout sessions for your own account',
+          code: 'EMAIL_MISMATCH'
+        });
+      }
+    }
     
     // Use price_id if provided, otherwise priceId (for backward compatibility)
     const actualPriceId = price_id || priceId;
@@ -60,6 +94,13 @@ router.post('/checkout', authenticateToken, async (req, res) => {
     const pricesToCheck = servicePrices;
 
     if (!pricesToCheck.includes(actualPriceId)) {
+      console.warn('[Billing Security] Invalid price ID attempted:', {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        priceId: actualPriceId,
+        service,
+        ip: req.ip
+      });
       return res.status(400).json({
         error: `Invalid price ID for ${service} service`,
         code: 'INVALID_PRICE_ID',
@@ -68,6 +109,17 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       });
     }
 
+    // SECURITY: Log all checkout session creation attempts
+    console.log('[Billing Security] Creating checkout session:', {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      priceId: actualPriceId,
+      service,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+      timestamp: new Date().toISOString()
+    });
+
     const session = await createCheckoutSession(
       req.user.id,
       actualPriceId,
@@ -75,6 +127,15 @@ router.post('/checkout', authenticateToken, async (req, res) => {
       cancelUrl || `${process.env.FRONTEND_URL}/cancel`,
       service // Pass service to checkout
     ) || { id: 'mock-session', url: successUrl || `${process.env.FRONTEND_URL}/success` };
+
+    // SECURITY: Log successful checkout session creation
+    console.log('[Billing Security] Checkout session created successfully:', {
+      sessionId: session.id,
+      userId: req.user.id,
+      userEmail: req.user.email,
+      priceId: actualPriceId,
+      timestamp: new Date().toISOString()
+    });
 
     res.json({
       success: true,

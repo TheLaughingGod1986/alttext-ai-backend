@@ -10,148 +10,123 @@ const licenseService = require('../services/licenseService');
 const router = express.Router();
 
 /**
- * POST /licenses/auto-attach
+ * POST /api/licenses/auto-attach
  * Auto-attach a license to a site
  * 
- * Inputs: siteUrl, siteHash, installId
- * Action: Associates license with site, returns licenseKey + snapshot
+ * CRITICAL: Links license to site_hash, NOT to user_id
+ * All users on the same site (same site_hash) share the same license
  * 
- * Authentication:
- * - JWT token (Bearer token in Authorization header)
- * - License key (X-License-Key header)
- * - Site hash (X-Site-Hash header)
+ * Headers:
+ * - X-Site-Hash (required) - 32-character site identifier
+ * - X-Site-URL (optional) - WordPress site URL
+ * - Authorization (optional) - JWT token if user is authenticated
+ * 
+ * Request body:
+ * - siteUrl (optional)
+ * - siteHash (optional, can use X-Site-Hash header instead)
+ * - installId (optional)
  */
-router.post('/auto-attach', combinedAuth, async (req, res) => {
+router.post('/auto-attach', async (req, res) => {
   try {
-    const { siteUrl, siteHash, installId } = req.body;
+    // X-Site-Hash is REQUIRED (from header or body)
+    const siteHash = req.headers['x-site-hash'] || req.body.siteHash;
+    const siteUrl = req.headers['x-site-url'] || req.body.siteUrl;
+    const installId = req.body.installId;
 
-    // Validate at least one site identifier
-    if (!siteUrl && !siteHash && !installId) {
+    if (!siteHash) {
       return res.status(400).json({
         success: false,
-        error: 'At least one of siteUrl, siteHash, or installId is required',
-        code: 'MISSING_SITE_INFO'
+        error: 'X-Site-Hash header or siteHash in body is required',
+        code: 'MISSING_SITE_HASH'
       });
     }
 
-    // Determine license to attach
+    // Check if site already has a license
+    const { data: existingSite, error: siteError } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('site_hash', siteHash)
+      .single();
+
     let license = null;
-    let licenseId = null;
+    let site = null;
 
-    // If license key provided in header or body, use it
-    const licenseKey = req.headers['x-license-key'] || req.body.licenseKey;
-
-    if (licenseKey) {
-      // Find license by key
+    if (!siteError && existingSite && existingSite.license_key) {
+      // Site already has a license - return existing license
       const { data: licenseData, error: licenseError } = await supabase
         .from('licenses')
         .select('*')
-        .eq('license_key', licenseKey)
+        .eq('license_key', existingSite.license_key)
         .single();
 
-      if (licenseError || !licenseData) {
-        return res.status(404).json({
-          success: false,
-          error: 'License not found',
-          code: 'LICENSE_NOT_FOUND'
-        });
-      }
+      if (!licenseError && licenseData) {
+        license = licenseData;
+        site = existingSite;
 
-      license = licenseData;
-      licenseId = license.id;
-    } else if (req.user && req.user.id) {
-      // JWT auth - find user's license
-      const { data: userLicense, error: userLicenseError } = await supabase
-        .from('licenses')
-        .select('*')
-        .eq('userId', req.user.id)
-        .order('createdAt', { ascending: false })
-        .limit(1)
-        .single();
+        // Update site URL if provided and different
+        if (siteUrl && site.site_url !== siteUrl) {
+          const { data: updatedSite } = await supabase
+            .from('sites')
+            .update({
+              site_url: siteUrl,
+              updated_at: new Date().toISOString()
+            })
+            .eq('site_hash', siteHash)
+            .select()
+            .single();
 
-      if (!userLicenseError && userLicense) {
-        license = userLicense;
-        licenseId = license.id;
-      } else {
-        // No license found for user - create one
-        const { data: user } = await supabase
-          .from('users')
-          .select('email, plan, service')
-          .eq('id', req.user.id)
-          .single();
-
-        if (!user) {
-          return res.status(404).json({
-            success: false,
-            error: 'User not found',
-            code: 'USER_NOT_FOUND'
-          });
+          if (updatedSite) {
+            site = updatedSite;
+          }
         }
-
-        license = await licenseService.createLicense({
-          plan: user.plan || 'free',
-          service: user.service || 'alttext-ai',
-          userId: req.user.id,
-          siteUrl,
-          siteHash,
-          installId
-        });
-
-        licenseId = license.id;
       }
-    } else if (req.organization && req.organization.id) {
-      // Organization auth - find org's license
-      const { data: orgLicense, error: orgLicenseError } = await supabase
-        .from('licenses')
-        .select('*')
-        .eq('organization_id', req.organization.id)
-        .order('createdAt', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!orgLicenseError && orgLicense) {
-        license = orgLicense;
-        licenseId = license.id;
-      } else {
-        // No license found for org - create one
-        license = await licenseService.createLicense({
-          plan: req.organization.plan || 'free',
-          service: req.organization.service || 'alttext-ai',
-          organizationId: req.organization.id,
-          siteUrl,
-          siteHash,
-          installId
-        });
-
-        licenseId = license.id;
-      }
-    } else {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED'
-      });
     }
 
-    // Auto-attach license to site
-    const attachResult = await licenseService.autoAttachLicense(licenseId, {
-      siteUrl,
-      siteHash,
-      installId
-    });
+    // If no license exists, create new free license for this site
+    if (!license) {
+      const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
+      license = result.license;
+      site = result.site;
+    }
 
-    // Get license snapshot
-    const licenseSnapshot = await licenseService.getLicenseSnapshot(attachResult.license.id);
+    // Get usage info
+    const usage = await siteService.getSiteUsage(siteHash);
+
+    // Calculate reset timestamp
+    const resetDate = usage.resetDate || siteService.getNextResetDate();
+    const resetTimestamp = Math.floor(new Date(resetDate).getTime() / 1000);
+
+    // Build response with licenseKey in multiple locations (CRITICAL requirement)
+    const licenseKey = license.license_key || site.license_key;
 
     res.json({
       success: true,
-      message: 'License attached successfully',
-      license: licenseSnapshot,
-      site: {
-        siteUrl: attachResult.site.siteUrl,
-        siteHash: attachResult.site.siteHash,
-        installId: attachResult.site.installId,
-        isActive: attachResult.site.isActive
+      data: {
+        message: 'License attached successfully',
+        license: {
+          licenseKey: licenseKey, // REQUIRED
+          plan: license.plan || 'free',
+          tokenLimit: license.token_limit || 50,
+          tokensRemaining: license.tokens_remaining !== undefined ? license.tokens_remaining : usage.remaining,
+          tokensUsed: license.tokens_used !== undefined ? license.tokens_used : usage.used,
+          resetDate: resetDate,
+          reset_timestamp: resetTimestamp,
+          autoAttachStatus: license.auto_attach_status || 'attached',
+          licenseEmailSentAt: license.license_email_sent_at || null
+        },
+        site: {
+          siteHash: siteHash,
+          siteUrl: site.site_url || siteUrl || null,
+          licenseKey: licenseKey, // Also include here
+          autoAttachStatus: 'attached'
+        },
+        organization: {
+          plan: usage.plan,
+          tokenLimit: usage.limit,
+          tokensRemaining: usage.remaining,
+          tokensUsed: usage.used,
+          resetDate: resetDate
+        }
       }
     });
 

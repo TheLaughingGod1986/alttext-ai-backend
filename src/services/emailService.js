@@ -1,12 +1,23 @@
 /**
  * Email Service
  * Single entry point for all outgoing emails
- * Uses Resend client and email templates
+ * Uses Resend client and React Email templates with HTML fallback
  */
 
 const { sendEmail } = require('../utils/resendClient');
 const { billingFromEmail } = require('../emails/emailConfig');
 const { hasRecentEvent, hasRecentEventForPlugin, logEvent } = require('./emailEventService');
+const { recordInstallation } = require('./pluginInstallationService');
+
+// Try to load React Email render helper (may fail if templates not compiled)
+let emailRenderHelper = null;
+try {
+  emailRenderHelper = require('../emails/renderHelper');
+} catch (error) {
+  console.warn('[EmailService] React Email templates not available, using HTML templates');
+}
+
+// Fallback to HTML templates if React Email is not available
 const {
   welcomeWaitlistEmail,
   welcomeDashboardEmail,
@@ -120,16 +131,38 @@ async function sendDashboardWelcome({ email }) {
   }
 
   try {
-    const template = welcomeDashboardEmail({ email });
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderWelcomeEmail) {
+      try {
+        const rendered = await emailRenderHelper.renderWelcomeEmail({ name: email.split('@')[0] });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `Welcome to ${emailRenderHelper.getBrandName()}! 🎉`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = welcomeDashboardEmail({ email });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const tags = [
       { name: 'event', value: 'dashboard_welcome' },
     ];
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
     });
 
@@ -176,7 +209,44 @@ async function sendLicenseActivated({ email, planName, siteUrl }) {
   const eventType = 'license_activated';
   
   try {
-    const template = licenseActivatedEmail({ email, planName, siteUrl });
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderLicenseActivatedEmail) {
+      try {
+        // Map plan name to token limits (defaults)
+        const tokenLimits = {
+          'pro': 1000,
+          'agency': 5000,
+          'free': 50,
+        };
+        const tokenLimit = tokenLimits[planName.toLowerCase()] || 1000;
+        
+        const rendered = await emailRenderHelper.renderLicenseActivatedEmail({
+          licenseKey: 'N/A', // Not provided in current API
+          plan: planName.toLowerCase(),
+          tokenLimit,
+          tokensRemaining: tokenLimit, // Assume full limit on activation
+          siteUrl,
+          isAttached: !!siteUrl,
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `${planName} License Activated - ${emailRenderHelper.getBrandName()}`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = licenseActivatedEmail({ email, planName, siteUrl });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const tags = [
       { name: 'event', value: 'license_activated' },
       { name: 'plan', value: planName.toLowerCase() },
@@ -188,9 +258,9 @@ async function sendLicenseActivated({ email, planName, siteUrl }) {
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
     });
 
@@ -238,7 +308,39 @@ async function sendLowCreditWarning({ email, siteUrl, remainingCredits, pluginNa
   const eventType = 'low_credit_warning';
   
   try {
-    const template = lowCreditWarningEmail({ email, siteUrl, remainingCredits, pluginName });
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderLowCreditWarningEmail && remainingCredits !== undefined) {
+      try {
+        // Estimate limit based on remaining credits (assume 70% threshold means ~30% remaining)
+        // If remainingCredits is provided, estimate total limit
+        const estimatedLimit = Math.round(remainingCredits / 0.3); // Rough estimate
+        const estimatedUsed = estimatedLimit - remainingCredits;
+        
+        const rendered = await emailRenderHelper.renderLowCreditWarningEmail({
+          used: estimatedUsed,
+          limit: estimatedLimit,
+          plan: 'free', // Default
+          resetDate: null, // Not provided in current API
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `Low Credits Warning - ${emailRenderHelper.getBrandName()}`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = lowCreditWarningEmail({ email, siteUrl, remainingCredits, pluginName });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const tags = [
       { name: 'event', value: 'low_credit_warning' },
     ];
@@ -252,9 +354,9 @@ async function sendLowCreditWarning({ email, siteUrl, remainingCredits, pluginNa
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
     });
 
@@ -304,8 +406,36 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
   const eventType = 'receipt';
   
   try {
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderReceiptEmail) {
+      try {
+        const rendered = await emailRenderHelper.renderReceiptEmail({
+          amount,
+          currency: 'USD', // Default
+          plan: planName.toLowerCase(),
+          transactionId: invoiceUrl ? 'See invoice' : 'N/A', // Use invoice URL as reference
+          date: new Date().toISOString(),
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `Receipt for ${planName} - ${emailRenderHelper.getBrandName()}`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = receiptEmail({ email, amount, planName, invoiceUrl });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const normalizedPlan = (planName || 'unknown').toLowerCase();
-    const template = receiptEmail({ email, amount, planName, invoiceUrl });
     const tags = [
       { name: 'event', value: 'receipt' },
       { name: 'plan', value: normalizedPlan },
@@ -313,9 +443,9 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
       from: billingFromEmail, // Use billing from email for receipts
     });
@@ -359,7 +489,7 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
  * @param {string} [params.siteUrl] - Site URL
  * @returns {Promise<Object>} Result with success and optional error
  */
-async function sendPluginSignup({ email, pluginName, siteUrl }) {
+async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
   const eventType = 'plugin_signup';
   
   // Check for recent event (de-duplication) - 10 minute window per email+plugin
@@ -383,7 +513,32 @@ async function sendPluginSignup({ email, pluginName, siteUrl }) {
   }
   
   try {
-    const template = pluginSignupEmail({ email, pluginName, siteUrl });
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderPluginSignupEmail) {
+      try {
+        const rendered = await emailRenderHelper.renderPluginSignupEmail({
+          plugin: pluginName,
+          installId: meta?.installId || undefined,
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `Welcome to ${pluginName}! 🎉`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = pluginSignupEmail({ email, pluginName, siteUrl });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const tags = [
       { name: 'event', value: 'plugin_signup' },
       { name: 'plugin', value: pluginName },
@@ -395,9 +550,9 @@ async function sendPluginSignup({ email, pluginName, siteUrl }) {
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
     });
 
@@ -416,6 +571,22 @@ async function sendPluginSignup({ email, pluginName, siteUrl }) {
       console.error(`[EmailService] Failed to send plugin signup email to ${email}:`, result.error);
       return { success: false, error: result.error };
     }
+
+    // Record plugin installation (non-blocking, don't fail email if this fails)
+    recordInstallation({
+      email,
+      plugin: pluginName,
+      site: siteUrl,
+      version: meta?.version,
+      wpVersion: meta?.wpVersion,
+      phpVersion: meta?.phpVersion,
+      language: meta?.language,
+      timezone: meta?.timezone,
+      installSource: meta?.installSource || 'plugin',
+    }).catch(err => {
+      console.error('[EmailService] Failed to record plugin installation (non-critical):', err);
+      // Don't throw - installation recording failure shouldn't break email sending
+    });
 
     console.log(`[EmailService] Plugin signup email sent to ${email}`);
     return { success: true, emailId: result.id };
@@ -507,16 +678,40 @@ async function sendPasswordReset({ email, resetUrl }) {
   const eventType = 'password_reset';
   
   try {
-    const template = passwordResetEmail({ email, resetUrl });
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderPasswordResetEmail) {
+      try {
+        const rendered = await emailRenderHelper.renderPasswordResetEmail({
+          resetUrl,
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          subject = `Reset Your ${emailRenderHelper.getBrandName()} Password`;
+        }
+      } catch (error) {
+        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+      }
+    }
+    
+    // Fallback to HTML template
+    if (!html) {
+      const template = passwordResetEmail({ email, resetUrl });
+      html = template.html;
+      text = template.text;
+      subject = template.subject;
+    }
+
     const tags = [
       { name: 'event', value: 'password_reset' },
     ];
 
     const result = await sendEmail({
       to: email,
-      subject: template.subject,
-      html: template.html,
-      text: template.text,
+      subject,
+      html,
+      text,
       tags,
     });
 

@@ -8,6 +8,7 @@ describe('emailService (new)', () => {
   let mockResendClient;
   let mockTemplates;
   let mockEmailEventService;
+  let mockPluginInstallationService;
 
   beforeEach(() => {
     jest.resetModules();
@@ -27,6 +28,12 @@ describe('emailService (new)', () => {
       logEvent: jest.fn().mockResolvedValue({ success: true }),
     };
     jest.mock('../../src/services/emailEventService', () => mockEmailEventService);
+
+    // Mock pluginInstallationService
+    mockPluginInstallationService = {
+      recordInstallation: jest.fn().mockResolvedValue({ success: true, record: { id: '123' } }),
+    };
+    jest.mock('../../src/services/pluginInstallationService', () => mockPluginInstallationService);
 
     // Mock templates
     mockTemplates = {
@@ -307,6 +314,72 @@ describe('emailService (new)', () => {
           errorMessage: 'Rate limit exceeded',
         })
       );
+    });
+
+    test('records plugin installation when sending signup email', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      const { sendPluginSignup } = require(MODULE_PATH);
+
+      await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+        siteUrl: 'https://example.com',
+        meta: {
+          version: '1.0.0',
+          wpVersion: '6.0',
+          phpVersion: '8.0',
+          language: 'en_US',
+          timezone: 'America/New_York',
+          installSource: 'website',
+        },
+      });
+
+      // Wait a bit for the async recordInstallation call
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockPluginInstallationService.recordInstallation).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        plugin: 'AltText AI',
+        site: 'https://example.com',
+        version: '1.0.0',
+        wpVersion: '6.0',
+        phpVersion: '8.0',
+        language: 'en_US',
+        timezone: 'America/New_York',
+        installSource: 'website',
+      });
+    });
+
+    test('does not record installation when email is deduped', async () => {
+      mockEmailEventService.hasRecentEventForPlugin.mockResolvedValue(true);
+      const { sendPluginSignup } = require(MODULE_PATH);
+
+      await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+      });
+
+      // Wait a bit to ensure no async calls
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockPluginInstallationService.recordInstallation).not.toHaveBeenCalled();
+    });
+
+    test('does not fail email sending if installation recording fails', async () => {
+      mockResendClient.sendEmail.mockResolvedValue({ success: true, id: 'email_123' });
+      mockPluginInstallationService.recordInstallation.mockRejectedValue(new Error('Installation recording failed'));
+      const { sendPluginSignup } = require(MODULE_PATH);
+
+      const result = await sendPluginSignup({
+        email: 'test@example.com',
+        pluginName: 'AltText AI',
+      });
+
+      // Wait a bit for the async recordInstallation call
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(result.success).toBe(true);
+      expect(result.emailId).toBe('email_123');
     });
   });
 });

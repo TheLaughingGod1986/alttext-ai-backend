@@ -15,7 +15,9 @@ const { combinedAuth } = require('./src/middleware/dual-auth');
 const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
-const billingRoutes = require('./routes/billing');
+const siteService = require('./src/services/siteService');
+const billingRoutes = require('./src/routes/billing'); // New billing routes using billingService
+const legacyBillingRoutes = require('./routes/billing'); // Legacy routes for backward compatibility
 const licensesRoutes = require('./routes/licenses');
 const licenseRoutes = require('./routes/license');
 const organizationRoutes = require('./routes/organization');
@@ -23,6 +25,11 @@ const emailRoutes = require('./routes/email'); // Legacy routes
 const newEmailRoutes = require('./src/routes/email'); // New email routes
 const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
 const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
+const accountRoutes = require('./src/routes/account'); // Account routes
+const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
+const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
+const billingService = require('./src/services/billingService'); // Billing service for quota enforcement
+const plansConfig = require('./src/config/plans'); // Plan configuration
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,7 +73,8 @@ app.use(cors({
 }));
 
 // Stripe webhook needs raw body - must come before express.json()
-app.use('/billing/webhook', express.raw({ type: 'application/json' }));
+app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route
 
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
 app.use(express.json({ limit: '2mb' }));
@@ -94,13 +102,20 @@ app.use('/api/', limiter);
 app.use('/', emailCompatibilityRoutes);
 app.use('/auth', authRoutes);
 app.use('/usage', usageRoutes);
-app.use('/billing', billingRoutes);
+app.use('/billing', billingRoutes); // New billing routes (create-checkout, create-portal, subscriptions)
+app.use('/billing', legacyBillingRoutes); // Legacy billing routes (for backward compatibility)
+// Stripe webhook route
+const { webhookMiddleware, webhookHandler } = require('./src/stripe/webhooks');
+app.post('/stripe/webhook', webhookMiddleware, webhookHandler);
 app.use('/api/licenses', licensesRoutes);
 app.use('/api/license', licenseRoutes);
 app.use('/api/organization', authenticateToken, organizationRoutes);
 app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
 app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
 app.use('/waitlist', waitlistRoutes); // Waitlist routes
+app.use('/account', accountRoutes); // Account routes
+app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
+app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, async (req, res) => {
@@ -111,12 +126,27 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
     console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
 
-    // Determine userId based on auth method
+    // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
+    // X-WP-User-ID is only for analytics, not for quota tracking
+    const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+    
+    if (!siteHash) {
+      return res.status(400).json({
+        error: 'X-Site-Hash header is required for quota tracking',
+        code: 'MISSING_SITE_HASH'
+      });
+    }
+
+    // Extract WordPress user info from headers (for analytics only, NOT for quota)
+    const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
+    const wpUserName = req.headers['x-wp-user-name'] || null;
+
+    // Determine userId based on auth method (for analytics/logging only)
     const userId = req.user?.id || null;
 
     // Log for debugging
-    console.log(`[Generate] User ID: ${userId}, Type: ${typeof userId}, Auth Method: ${req.authMethod}`);
-    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, Auth: ${req.authMethod}, Org ID: ${req.organization?.id || 'N/A'}`);
+    console.log(`[Generate] Site Hash: ${siteHash}, User ID: ${userId}, Auth Method: ${req.authMethod}`);
+    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, WP User ID: ${wpUserId || 'N/A'}`);
 
     // Select API key based on service
     const apiKey = getServiceApiKey(service);
@@ -134,37 +164,41 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       });
     }
     
-    // Check limits - use organization limits if available, otherwise user limits
-    let limits;
-    if (req.organization) {
-      limits = await checkOrganizationLimits(req.organization.id);
-      console.log(`[Generate] Using organization ${req.organization.id} quota: ${limits.credits || 0} remaining`);
-    } else if (userId) {
-      console.log(`[Generate] Checking user limits for userId: ${userId} (type: ${typeof userId})`);
-      limits = await checkUserLimits(userId);
-      console.log(`[Generate] Using user ${userId} quota: ${limits.credits || 0} remaining`);
-    } else {
-      return res.status(401).json({
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED'
+    // Check quota by site_hash (CRITICAL: Track by site, not by user)
+    const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
+    
+    // Get or create site
+    await siteService.getOrCreateSite(siteHash, siteUrl);
+    
+    // Check site quota
+    const quotaCheck = await siteService.checkSiteQuota(siteHash);
+    
+    if (!quotaCheck.hasQuota) {
+      console.log(`[Generate] Quota exceeded for site ${siteHash}: ${quotaCheck.used}/${quotaCheck.limit}`);
+      return res.status(429).json({
+        ok: false,
+        error: 'quota_exceeded',
+        usage: {
+          used: quotaCheck.used,
+          limit: quotaCheck.limit,
+          plan: quotaCheck.plan,
+          resetDate: quotaCheck.resetDate || getNextResetDate(),
+        },
       });
     }
     
-    if (!limits.hasAccess) {
-      const planLimit = limits.plan === 'pro'
-        ? 1000
-        : (limits.plan === 'agency' ? 10000 : 50);
-      return res.status(429).json({
-        error: 'Monthly limit reached',
-        code: 'LIMIT_REACHED',
-        usage: {
-          used: planLimit - (limits.credits || 0),
-          limit: planLimit,
-          plan: limits.plan,
-          resetDate: getNextResetDate()
-        }
-      });
-    }
+    // Get site usage for response
+    const siteUsage = await siteService.getSiteUsage(siteHash);
+    
+    // Prepare limits object for compatibility with existing code
+    const limits = {
+      hasAccess: true,
+      hasTokens: true,
+      hasCredits: false,
+      plan: siteUsage.plan,
+      credits: siteUsage.remaining,
+      tokensRemaining: siteUsage.remaining
+    };
     
     // Handle meta generation differently from alt text
     if (type === 'meta' || (service === 'seo-ai-meta' && !image_data)) {
@@ -210,31 +244,17 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
       const content = openaiResponse.choices[0].message.content.trim();
 
-      // Extract WordPress user info from headers
-      const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
-      const wpUserName = req.headers['x-wp-user-name'] || null;
-
-      // Record usage - organization or user based
-      if (req.organization) {
-        if (limits.hasTokens) {
-          await recordOrganizationUsage(req.organization.id, userId, null, 'generate', 'seo-ai-meta', wpUserId, wpUserName);
-        } else if (limits.hasCredits) {
-          await useOrganizationCredit(req.organization.id, userId);
-        }
-      } else {
-      if (limits.hasTokens) {
-        await recordUsage(userId, null, 'generate', 'seo-ai-meta', wpUserId, wpUserName);
-      } else if (limits.hasCredits) {
-        await useCredit(userId);
-      }
-      }
-
-      // Use limits already calculated from checkUserLimits/checkOrganizationLimits
-      // No need to query database again - limits object has all the info we need
+      // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+      // Do NOT deduct per user - all users on the same site share the quota
+      await siteService.deductSiteQuota(siteHash, 1);
+      
+      // Get updated usage after deduction
+      const updatedUsage = await siteService.getSiteUsage(siteHash);
+      
       const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
-      const limit = planLimits[limits.plan] || 10;
-      const remaining = limits.credits || 0; // Use credits from limits (which includes monthly limit calculation)
-      const used = limit - remaining;
+      const limit = planLimits[updatedUsage.plan] || 10;
+      const remaining = updatedUsage.remaining;
+      const used = updatedUsage.used;
 
       // Return the raw content (JSON string) for meta generation
       return res.json({
@@ -315,31 +335,17 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     
     const altText = openaiResponse.choices[0].message.content.trim();
 
-    // Extract WordPress user info from headers
-    const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
-    const wpUserName = req.headers['x-wp-user-name'] || null;
-
-    // Record usage - organization or user based
-    if (req.organization) {
-      if (limits.hasTokens) {
-        await recordOrganizationUsage(req.organization.id, userId, image_data?.image_id, 'generate', service, wpUserId, wpUserName);
-      } else if (limits.hasCredits) {
-        await useOrganizationCredit(req.organization.id, userId);
-      }
-    } else {
-    if (limits.hasTokens) {
-      await recordUsage(userId, image_data?.image_id, 'generate', service, wpUserId, wpUserName);
-    } else if (limits.hasCredits) {
-      await useCredit(userId);
-    }
-    }
-
-    // Use limits already calculated from checkUserLimits/checkOrganizationLimits
-    // No need to query database again - limits object has all the info we need
+    // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+    // Do NOT deduct per user - all users on the same site share the quota
+    await siteService.deductSiteQuota(siteHash, 1);
+    
+    // Get updated usage after deduction
+    const updatedUsage = await siteService.getSiteUsage(siteHash);
+    
     const planLimits = { free: 50, pro: 1000, agency: 10000 };
-    const limit = planLimits[limits.plan] || 50;
-    const remaining = limits.credits || 0; // Use credits from limits (which includes monthly limit calculation)
-    const used = limit - remaining;
+    const limit = planLimits[updatedUsage.plan] || 50;
+    const remaining = updatedUsage.remaining;
+    const used = updatedUsage.used;
     
     // Return response with usage data
     res.json({
