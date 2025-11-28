@@ -13,12 +13,15 @@ const {
   getPluginActivity,
   getDashboardCharts,
 } = require('../services/dashboardChartsService');
+const billingService = require('../services/billingService');
+const usageService = require('../services/usageService');
+const plansConfig = require('../config/plans');
 
 const router = express.Router();
 
 /**
  * GET /dashboard/usage/daily
- * Returns 30 days of usage for a line chart
+ * Returns 30 days of usage for a line chart (legacy format for backward compatibility)
  * Response: { ok: true, days: [{ date: "YYYY-MM-DD", count: number }] }
  */
 router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
@@ -32,7 +35,12 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
       });
     }
 
-    const days = await getDailyUsage(email);
+    const dailyUsage = await getDailyUsage(email);
+    // Transform new format to legacy format for backward compatibility
+    const days = dailyUsage.map(day => ({
+      date: day.date,
+      count: day.images || 0, // Use images count as the count value
+    }));
 
     return res.status(200).json({
       ok: true,
@@ -49,7 +57,7 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
 
 /**
  * GET /dashboard/usage/monthly
- * Returns last 12 months aggregated
+ * Returns last 12 months aggregated (legacy format for backward compatibility)
  * Response: { ok: true, months: [{ month: "YYYY-MM", count: number }] }
  */
 router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
@@ -63,7 +71,12 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
       });
     }
 
-    const months = await getMonthlyUsage(email);
+    const monthlyUsage = await getMonthlyUsage(email);
+    // Transform new format to legacy format for backward compatibility
+    const months = monthlyUsage.map(month => ({
+      month: month.month,
+      count: month.images || 0, // Use images count as the count value
+    }));
 
     return res.status(200).json({
       ok: true,
@@ -142,8 +155,9 @@ router.get('/dashboard/plugins/activity', authenticateToken, async (req, res) =>
 
 /**
  * GET /dashboard/charts
- * Aggregate all chart data in a single call
- * Response: { ok: true, daily: [...], monthly: [...], events: [...], plugins: [...] }
+ * Aggregate all chart data in a single call (unified endpoint)
+ * Response: { ok: true, charts: { dailyUsage, monthlyUsage, creditTrend, subscriptionHistory, installActivity, usageHeatmap, eventSummary } }
+ * All chart arrays are always present (can be empty []) so frontend never has to null-check
  */
 router.get('/dashboard/charts', authenticateToken, async (req, res) => {
   try {
@@ -152,21 +166,102 @@ router.get('/dashboard/charts', authenticateToken, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        error: 'Missing user email',
+        charts: {
+          dailyUsage: [],
+          monthlyUsage: [],
+          creditTrend: [],
+          subscriptionHistory: [],
+          installActivity: [],
+          usageHeatmap: [],
+          eventSummary: [],
+        },
       });
     }
 
-    const charts = await getDashboardCharts(email);
+    const result = await getDashboardCharts(email);
+
+    if (!result.success) {
+      return res.status(200).json({
+        ok: false,
+        charts: result.charts || {
+          dailyUsage: [],
+          monthlyUsage: [],
+          creditTrend: [],
+          subscriptionHistory: [],
+          installActivity: [],
+          usageHeatmap: [],
+          eventSummary: [],
+        },
+        error: result.error || 'Failed to load dashboard charts',
+        subscriptionStatus: 'none',
+        quotaRemaining: 0,
+        quotaUsed: 0,
+      });
+    }
+
+    // Get subscription status and quota information
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    let subscriptionStatus = 'none';
+    let quotaRemaining = 0;
+    let quotaUsed = 0;
+
+    if (subscriptionResult.success && subscriptionResult.subscription) {
+      const subscription = subscriptionResult.subscription;
+      
+      // Check if subscription is expired
+      if (subscription.renews_at) {
+        const renewsAt = new Date(subscription.renews_at);
+        const now = new Date();
+        if (renewsAt < now) {
+          subscriptionStatus = 'expired';
+        } else {
+          subscriptionStatus = subscription.status === 'active' ? 'active' : 'inactive';
+        }
+      } else {
+        subscriptionStatus = subscription.status === 'active' ? 'active' : 'inactive';
+      }
+
+      // Get plan limits
+      const plan = subscription.plan || 'free';
+      const plugin = req.user.plugin || 'alttext-ai';
+      const pluginConfig = plansConfig[plugin] || plansConfig['alttext-ai'];
+      const planLimits = pluginConfig[plan] || pluginConfig.free;
+      const limit = planLimits.tokens || 50;
+
+      // Get usage
+      const usageResult = await usageService.getUsageSummary(email);
+      if (usageResult.success) {
+        const monthlyImages = usageResult.usage?.monthlyImages || 0;
+        quotaUsed = monthlyImages;
+        quotaRemaining = Math.max(0, limit - monthlyImages);
+      }
+    }
 
     return res.status(200).json({
       ok: true,
-      ...charts,
+      charts: result.charts,
+      subscriptionStatus,
+      quotaRemaining,
+      quotaUsed,
     });
   } catch (err) {
     console.error('[DashboardCharts] GET /dashboard/charts error:', err);
-    return res.status(500).json({
+    return res.status(200).json({
       ok: false,
-      error: 'Failed to load dashboard charts data',
+      charts: {
+        dailyUsage: [],
+        monthlyUsage: [],
+        creditTrend: [],
+        subscriptionHistory: [],
+        installActivity: [],
+        usageHeatmap: [],
+        eventSummary: [],
+      },
+      error: 'Failed to load dashboard charts',
+      subscriptionStatus: 'none',
+      quotaRemaining: 0,
+      quotaUsed: 0,
     });
   }
 });

@@ -12,6 +12,7 @@ const axios = require('axios');
 const { supabase } = require('./db/supabase-client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./src/middleware/dual-auth');
+const checkSubscription = require('./src/middleware/checkSubscription');
 const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
@@ -194,7 +195,7 @@ app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
 app.use('/partner', require('./src/routes/partner')); // Partner API routes
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
-app.post('/api/generate', combinedAuth, async (req, res) => {
+app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
   const requestStartTime = Date.now();
   console.log(`[Generate] Request received at ${new Date().toISOString()}`);
   
@@ -240,8 +241,9 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       });
     }
     
-    // Check credits and subscription limits if user is authenticated
-    // Credits are checked first (pay-as-you-go), then subscription quota
+    // Check if user should use credits for this request
+    // Note: Subscription/credits check is handled by checkSubscription middleware
+    // This code only determines whether to deduct credits vs site quota
     let usingCredits = false;
     let creditsBalance = 0;
     let identityId = null;
@@ -253,38 +255,12 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       if (identityResult.success) {
         identityId = identityResult.identityId;
         
-        // Check credit balance
+        // Check credit balance to determine if we should use credits
         const balanceResult = await creditsService.getBalance(identityId);
         if (balanceResult.success && balanceResult.balance > 0) {
           creditsBalance = balanceResult.balance;
           usingCredits = true;
           console.log(`[Generate] User has ${creditsBalance} credits available, using credits for this generation`);
-        }
-      }
-      
-      // If no credits, check subscription limits
-      if (!usingCredits) {
-        const subscriptionCheck = await billingService.enforceSubscriptionLimits(
-          userEmail,
-          service,
-          1 // requestedCount
-        );
-        
-        if (!subscriptionCheck.allowed) {
-          console.log(`[Generate] Subscription limit exceeded for ${userEmail}: ${subscriptionCheck.used || 0}/${subscriptionCheck.limit}`);
-          const upgradeUrl = `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/upgrade`;
-          return res.status(429).json({
-            ok: false,
-            error: 'subscription_limit_exceeded',
-            usage: {
-              used: subscriptionCheck.used || 0,
-              limit: subscriptionCheck.limit,
-              remaining: subscriptionCheck.remaining || 0,
-              plan: subscriptionCheck.plan,
-            },
-            creditsBalance: creditsBalance,
-            upgradeUrl: upgradeUrl,
-          });
         }
       }
     }
