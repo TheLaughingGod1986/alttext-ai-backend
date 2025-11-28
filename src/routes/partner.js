@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../../auth/jwt');
 const { partnerApiAuth, logPartnerApiUsage } = require('../middleware/partnerApiAuth');
+const checkSubscriptionForPartner = require('../middleware/checkSubscriptionForPartner');
 const partnerApiService = require('../services/partnerApiService');
 const creditsService = require('../services/creditsService');
 const rateLimit = require('express-rate-limit');
@@ -41,6 +42,7 @@ router.post(
   '/generate',
   partnerRateLimiter,
   partnerApiAuth,
+  checkSubscriptionForPartner,
   logPartnerApiUsage,
   async (req, res) => {
     const requestStartTime = Date.now();
@@ -48,27 +50,22 @@ router.post(
     try {
       const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
 
-      // Get identity email for credit/subscription checking
-      const { supabase } = require('../../db/supabase-client');
-      const { data: identity, error: identityError } = await supabase
-        .from('identities')
-        .select('email')
-        .eq('id', req.partnerApiKey.identityId)
-        .single();
-
-      if (identityError || !identity) {
+      // Get identity email (already set by checkSubscriptionForPartner middleware)
+      const email = req.user?.email;
+      if (!email) {
         return res.status(500).json({
           ok: false,
-          error: 'Identity not found',
+          error: 'Identity email not found',
         });
       }
 
-      // For partner API, we'll use credits first (if available)
-      // Otherwise fall back to subscription limits
+      // Check if we should use credits for this request
+      // Note: Subscription/credits check is handled by checkSubscriptionForPartner middleware
+      // This code only determines whether to deduct credits
       let usingCredits = false;
       let creditsBalance = 0;
       
-      // Check credit balance
+      // Check credit balance to determine if we should use credits
       const balanceResult = await creditsService.getBalance(req.partnerApiKey.identityId);
       if (balanceResult.success && balanceResult.balance > 0) {
         creditsBalance = balanceResult.balance;

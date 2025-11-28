@@ -310,6 +310,38 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
 }
 
 /**
+ * Get subscription for an email (returns first active subscription)
+ * @param {string} email - User email address
+ * @returns {Promise<Object>} Result with success status and subscription data
+ */
+async function getSubscriptionForEmail(email) {
+  try {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_email', email.toLowerCase())
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No subscription found
+        return { success: true, subscription: null };
+      }
+      console.error('[BillingService] Error fetching subscription:', error);
+      return { success: false, error: error.message, subscription: null };
+    }
+
+    return { success: true, subscription: data || null };
+  } catch (error) {
+    console.error('[BillingService] Exception fetching subscription:', error);
+    return { success: false, error: error.message, subscription: null };
+  }
+}
+
+/**
  * Get all subscriptions for a user
  * @param {string} email - User email address
  * @returns {Promise<Object>} Result with success status and subscriptions array
@@ -523,6 +555,7 @@ module.exports = {
   cancelSubscription,
   updateSubscriptionQuantity,
   syncSubscriptionFromWebhook,
+  getSubscriptionForEmail,
   getUserSubscriptions,
   listSubscriptions, // Alias for getUserSubscriptions
   getSubscriptionByPlugin,

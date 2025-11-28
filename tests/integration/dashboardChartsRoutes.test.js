@@ -229,30 +229,36 @@ describe('Dashboard Charts Routes', () => {
   });
 
   describe('GET /dashboard/charts', () => {
-    it('should return aggregated chart data with all sections', async () => {
+    it('should return aggregated chart data with unified structure', async () => {
       const mockCharts = {
-        daily: [
-          { date: '2025-02-01', count: 12 },
-          { date: '2025-02-02', count: 7 },
-        ],
-        monthly: [
-          { month: '2025-01', count: 520 },
-          { month: '2025-02', count: 300 },
-        ],
-        events: [
-          {
-            event: 'alttext_generated',
-            created_at: '2025-02-05T10:28:00Z',
-            meta: {},
-          },
-        ],
-        plugins: [
-          {
-            plugin_slug: 'alttext-ai',
-            last_seen_at: '2025-02-05T10:00:00.000Z',
-            site_url: 'https://example.com',
-          },
-        ],
+        success: true,
+        charts: {
+          dailyUsage: [
+            { date: '2025-02-01', images: 12, tokens: 1200 },
+            { date: '2025-02-02', images: 7, tokens: 700 },
+          ],
+          monthlyUsage: [
+            { month: '2025-01', images: 520, tokens: 52000 },
+            { month: '2025-02', images: 300, tokens: 30000 },
+          ],
+          creditTrend: [
+            { date: '2025-02-01', creditsRemaining: 830, plan: 'pro' },
+          ],
+          subscriptionHistory: [
+            { date: '2025-01-01', plan: 'pro', event: 'started' },
+            { date: '2025-02-01', plan: 'business', event: 'upgraded' },
+          ],
+          installActivity: [
+            { date: '2025-02-01', plugin: 'beepbeep-ai', installs: 12 },
+          ],
+          usageHeatmap: [
+            { weekday: 1, hour: 9, events: 35 },
+          ],
+          eventSummary: [
+            { eventType: 'dashboard_load', count: 320 },
+            { eventType: 'alt_text_generated', count: 1840 },
+          ],
+        },
       };
 
       dashboardChartsService.getDashboardCharts.mockResolvedValue(mockCharts);
@@ -263,14 +269,21 @@ describe('Dashboard Charts Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(res.body).toHaveProperty('daily');
-      expect(res.body).toHaveProperty('monthly');
-      expect(res.body).toHaveProperty('events');
-      expect(res.body).toHaveProperty('plugins');
-      expect(Array.isArray(res.body.daily)).toBe(true);
-      expect(Array.isArray(res.body.monthly)).toBe(true);
-      expect(Array.isArray(res.body.events)).toBe(true);
-      expect(Array.isArray(res.body.plugins)).toBe(true);
+      expect(res.body).toHaveProperty('charts');
+      expect(res.body.charts).toHaveProperty('dailyUsage');
+      expect(res.body.charts).toHaveProperty('monthlyUsage');
+      expect(res.body.charts).toHaveProperty('creditTrend');
+      expect(res.body.charts).toHaveProperty('subscriptionHistory');
+      expect(res.body.charts).toHaveProperty('installActivity');
+      expect(res.body.charts).toHaveProperty('usageHeatmap');
+      expect(res.body.charts).toHaveProperty('eventSummary');
+      expect(Array.isArray(res.body.charts.dailyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.monthlyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.creditTrend)).toBe(true);
+      expect(Array.isArray(res.body.charts.subscriptionHistory)).toBe(true);
+      expect(Array.isArray(res.body.charts.installActivity)).toBe(true);
+      expect(Array.isArray(res.body.charts.usageHeatmap)).toBe(true);
+      expect(Array.isArray(res.body.charts.eventSummary)).toBe(true);
     });
 
     it('should require authentication', async () => {
@@ -280,24 +293,52 @@ describe('Dashboard Charts Routes', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should handle service errors gracefully', async () => {
-      dashboardChartsService.getDashboardCharts.mockRejectedValue(new Error('Service error'));
+    it('should handle service errors gracefully and return all chart arrays', async () => {
+      dashboardChartsService.getDashboardCharts.mockResolvedValue({
+        success: false,
+        error: 'Service error',
+        charts: {
+          dailyUsage: [],
+          monthlyUsage: [],
+          creditTrend: [],
+          subscriptionHistory: [],
+          installActivity: [],
+          usageHeatmap: [],
+          eventSummary: [],
+        },
+      });
 
       const res = await request(app)
         .get('/dashboard/charts')
         .set('Authorization', `Bearer ${authToken}`);
 
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(200);
       expect(res.body.ok).toBe(false);
-      expect(res.body.error).toBeDefined();
+      expect(res.body).toHaveProperty('charts');
+      expect(res.body).toHaveProperty('error');
+      // All chart arrays must always be present
+      expect(res.body.charts).toHaveProperty('dailyUsage');
+      expect(res.body.charts).toHaveProperty('monthlyUsage');
+      expect(res.body.charts).toHaveProperty('creditTrend');
+      expect(res.body.charts).toHaveProperty('subscriptionHistory');
+      expect(res.body.charts).toHaveProperty('installActivity');
+      expect(res.body.charts).toHaveProperty('usageHeatmap');
+      expect(res.body.charts).toHaveProperty('eventSummary');
+      expect(Array.isArray(res.body.charts.dailyUsage)).toBe(true);
     });
 
-    it('should return all chart sections even if some are empty', async () => {
+    it('should return all chart arrays even when empty', async () => {
       const mockCharts = {
-        daily: [],
-        monthly: [],
-        events: [],
-        plugins: [],
+        success: true,
+        charts: {
+          dailyUsage: [],
+          monthlyUsage: [],
+          creditTrend: [],
+          subscriptionHistory: [],
+          installActivity: [],
+          usageHeatmap: [],
+          eventSummary: [],
+        },
       };
 
       dashboardChartsService.getDashboardCharts.mockResolvedValue(mockCharts);
@@ -308,14 +349,40 @@ describe('Dashboard Charts Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(res.body).toHaveProperty('daily');
-      expect(res.body).toHaveProperty('monthly');
-      expect(res.body).toHaveProperty('events');
-      expect(res.body).toHaveProperty('plugins');
-      expect(Array.isArray(res.body.daily)).toBe(true);
-      expect(Array.isArray(res.body.monthly)).toBe(true);
-      expect(Array.isArray(res.body.events)).toBe(true);
-      expect(Array.isArray(res.body.plugins)).toBe(true);
+      expect(res.body.charts).toHaveProperty('dailyUsage');
+      expect(res.body.charts).toHaveProperty('monthlyUsage');
+      expect(res.body.charts).toHaveProperty('creditTrend');
+      expect(res.body.charts).toHaveProperty('subscriptionHistory');
+      expect(res.body.charts).toHaveProperty('installActivity');
+      expect(res.body.charts).toHaveProperty('usageHeatmap');
+      expect(res.body.charts).toHaveProperty('eventSummary');
+      expect(Array.isArray(res.body.charts.dailyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.monthlyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.creditTrend)).toBe(true);
+      expect(Array.isArray(res.body.charts.subscriptionHistory)).toBe(true);
+      expect(Array.isArray(res.body.charts.installActivity)).toBe(true);
+      expect(Array.isArray(res.body.charts.usageHeatmap)).toBe(true);
+      expect(Array.isArray(res.body.charts.eventSummary)).toBe(true);
+    });
+
+    it('should return all chart arrays on exception', async () => {
+      dashboardChartsService.getDashboardCharts.mockRejectedValue(new Error('Test error'));
+
+      const res = await request(app)
+        .get('/dashboard/charts')
+        .set('Authorization', `Bearer ${authToken}`);
+
+      expect(res.status).toBe(200); // Should return 200 even on error with charts structure
+      expect(res.body.ok).toBe(false);
+      expect(res.body).toHaveProperty('charts');
+      // All chart arrays must always be present even on error
+      expect(Array.isArray(res.body.charts.dailyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.monthlyUsage)).toBe(true);
+      expect(Array.isArray(res.body.charts.creditTrend)).toBe(true);
+      expect(Array.isArray(res.body.charts.subscriptionHistory)).toBe(true);
+      expect(Array.isArray(res.body.charts.installActivity)).toBe(true);
+      expect(Array.isArray(res.body.charts.usageHeatmap)).toBe(true);
+      expect(Array.isArray(res.body.charts.eventSummary)).toBe(true);
     });
   });
 
