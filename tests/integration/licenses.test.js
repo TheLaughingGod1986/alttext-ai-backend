@@ -19,14 +19,30 @@ describe('License routes', () => {
   });
 
   test('auto-attach with license key', async () => {
-    supabaseMock.__queueResponse('licenses', 'select', {
-      data: { id: 1, licenseKey: 'org-license' },
+    // Mock sites query (check if site exists)
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: null,
+      error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite - it creates site and license
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: { site_hash: 'test-site-hash', site_url: 'https://example.com', license_key: 'test-license', plan: 'free', tokens_used: 0 },
+      error: null
+    });
+    supabaseMock.__queueResponse('licenses', 'insert', {
+      data: { id: 1, license_key: 'test-license', plan: 'free', token_limit: 50, tokens_remaining: 50 },
+      error: null
+    });
+    // Mock getSiteUsage
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'test-site-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
       error: null
     });
 
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
+      .set('X-Site-Hash', 'test-site-hash')
       .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(200);
@@ -34,18 +50,13 @@ describe('License routes', () => {
   });
 
   test('auto-attach requires site identifier', async () => {
-    supabaseMock.__queueResponse('licenses', 'select', {
-      data: { id: 1, licenseKey: 'org-license' },
-      error: null
-    });
-
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
       .send({});
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('MISSING_SITE_INFO');
+    expect(res.body.code).toBe('MISSING_SITE_HASH');
   });
 
   test('lists organization sites', async () => {
@@ -129,40 +140,43 @@ describe('License routes', () => {
   });
 
   test('auto-attach fails when site limit exceeded', async () => {
-    const licenseServiceMock = require('../mocks/licenseService.mock');
-    licenseServiceMock.autoAttachLicense.mockRejectedValueOnce(
-      new Error('Site limit reached. This license allows 1 active site(s).')
-    );
-
-    supabaseMock.__queueResponse('licenses', 'select', {
-      data: { id: 1, licenseKey: 'org-license', organizationId: 1 },
-      error: null
+    // Mock sites query
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: null,
+      error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite which will fail due to site limit
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: null,
+      error: new Error('Site limit reached. This license allows 1 active site(s).')
     });
 
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
-      .send({ siteUrl: 'https://example.com', siteHash: 'hash1' });
+      .set('X-Site-Hash', 'hash1')
+      .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/Site limit reached/);
   });
 
   test('auto-attach fails when site already registered to different org', async () => {
-    const licenseServiceMock = require('../mocks/licenseService.mock');
-    licenseServiceMock.autoAttachLicense.mockRejectedValueOnce(
-      new Error('Site already registered to different organization')
-    );
-
+    // Mock sites query - site exists with different license
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'conflicting-hash', license_key: 'different-license', site_url: 'https://other.com' },
+      error: null
+    });
     supabaseMock.__queueResponse('licenses', 'select', {
-      data: { id: 1, licenseKey: 'org-license', organizationId: 1 },
+      data: { id: 2, license_key: 'different-license', organizationId: 99 },
       error: null
     });
 
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
-      .send({ siteUrl: 'https://example.com', siteHash: 'conflicting-hash' });
+      .set('X-Site-Hash', 'conflicting-hash')
+      .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(500);
     expect(res.body.error).toMatch(/already registered/);
@@ -277,10 +291,30 @@ describe('License routes', () => {
     });
 
     const token = generateToken({ id: 50, email: 'newuser@example.com', plan: 'free' });
+    // Mock sites query
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: null,
+      error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: { site_hash: 'newhash', site_url: 'https://newuser.com', license_key: 'new-user-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('licenses', 'insert', {
+      data: { id: 2, license_key: 'new-user-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'newhash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+      error: null
+    });
+
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('Authorization', `Bearer ${token}`)
-      .send({ siteUrl: 'https://newuser.com', siteHash: 'newhash', installId: 'newinstall' });
+      .set('X-Site-Hash', 'newhash')
+      .send({ siteUrl: 'https://newuser.com', installId: 'newinstall' });
 
     expect(res.status).toBe(200);
     expect(res.body.license.licenseKey).toBe('new-user-license');
@@ -312,10 +346,26 @@ describe('License routes', () => {
       error: null
     });
 
+    // Mock sites query
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: null,
+      error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: { site_hash: 'orghash', site_url: 'https://neworg.com', license_key: 'existing-org-license', plan: 'agency' },
+      error: null
+    });
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'orghash', plan: 'agency', tokens_used: 0, reset_date: new Date().toISOString() },
+      error: null
+    });
+
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'existing-org-license')
-      .send({ siteUrl: 'https://neworg.com', siteHash: 'orghash', installId: 'orginstall' });
+      .set('X-Site-Hash', 'orghash')
+      .send({ siteUrl: 'https://neworg.com', installId: 'orginstall' });
 
     expect(res.status).toBe(200);
     expect(res.body.license.licenseKey).toBe('existing-org-license');
@@ -323,14 +373,29 @@ describe('License routes', () => {
   });
 
   test('auto-attach returns 404 when license key not found', async () => {
-    supabaseMock.__queueResponse('licenses', 'select', {
+    // Mock sites query
+    supabaseMock.__queueResponse('sites', 'select', {
       data: null,
       error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite - will create free license
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: { site_hash: 'test-hash', site_url: 'https://example.com', license_key: 'free-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('licenses', 'insert', {
+      data: { id: 1, license_key: 'free-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+      error: null
     });
 
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'nonexistent-license')
+      .set('X-Site-Hash', 'test-hash')
       .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(404);
@@ -338,19 +403,30 @@ describe('License routes', () => {
   });
 
   test('auto-attach returns 404 when user not found during license creation', async () => {
-    supabaseMock.__queueResponse('licenses', 'select', {
-      data: null,
-      error: { code: 'PGRST116' } // No license found
-    });
-    supabaseMock.__queueResponse('users', 'select', {
+    // Mock sites query
+    supabaseMock.__queueResponse('sites', 'select', {
       data: null,
       error: { message: 'not found', code: 'PGRST116' }
+    });
+    // Mock siteService.createFreeLicenseForSite - it doesn't need user, so this should succeed
+    supabaseMock.__queueResponse('sites', 'insert', {
+      data: { site_hash: 'test-hash', site_url: 'https://example.com', license_key: 'free-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('licenses', 'insert', {
+      data: { id: 1, license_key: 'free-license', plan: 'free' },
+      error: null
+    });
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+      error: null
     });
 
     const token = generateToken({ id: 999, email: 'missing@example.com', plan: 'free' });
     const res = await request(app)
       .post('/api/licenses/auto-attach')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-hash')
       .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(404);
@@ -360,6 +436,7 @@ describe('License routes', () => {
   test('auto-attach returns 401 when no authentication provided', async () => {
     const res = await request(app)
       .post('/api/licenses/auto-attach')
+      .set('X-Site-Hash', 'test-hash')
       .send({ siteUrl: 'https://example.com' });
 
     expect(res.status).toBe(401);
