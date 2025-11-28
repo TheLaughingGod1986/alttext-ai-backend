@@ -645,6 +645,15 @@ describe('License routes', () => {
 
     describe('License quota edge cases', () => {
       test('handles negative quota in organization', async () => {
+        // Mock site service queries
+        supabaseMock.__queueResponse('sites', 'select', {
+          data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+          error: null
+        });
+        supabaseMock.__queueResponse('sites', 'select', {
+          data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+          error: null
+        });
         supabaseMock.__queueResponse('organizations', 'select', {
           data: {
             id: 6,
@@ -662,6 +671,7 @@ describe('License routes', () => {
         const res = await request(app)
           .post('/api/generate')
           .set('X-License-Key', 'negative-quota-license')
+          .set('X-Site-Hash', 'test-hash')
           .send({
             image_data: { url: 'https://example.com/image.jpg' },
             context: { post_title: 'Test' }
