@@ -527,6 +527,15 @@ async function getEventCounts(email, eventNames, options = {}) {
   }
 }
 
+/**
+ * Clear throttle maps (for testing)
+ */
+function clearThrottleMaps() {
+  emailThrottleMap.clear();
+  ipThrottleMap.clear();
+  duplicateEventMap.clear();
+}
+
 module.exports = {
   logEvent,
   logEvents,
@@ -535,4 +544,5 @@ module.exports = {
   getEventCounts,
   // Expose throttle check for testing
   _checkThrottle: checkThrottle,
+  clearThrottleMaps, // For testing
 };

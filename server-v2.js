@@ -27,6 +27,7 @@ const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // 
 const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
 const accountRoutes = require('./src/routes/account'); // Account routes
 const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
+const dashboardChartsRoutes = require('./src/routes/dashboardCharts'); // Dashboard charts routes
 const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
 const identityRoutes = require('./src/routes/identity'); // Identity routes
 const analyticsRoutes = require('./src/routes/analytics'); // Analytics routes
@@ -186,6 +187,7 @@ app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, on
 app.use('/waitlist', waitlistRoutes); // Waitlist routes
 app.use('/account', accountRoutes); // Account routes
 app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
+app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usage/daily, /dashboard/usage/monthly, etc.)
 app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
 app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
 app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
