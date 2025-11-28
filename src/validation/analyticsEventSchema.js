@@ -14,7 +14,7 @@ const analyticsEventSchema = z.object({
   eventName: z.string().min(1, 'Event name is required'),
   plugin: z.string().optional(),
   source: z.enum(['plugin', 'website', 'server']).optional(),
-  eventData: z.record(z.any()).optional(),
+  eventData: z.any().optional(), // Use z.any() instead of z.record(z.any()) for Zod v4 compatibility
   identityId: z.string().uuid('Invalid identity ID format').optional(),
 });
 
