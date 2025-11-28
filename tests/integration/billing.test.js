@@ -1050,7 +1050,10 @@ describe('Billing routes', () => {
             id: 'cs_duplicate',
             subscription: 'sub_duplicate',
             customer: 'cus_test',
-            metadata: { userId: '20' }
+            metadata: { userId: '20' },
+            line_items: {
+              data: [{ price: { id: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO || 'price_pro' } }]
+            }
           }
         }
       };
@@ -1070,7 +1073,10 @@ describe('Billing routes', () => {
             id: 'cs_duplicate',
             subscription: 'sub_duplicate',
             customer: 'cus_test',
-            metadata: { userId: '20' }
+            metadata: { userId: '20' },
+            line_items: {
+              data: [{ price: { id: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO || 'price_pro' } }]
+            }
           }
         }
       };
@@ -1090,6 +1096,9 @@ describe('Billing routes', () => {
             metadata: {
               // Missing siteUrl, siteHash, installId - should still work
               userId: '21'
+            },
+            line_items: {
+              data: [{ price: { id: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO || 'price_pro' } }]
             }
           }
         }
