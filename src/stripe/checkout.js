@@ -479,10 +479,74 @@ async function handleInvoicePaid(invoice) {
   }
 }
 
+/**
+ * Create Stripe checkout session for credit pack purchase
+ * @param {string} email - User email address
+ * @param {string} priceId - Stripe price ID for the credit pack
+ * @param {number} credits - Number of credits in the pack
+ * @param {string} successUrl - URL to redirect after successful payment
+ * @param {string} cancelUrl - URL to redirect if payment is cancelled
+ * @returns {Promise<Object>} Stripe checkout session
+ */
+async function createCreditPackCheckoutSession(email, priceId, credits, successUrl, cancelUrl) {
+  try {
+    if (!email || !priceId || !credits || credits <= 0) {
+      throw new Error('Invalid parameters: email, priceId, and positive credits amount required');
+    }
+
+    // Get or create Stripe customer by email
+    const customers = await stripe.customers.list({
+      email: email.toLowerCase(),
+      limit: 1,
+    });
+
+    let customerId;
+    if (customers.data.length > 0) {
+      customerId = customers.data[0].id;
+    } else {
+      // Create new customer
+      const customer = await stripe.customers.create({
+        email: email.toLowerCase(),
+        metadata: {
+          user_email: email.toLowerCase(),
+        },
+      });
+      customerId = customer.id;
+    }
+
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: 'payment', // Credit packs are one-time payments
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        credits: credits.toString(),
+        type: 'credit_pack',
+      },
+    });
+
+    console.log(`[Checkout] Created credit pack checkout session: ${session.id} for ${email} (${credits} credits)`);
+    return session;
+
+  } catch (error) {
+    console.error('[Checkout] Error creating credit pack checkout session:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   createCheckoutSession,
   createCustomerPortalSession,
   handleSuccessfulCheckout,
   handleSubscriptionUpdate,
-  handleInvoicePaid
+  handleInvoicePaid,
+  createCreditPackCheckoutSession,
 };

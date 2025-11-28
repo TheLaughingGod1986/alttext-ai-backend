@@ -291,11 +291,135 @@ async function getTransactionHistory(identityId, page = 1, limit = 50) {
   }
 }
 
+/**
+ * Get balance by email (wrapper function)
+ * @param {string} email - User email address
+ * @returns {Promise<Object>} Result with success status and balance
+ */
+async function getBalanceByEmail(email) {
+  try {
+    const identityResult = await getOrCreateIdentity(email);
+    
+    if (!identityResult.success) {
+      return { success: false, error: identityResult.error, balance: 0 };
+    }
+
+    return await getBalance(identityResult.identityId);
+  } catch (error) {
+    console.error('[CreditsService] Exception getting balance by email:', error);
+    return { success: false, error: error.message || 'Failed to get balance', balance: 0 };
+  }
+}
+
+/**
+ * Add credits by email (wrapper function)
+ * @param {string} email - User email address
+ * @param {number} amount - Number of credits to add
+ * @param {string} source - Source of credits ('purchase', 'bonus', 'manual', etc.)
+ * @param {string} transactionId - Transaction ID (Stripe session ID or internal ID)
+ * @returns {Promise<Object>} Result with success status and new balance
+ */
+async function addCreditsByEmail(email, amount, source = 'manual', transactionId = null) {
+  try {
+    const identityResult = await getOrCreateIdentity(email);
+    
+    if (!identityResult.success) {
+      return { success: false, error: identityResult.error };
+    }
+
+    // Use transactionId as stripePaymentIntentId if provided
+    return await addCredits(identityResult.identityId, amount, transactionId);
+  } catch (error) {
+    console.error('[CreditsService] Exception adding credits by email:', error);
+    return { success: false, error: error.message || 'Failed to add credits' };
+  }
+}
+
+/**
+ * Deduct one credit by email (atomic operation)
+ * Uses atomic SQL update to prevent race conditions
+ * @param {string} email - User email address
+ * @returns {Promise<Object>} Result with success status and remaining balance
+ */
+async function deductCreditByEmail(email) {
+  try {
+    const identityResult = await getOrCreateIdentity(email);
+    
+    if (!identityResult.success) {
+      return { success: false, error: identityResult.error };
+    }
+
+    // Use atomic spendCredits function to deduct 1 credit
+    return await spendCredits(identityResult.identityId, 1);
+  } catch (error) {
+    console.error('[CreditsService] Exception deducting credit by email:', error);
+    return { success: false, error: error.message || 'Failed to deduct credit' };
+  }
+}
+
+/**
+ * Deduct credits by email (wrapper function)
+ * Returns { ok: true } on success or { ok: false, reason: "INSUFFICIENT_CREDITS" } on failure
+ * @param {string} email - User email address
+ * @param {number} amount - Number of credits to deduct
+ * @returns {Promise<Object>} Result with ok status and optional reason
+ */
+async function deductCredits(email, amount) {
+  try {
+    const identityResult = await getOrCreateIdentity(email);
+    
+    if (!identityResult.success) {
+      return { ok: false, reason: identityResult.error || 'Failed to get/create identity' };
+    }
+
+    const spendResult = await spendCredits(identityResult.identityId, amount);
+    
+    if (!spendResult.success) {
+      if (spendResult.error === 'INSUFFICIENT_CREDITS') {
+        return { ok: false, reason: 'INSUFFICIENT_CREDITS' };
+      }
+      return { ok: false, reason: spendResult.error || 'Failed to deduct credits' };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    console.error('[CreditsService] Exception deducting credits:', error);
+    return { ok: false, reason: error.message || 'Failed to deduct credits' };
+  }
+}
+
+/**
+ * Get transaction history by email (wrapper function)
+ * @param {string} email - User email address
+ * @param {number} page - Page number (default: 1)
+ * @param {number} limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Result with success status and transactions array
+ */
+async function getTransactionsByEmail(email, page = 1, limit = 50) {
+  try {
+    const identityResult = await getOrCreateIdentity(email);
+    
+    if (!identityResult.success) {
+      return { success: false, error: identityResult.error, transactions: [] };
+    }
+
+    return await getTransactionHistory(identityResult.identityId, page, limit);
+  } catch (error) {
+    console.error('[CreditsService] Exception getting transactions by email:', error);
+    return { success: false, error: error.message || 'Failed to get transactions', transactions: [] };
+  }
+}
+
 module.exports = {
   getOrCreateIdentity,
   addCredits,
   spendCredits,
   getBalance,
   getTransactionHistory,
+  getBalanceByEmail,
+  addCreditsByEmail,
+  deductCreditByEmail,
+  deductCredits,
+  getTransactionsByEmail,
 };
 

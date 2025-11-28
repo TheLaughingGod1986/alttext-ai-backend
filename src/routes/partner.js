@@ -61,15 +61,16 @@ router.post(
 
       // Check if we should use credits for this request
       // Note: Subscription/credits check is handled by checkSubscriptionForPartner middleware
-      // This code only determines whether to deduct credits
-      let usingCredits = false;
+      // The middleware sets req.useCredit = true and req.creditIdentityId if credits should be used
+      const usingCredits = req.useCredit === true;
       let creditsBalance = 0;
       
-      // Check credit balance to determine if we should use credits
-      const balanceResult = await creditsService.getBalance(req.partnerApiKey.identityId);
-      if (balanceResult.success && balanceResult.balance > 0) {
-        creditsBalance = balanceResult.balance;
-        usingCredits = true;
+      // Get current credit balance if using credits (for response)
+      if (usingCredits && req.creditIdentityId) {
+        const balanceResult = await creditsService.getBalance(req.creditIdentityId);
+        if (balanceResult.success) {
+          creditsBalance = balanceResult.balance;
+        }
       }
 
       // Import generation utilities
@@ -129,10 +130,10 @@ router.post(
         altText = openaiResponse.choices[0].message.content.trim();
       }
 
-      // Deduct credits if using credits
+      // Deduct credits if using credits (flag set by middleware after successful generation)
       let remainingCredits = creditsBalance;
-      if (usingCredits) {
-        const spendResult = await creditsService.spendCredits(req.partnerApiKey.identityId, 1, {
+      if (req.useCredit === true && req.creditIdentityId) {
+        const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
           service,
           endpoint: '/partner/generate',
           type: type || 'alt-text',
@@ -140,6 +141,9 @@ router.post(
 
         if (spendResult.success) {
           remainingCredits = spendResult.remainingBalance;
+        } else {
+          console.error(`[Partner API] Failed to deduct credits: ${spendResult.error}`);
+          // Continue anyway - generation succeeded, just log the error
         }
       }
 

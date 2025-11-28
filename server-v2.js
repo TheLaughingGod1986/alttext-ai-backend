@@ -193,6 +193,7 @@ app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-in
 app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
 app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
 app.use('/partner', require('./src/routes/partner')); // Partner API routes
+app.use('/credits', authenticateToken, require('./src/routes/credits')); // Credits routes (balance, transactions, purchase)
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
@@ -243,25 +244,15 @@ app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
     
     // Check if user should use credits for this request
     // Note: Subscription/credits check is handled by checkSubscription middleware
-    // This code only determines whether to deduct credits vs site quota
-    let usingCredits = false;
+    // The middleware sets req.useCredit = true and req.creditIdentityId if credits should be used
+    const usingCredits = req.useCredit === true;
     let creditsBalance = 0;
-    let identityId = null;
     
-    const userEmail = req.user?.email;
-    if (userEmail) {
-      // Get or create identity for credits
-      const identityResult = await creditsService.getOrCreateIdentity(userEmail);
-      if (identityResult.success) {
-        identityId = identityResult.identityId;
-        
-        // Check credit balance to determine if we should use credits
-        const balanceResult = await creditsService.getBalance(identityId);
-        if (balanceResult.success && balanceResult.balance > 0) {
-          creditsBalance = balanceResult.balance;
-          usingCredits = true;
-          console.log(`[Generate] User has ${creditsBalance} credits available, using credits for this generation`);
-        }
+    // Get current credit balance if using credits (for response)
+    if (usingCredits && req.creditIdentityId) {
+      const balanceResult = await creditsService.getBalance(req.creditIdentityId);
+      if (balanceResult.success) {
+        creditsBalance = balanceResult.balance;
       }
     }
     
@@ -346,10 +337,10 @@ app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
 
       const content = openaiResponse.choices[0].message.content.trim();
 
-      // Deduct credits if using credits, otherwise deduct from site quota
+      // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
       let remainingCredits = creditsBalance;
-      if (usingCredits && identityId) {
-        const spendResult = await creditsService.spendCredits(identityId, 1, {
+      if (req.useCredit === true && req.creditIdentityId) {
+        const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
           service,
           type: 'meta',
           site_hash: siteHash,
@@ -360,6 +351,7 @@ app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
           console.log(`[Generate] Deducted 1 credit for meta generation. Remaining: ${remainingCredits}`);
         } else {
           console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+          // Continue anyway - generation succeeded, just log the error
         }
       } else {
         // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
@@ -455,13 +447,14 @@ app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
     
     const altText = openaiResponse.choices[0].message.content.trim();
 
-    // Deduct credits if using credits, otherwise deduct from site quota
+    // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
     let remainingCredits = creditsBalance;
-    if (usingCredits && identityId) {
-      const spendResult = await creditsService.spendCredits(identityId, 1, {
+    if (req.useCredit === true && req.creditIdentityId) {
+      const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
         image_id: image_data?.image_id || null,
         service,
         site_hash: siteHash,
+        type: 'alt-text',
       });
       
       if (spendResult.success) {

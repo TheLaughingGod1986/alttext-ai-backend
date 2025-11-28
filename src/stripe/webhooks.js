@@ -121,8 +121,9 @@ async function handleCheckoutSessionCompleted(session) {
   });
   
   try {
-    // Check if this is a credit purchase
-    if (session.metadata?.type === 'credits') {
+    // Check if this is a credit purchase (credit pack)
+    // Check for metadata.credits (credit pack) or metadata.type === 'credits' (legacy)
+    if (session.metadata?.credits || session.metadata?.type === 'credit_pack' || session.metadata?.type === 'credits') {
       await handleCreditPurchase(session);
       return;
     }
@@ -178,8 +179,9 @@ async function handleCreditPurchase(session) {
     }
 
     const emailLower = email.toLowerCase();
-    const amount = parseInt(session.metadata?.amount) || 1; // Default to 1 if not specified
-    const paymentIntentId = session.payment_intent;
+    // Get credits amount from metadata.credits (credit pack) or metadata.amount (legacy)
+    const amount = parseInt(session.metadata?.credits) || parseInt(session.metadata?.amount) || 1;
+    const paymentIntentId = session.payment_intent || session.id;
 
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(emailLower);
@@ -188,11 +190,12 @@ async function handleCreditPurchase(session) {
       return;
     }
 
-    // Add credits
-    const addResult = await creditsService.addCredits(
-      identityResult.identityId,
+    // Add credits using email-based function (includes transaction record)
+    const addResult = await creditsService.addCreditsByEmail(
+      emailLower,
       amount,
-      paymentIntentId
+      'purchase',
+      session.id
     );
 
     if (!addResult.success) {

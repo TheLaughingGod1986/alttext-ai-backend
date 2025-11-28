@@ -132,7 +132,10 @@ async function checkCreditsFallback(req, res, next, email) {
     const balanceResult = await creditsService.getBalance(identityResult.identityId);
     
     if (balanceResult.success && balanceResult.balance > 0) {
-      // User has credits - allow request
+      // User has credits - set flag for credit deduction after successful generation
+      req.useCredit = true;
+      req.creditIdentityId = identityResult.identityId;
+      // Allow request
       return next();
     }
 

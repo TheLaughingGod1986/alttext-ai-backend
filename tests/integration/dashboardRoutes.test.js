@@ -11,6 +11,10 @@ jest.mock('../../src/services/identityService', () => ({
   getIdentityDashboard: jest.fn(),
 }));
 
+jest.mock('../../src/services/creditsService', () => ({
+  getBalanceByEmail: jest.fn(),
+}));
+
 jest.mock('../../db/supabase-client', () => {
   const mockSupabase = {
     from: jest.fn(() => mockSupabase),
@@ -27,6 +31,7 @@ jest.mock('../../db/supabase-client', () => {
 describe('Dashboard Routes', () => {
   let app;
   let mockIdentityService;
+  let mockCreditsService;
   let testToken;
   const testEmail = 'test@example.com';
   const testUserId = 'test-user-id';
@@ -34,11 +39,17 @@ describe('Dashboard Routes', () => {
   beforeAll(() => {
     app = createTestServer();
     mockIdentityService = require('../../src/services/identityService');
+    mockCreditsService = require('../../src/services/creditsService');
     testToken = createTestToken({ id: testUserId, email: testEmail, plugin: 'alttext-ai' });
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default mock for credits service
+    mockCreditsService.getBalanceByEmail.mockResolvedValue({
+      success: true,
+      balance: 250,
+    });
   });
 
   describe('GET /me', () => {
@@ -101,7 +112,10 @@ describe('Dashboard Routes', () => {
       expect(Array.isArray(res.body.installations)).toBe(true);
       expect(res.body.subscription).toBeDefined();
       expect(res.body.usage).toBeDefined();
+      expect(res.body.credits).toBeDefined();
+      expect(res.body.credits.balance).toBe(250);
       expect(mockIdentityService.getIdentityDashboard).toHaveBeenCalledWith(testEmail);
+      expect(mockCreditsService.getBalanceByEmail).toHaveBeenCalledWith(testEmail);
     });
 
     it('returns 401 without authentication', async () => {
@@ -169,7 +183,42 @@ describe('Dashboard Routes', () => {
       expect(res.body).toHaveProperty('installations');
       expect(res.body).toHaveProperty('subscription');
       expect(res.body).toHaveProperty('usage');
+      expect(res.body).toHaveProperty('credits');
+      expect(res.body.credits).toHaveProperty('balance');
+      expect(typeof res.body.credits.balance).toBe('number');
       expect(Array.isArray(res.body.installations)).toBe(true);
+    });
+
+    it('includes credits balance in response', async () => {
+      mockCreditsService.getBalanceByEmail.mockResolvedValue({
+        success: true,
+        balance: 500,
+      });
+
+      const res = await request(app)
+        .get('/dashboard')
+        .set('Authorization', `Bearer ${testToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.credits).toEqual({ balance: 500 });
+    });
+
+    it('handles credits service failure gracefully', async () => {
+      mockCreditsService.getBalanceByEmail.mockResolvedValue({
+        success: false,
+        error: 'Service error',
+      });
+
+      const res = await request(app)
+        .get('/dashboard')
+        .set('Authorization', `Bearer ${testToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      // Should still return credits with 0 balance on error
+      expect(res.body.credits).toBeDefined();
+      expect(res.body.credits.balance).toBe(0);
     });
 
     it('handles subscription with null status (free plan)', async () => {
