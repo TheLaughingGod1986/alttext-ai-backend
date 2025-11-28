@@ -24,24 +24,29 @@ describe('Generate endpoint', () => {
     
     // getOrCreateSite - first select (check if exists)
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, reset_date: resetDate.toISOString() },
+      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
       error: null
     });
     // checkSiteQuota/getSiteUsage - second select
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, reset_date: resetDate.toISOString() },
+      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
       error: null
     });
     // deductSiteQuota - third select (get site before update)
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, reset_date: resetDate.toISOString() },
+      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
       error: null
     });
-    // deductSiteQuota - update
-    supabaseMock.__queueResponse('sites', 'update', { error: null });
+    // deductSiteQuota - update with select().single() (returns updated site)
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1, token_limit: 50, reset_date: resetDate.toISOString() },
+      error: null
+    });
+    // deductSiteQuota - insert into usage_tracking
+    supabaseMock.__queueResponse('usage_tracking', 'insert', { error: null });
     // getSiteUsage after deduction - fourth select
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed + 1, reset_date: resetDate.toISOString() },
+      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1, token_limit: 50, reset_date: resetDate.toISOString() },
       error: null
     });
   }
