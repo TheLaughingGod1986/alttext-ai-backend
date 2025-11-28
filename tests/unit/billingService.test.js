@@ -84,10 +84,15 @@ describe('billingService', () => {
       };
       getStripe.mockReturnValue(mockStripe);
 
-      supabase.from.mockReturnValue({
+      // First call: check for existing subscription
+      const checkBuilder = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+      };
+
+      // Second call: upsert new subscription
+      const upsertBuilder = {
         upsert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
@@ -98,8 +103,13 @@ describe('billingService', () => {
             plan: 'pro',
             status: 'active',
           },
+          error: null,
         }),
-      });
+      };
+
+      supabase.from
+        .mockReturnValueOnce(checkBuilder)
+        .mockReturnValueOnce(upsertBuilder);
 
       const result = await billingService.createSubscription({
         email: 'test@example.com',
@@ -120,14 +130,24 @@ describe('billingService', () => {
         status: 'active',
       };
 
-      supabase.from.mockReturnValue({
+      const mockCustomer = { id: 'cus_123' };
+      const mockStripe = {
+        customers: {
+          list: jest.fn().mockResolvedValue({ data: [mockCustomer] }),
+        },
+      };
+      getStripe.mockReturnValue(mockStripe);
+
+      const checkBuilder = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: existingSubscription,
           error: null,
         }),
-      });
+      };
+
+      supabase.from.mockReturnValue(checkBuilder);
 
       const result = await billingService.createSubscription({
         email: 'test@example.com',
@@ -147,14 +167,19 @@ describe('billingService', () => {
         { id: 'sub_2', user_email: 'test@example.com', plugin_slug: 'seo-ai-meta' },
       ];
 
-      supabase.from.mockReturnValue({
+      const mockBuilder = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        order: jest.fn().mockResolvedValue({
+        order: jest.fn().mockReturnThis(),
+      };
+      mockBuilder.then = jest.fn((resolve) => {
+        return Promise.resolve({
           data: mockSubscriptions,
           error: null,
-        }),
+        }).then(resolve);
       });
+
+      supabase.from.mockReturnValue(mockBuilder);
 
       const result = await billingService.getUserSubscriptions('test@example.com');
 
