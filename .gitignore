@@ -40,3 +40,4 @@ lcov.info
 *.lcov
 
 .env.bak
+# Trigger CI run
