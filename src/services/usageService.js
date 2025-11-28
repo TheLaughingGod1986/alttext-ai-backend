@@ -149,9 +149,189 @@ async function getSiteUsageStats(siteHash) {
   }
 }
 
+/**
+ * Store usage snapshot from plugin
+ * Only stores if plugin had activity in last 24 hours
+ * @param {Object} data - Snapshot data
+ * @param {string} data.email - User email
+ * @param {string} data.plugin - Plugin slug
+ * @param {string} [data.siteUrl] - Site URL
+ * @param {string} [data.version] - Plugin version
+ * @param {Object} [data.usage] - Usage data { daily: number }
+ * @param {Array} [data.recentActions] - Array of recent action timestamps
+ * @param {string} [data.plan] - Current plan
+ * @param {Object} [data.settings] - Plugin settings snapshot
+ * @returns {Promise<Object>} Result with success status and snapshotId
+ */
+async function storeUsageSnapshot(data) {
+  try {
+    const { email, plugin, siteUrl, version, usage, recentActions, plan, settings } = data;
+    const emailLower = email.toLowerCase();
+    const today = new Date().toISOString().split('T')[0];
+
+    // Check if plugin had activity in last 24 hours
+    const hasRecentActivity = recentActions && Array.isArray(recentActions) && recentActions.length > 0;
+    if (!hasRecentActivity) {
+      // No recent activity, don't store snapshot
+      return {
+        success: true,
+        skipped: true,
+        reason: 'no_recent_activity',
+      };
+    }
+
+    // Filter recent actions to last 24 hours
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentActionsFiltered = recentActions.filter(action => {
+      const actionDate = new Date(action);
+      return actionDate >= oneDayAgo;
+    });
+
+    if (recentActionsFiltered.length === 0) {
+      return {
+        success: true,
+        skipped: true,
+        reason: 'no_activity_in_last_24h',
+      };
+    }
+
+    // Prepare snapshot data
+    const snapshotData = {
+      email: emailLower,
+      plugin_slug: plugin || 'alttext-ai',
+      site_url: siteUrl || null,
+      version: version || null,
+      daily_count: usage?.daily || 0,
+      recent_actions: recentActionsFiltered,
+      plan: plan || 'free',
+      settings: settings || {},
+      snapshot_date: today,
+    };
+
+    // Upsert snapshot (one per email+plugin+date)
+    const { data: snapshot, error: upsertError } = await supabase
+      .from('usage_snapshots')
+      .upsert(snapshotData, {
+        onConflict: 'email,plugin_slug,snapshot_date',
+        ignoreDuplicates: false,
+      })
+      .select()
+      .single();
+
+    if (upsertError) {
+      console.error('[UsageService] Error storing usage snapshot:', upsertError);
+      return {
+        success: false,
+        error: upsertError.message,
+      };
+    }
+
+    // Update plugin_installations.last_seen_at
+    if (emailLower && plugin) {
+      await supabase
+        .from('plugin_installations')
+        .update({
+          last_seen_at: new Date().toISOString(),
+          version: version || null,
+        })
+        .eq('email', emailLower)
+        .eq('plugin_slug', plugin);
+    }
+
+    return {
+      success: true,
+      snapshotId: snapshot.id,
+    };
+  } catch (err) {
+    console.error('[UsageService] Exception storing usage snapshot:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to store usage snapshot',
+    };
+  }
+}
+
+/**
+ * Detect stale plugin versions
+ * Compares plugin versions in snapshots with known latest versions
+ * @param {string} email - User email
+ * @returns {Promise<Object>} Result with list of installations with outdated versions
+ */
+async function detectStaleVersions(email) {
+  try {
+    const emailLower = email.toLowerCase();
+
+    // Get latest snapshots for each plugin
+    const { data: snapshots, error: snapshotsError } = await supabase
+      .from('usage_snapshots')
+      .select('plugin_slug, version, snapshot_date')
+      .eq('email', emailLower)
+      .order('snapshot_date', { ascending: false });
+
+    if (snapshotsError) {
+      console.error('[UsageService] Error fetching snapshots:', snapshotsError);
+      return {
+        success: false,
+        error: snapshotsError.message,
+        staleVersions: [],
+      };
+    }
+
+    // Known latest versions (hardcoded for now, could be moved to config)
+    const latestVersions = {
+      'alttext-ai': '1.0.0', // Update as needed
+      'seo-ai-meta': '1.0.0', // Update as needed
+      'beepbeep-ai': '1.0.0', // Update as needed
+    };
+
+    // Group by plugin and get latest version per plugin
+    const pluginVersions = {};
+    snapshots.forEach(snapshot => {
+      if (!pluginVersions[snapshot.plugin_slug] || 
+          new Date(snapshot.snapshot_date) > new Date(pluginVersions[snapshot.plugin_slug].date)) {
+        pluginVersions[snapshot.plugin_slug] = {
+          version: snapshot.version,
+          date: snapshot.snapshot_date,
+        };
+      }
+    });
+
+    // Check for stale versions
+    const staleVersions = [];
+    Object.keys(pluginVersions).forEach(plugin => {
+      const currentVersion = pluginVersions[plugin].version;
+      const latestVersion = latestVersions[plugin];
+      
+      if (currentVersion && latestVersion && currentVersion !== latestVersion) {
+        // Simple version comparison (could be enhanced with semver)
+        staleVersions.push({
+          plugin,
+          currentVersion,
+          latestVersion,
+          lastSeen: pluginVersions[plugin].date,
+        });
+      }
+    });
+
+    return {
+      success: true,
+      staleVersions,
+    };
+  } catch (err) {
+    console.error('[UsageService] Exception detecting stale versions:', err);
+    return {
+      success: false,
+      error: err.message || 'Failed to detect stale versions',
+      staleVersions: [],
+    };
+  }
+}
+
 module.exports = {
   getUsageSummary,
   recordSiteUsage,
   getSiteUsageStats,
+  storeUsageSnapshot,
+  detectStaleVersions,
 };
 

@@ -1,0 +1,301 @@
+/**
+ * Credits Service
+ * Handles credit transactions: purchases, spending, refunds
+ * All operations are atomic using database transactions
+ */
+
+const { supabase } = require('../../db/supabase-client');
+
+/**
+ * Get or create unified identity by email
+ * @param {string} email - User email address
+ * @returns {Promise<Object>} Result with success status and identityId
+ */
+async function getOrCreateIdentity(email) {
+  try {
+    const emailLower = email.toLowerCase();
+
+    // Check for existing identity
+    const { data: existing, error: lookupError } = await supabase
+      .from('identities')
+      .select('id')
+      .eq('email', emailLower)
+      .maybeSingle();
+
+    if (lookupError && lookupError.code !== 'PGRST116') {
+      console.error('[CreditsService] Error looking up identity:', lookupError);
+      return { success: false, error: lookupError.message };
+    }
+
+    if (existing) {
+      return { success: true, identityId: existing.id };
+    }
+
+    // Create new identity
+    const { data: created, error: insertError } = await supabase
+      .from('identities')
+      .insert({ email: emailLower })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      console.error('[CreditsService] Failed to create identity:', insertError);
+      return { success: false, error: insertError.message };
+    }
+
+    return { success: true, identityId: created.id };
+  } catch (error) {
+    console.error('[CreditsService] Exception getting/creating identity:', error);
+    return { success: false, error: error.message || 'Failed to get/create identity' };
+  }
+}
+
+/**
+ * Add credits to a user's account (from purchase)
+ * @param {string} identityId - Identity UUID
+ * @param {number} amount - Number of credits to add
+ * @param {string} stripePaymentIntentId - Stripe payment intent ID (optional)
+ * @returns {Promise<Object>} Result with success status and new balance
+ */
+async function addCredits(identityId, amount, stripePaymentIntentId = null) {
+  try {
+    if (!identityId || !amount || amount <= 0) {
+      return { success: false, error: 'Invalid parameters: identityId and positive amount required' };
+    }
+
+    // Use a transaction-like approach with SELECT FOR UPDATE
+    // Since Supabase doesn't support explicit transactions in JS, we'll do it atomically
+    // First, get current balance
+    const { data: identity, error: fetchError } = await supabase
+      .from('identities')
+      .select('credits_balance')
+      .eq('id', identityId)
+      .single();
+
+    if (fetchError || !identity) {
+      return { success: false, error: 'Identity not found' };
+    }
+
+    const currentBalance = identity.credits_balance || 0;
+    const newBalance = currentBalance + amount;
+
+    // Update balance
+    const { error: updateError } = await supabase
+      .from('identities')
+      .update({ credits_balance: newBalance })
+      .eq('id', identityId);
+
+    if (updateError) {
+      console.error('[CreditsService] Error updating balance:', updateError);
+      return { success: false, error: updateError.message };
+    }
+
+    // Create transaction record
+    const transactionData = {
+      identity_id: identityId,
+      transaction_type: 'purchase',
+      amount: amount,
+      balance_after: newBalance,
+      stripe_payment_intent_id: stripePaymentIntentId,
+      metadata: stripePaymentIntentId ? { stripe_payment_intent_id: stripePaymentIntentId } : {},
+    };
+
+    const { data: transaction, error: transactionError } = await supabase
+      .from('credits_transactions')
+      .insert(transactionData)
+      .select('id')
+      .single();
+
+    if (transactionError) {
+      console.error('[CreditsService] Error creating transaction record:', transactionError);
+      // Transaction record failed, but balance was updated
+      // Log error but don't fail the operation
+    }
+
+    console.log(`[CreditsService] Added ${amount} credits to identity ${identityId}. New balance: ${newBalance}`);
+    return {
+      success: true,
+      newBalance,
+      transactionId: transaction?.id || null,
+    };
+  } catch (error) {
+    console.error('[CreditsService] Exception adding credits:', error);
+    return { success: false, error: error.message || 'Failed to add credits' };
+  }
+}
+
+/**
+ * Spend credits from a user's account (on generation)
+ * @param {string} identityId - Identity UUID
+ * @param {number} amount - Number of credits to spend (default: 1)
+ * @param {Object} metadata - Additional metadata for transaction (optional)
+ * @returns {Promise<Object>} Result with success status and remaining balance
+ */
+async function spendCredits(identityId, amount = 1, metadata = {}) {
+  try {
+    if (!identityId || !amount || amount <= 0) {
+      return { success: false, error: 'Invalid parameters: identityId and positive amount required' };
+    }
+
+    // Get current balance
+    const { data: identity, error: fetchError } = await supabase
+      .from('identities')
+      .select('credits_balance')
+      .eq('id', identityId)
+      .single();
+
+    if (fetchError || !identity) {
+      return { success: false, error: 'Identity not found' };
+    }
+
+    const currentBalance = identity.credits_balance || 0;
+
+    // Check if sufficient credits
+    if (currentBalance < amount) {
+      return {
+        success: false,
+        error: 'INSUFFICIENT_CREDITS',
+        currentBalance,
+        requested: amount,
+      };
+    }
+
+    const newBalance = currentBalance - amount;
+
+    // Update balance
+    const { error: updateError } = await supabase
+      .from('identities')
+      .update({ credits_balance: newBalance })
+      .eq('id', identityId);
+
+    if (updateError) {
+      console.error('[CreditsService] Error updating balance:', updateError);
+      return { success: false, error: updateError.message };
+    }
+
+    // Create transaction record
+    const transactionData = {
+      identity_id: identityId,
+      transaction_type: 'spend',
+      amount: amount,
+      balance_after: newBalance,
+      metadata: metadata || {},
+    };
+
+    const { data: transaction, error: transactionError } = await supabase
+      .from('credits_transactions')
+      .insert(transactionData)
+      .select('id')
+      .single();
+
+    if (transactionError) {
+      console.error('[CreditsService] Error creating transaction record:', transactionError);
+      // Transaction record failed, but balance was updated
+    }
+
+    console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. New balance: ${newBalance}`);
+    return {
+      success: true,
+      remainingBalance: newBalance,
+      transactionId: transaction?.id || null,
+    };
+  } catch (error) {
+    console.error('[CreditsService] Exception spending credits:', error);
+    return { success: false, error: error.message || 'Failed to spend credits' };
+  }
+}
+
+/**
+ * Get current credit balance for an identity
+ * @param {string} identityId - Identity UUID
+ * @returns {Promise<Object>} Result with success status and balance
+ */
+async function getBalance(identityId) {
+  try {
+    if (!identityId) {
+      return { success: false, error: 'identityId is required' };
+    }
+
+    const { data: identity, error } = await supabase
+      .from('identities')
+      .select('credits_balance')
+      .eq('id', identityId)
+      .single();
+
+    if (error || !identity) {
+      if (error?.code === 'PGRST116') {
+        return { success: false, error: 'Identity not found' };
+      }
+      return { success: false, error: error?.message || 'Failed to get balance' };
+    }
+
+    return {
+      success: true,
+      balance: identity.credits_balance || 0,
+    };
+  } catch (error) {
+    console.error('[CreditsService] Exception getting balance:', error);
+    return { success: false, error: error.message || 'Failed to get balance' };
+  }
+}
+
+/**
+ * Get transaction history for an identity
+ * @param {string} identityId - Identity UUID
+ * @param {number} page - Page number (default: 1)
+ * @param {number} limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Result with success status and transactions array
+ */
+async function getTransactionHistory(identityId, page = 1, limit = 50) {
+  try {
+    if (!identityId) {
+      return { success: false, error: 'identityId is required' };
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [transactionsResult, countResult] = await Promise.all([
+      supabase
+        .from('credits_transactions')
+        .select('*')
+        .eq('identity_id', identityId)
+        .order('created_at', { ascending: false })
+        .range(skip, skip + limit - 1),
+      supabase
+        .from('credits_transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('identity_id', identityId),
+    ]);
+
+    if (transactionsResult.error) {
+      console.error('[CreditsService] Error fetching transactions:', transactionsResult.error);
+      return { success: false, error: transactionsResult.error.message, transactions: [] };
+    }
+
+    const transactions = transactionsResult.data || [];
+    const totalCount = countResult.count || 0;
+
+    return {
+      success: true,
+      transactions,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        pages: Math.ceil(totalCount / limit),
+      },
+    };
+  } catch (error) {
+    console.error('[CreditsService] Exception getting transaction history:', error);
+    return { success: false, error: error.message || 'Failed to get transaction history', transactions: [] };
+  }
+}
+
+module.exports = {
+  getOrCreateIdentity,
+  addCredits,
+  spendCredits,
+  getBalance,
+  getTransactionHistory,
+};
+

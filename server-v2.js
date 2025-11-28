@@ -28,7 +28,10 @@ const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
 const accountRoutes = require('./src/routes/account'); // Account routes
 const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
 const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
+const identityRoutes = require('./src/routes/identity'); // Identity routes
+const analyticsRoutes = require('./src/routes/analytics'); // Analytics routes
 const billingService = require('./src/services/billingService'); // Billing service for quota enforcement
+const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
 const plansConfig = require('./src/config/plans'); // Plan configuration
 
 const app = express();
@@ -79,23 +82,91 @@ app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legac
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
 app.use(express.json({ limit: '2mb' }));
 
+// Request ID middleware (add early for tracing)
+const { requestIdMiddleware } = require('./src/middleware/requestId');
+app.use(requestIdMiddleware);
+
+// Initialize Sentry if available
+let Sentry = null;
+try {
+  if (process.env.SENTRY_DSN) {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    });
+    console.log('✅ Sentry initialized for error tracking');
+  }
+} catch (error) {
+  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
+}
+
 // Health check - MUST be before rate limiting to avoid 429 errors on health checks
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
-    phase: 'monetization'
-  });
+    phase: 'monetization',
+  };
+
+  // Check database connectivity
+  try {
+    const { error: dbError } = await supabase.from('identities').select('id').limit(1);
+    health.database = dbError ? { status: 'error', error: dbError.message } : { status: 'ok' };
+  } catch (error) {
+    health.database = { status: 'error', error: error.message };
+  }
+
+  // Check Stripe connectivity (if configured)
+  const { getStripe } = require('./src/utils/stripeClient');
+  const stripe = getStripe();
+  if (stripe) {
+    try {
+      await stripe.customers.list({ limit: 1 });
+      health.stripe = { status: 'ok' };
+    } catch (error) {
+      health.stripe = { status: 'error', error: error.message };
+    }
+  } else {
+    health.stripe = { status: 'not_configured' };
+  }
+
+  const overallStatus = health.database?.status === 'ok' ? 'ok' : 'degraded';
+  res.status(overallStatus === 'ok' ? 200 : 503).json(health);
 });
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    const os = require('os');
+    const metrics = {
+      timestamp: new Date().toISOString(),
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024), // MB
+        system: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024), // MB
+      },
+      uptime: Math.round(process.uptime()), // seconds
+      nodeVersion: process.version,
+      platform: process.platform,
+    };
+
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to collect metrics',
+      message: error.message,
+    });
+  }
 });
-app.use('/api/', limiter);
+
+// Rate limiting - use enhanced rate limiter factory
+const { rateLimitByIp, strictRateLimit } = require('./src/middleware/rateLimiter');
+
+// General API rate limiting
+app.use('/api/', rateLimitByIp(15 * 60 * 1000, 100));
 
 // Routes
 // Backward compatibility routes (registered first at root level)
@@ -116,6 +187,9 @@ app.use('/waitlist', waitlistRoutes); // Waitlist routes
 app.use('/account', accountRoutes); // Account routes
 app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
 app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
+app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
+app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
+app.use('/partner', require('./src/routes/partner')); // Partner API routes
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, async (req, res) => {
@@ -164,13 +238,63 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
       });
     }
     
+    // Check credits and subscription limits if user is authenticated
+    // Credits are checked first (pay-as-you-go), then subscription quota
+    let usingCredits = false;
+    let creditsBalance = 0;
+    let identityId = null;
+    
+    const userEmail = req.user?.email;
+    if (userEmail) {
+      // Get or create identity for credits
+      const identityResult = await creditsService.getOrCreateIdentity(userEmail);
+      if (identityResult.success) {
+        identityId = identityResult.identityId;
+        
+        // Check credit balance
+        const balanceResult = await creditsService.getBalance(identityId);
+        if (balanceResult.success && balanceResult.balance > 0) {
+          creditsBalance = balanceResult.balance;
+          usingCredits = true;
+          console.log(`[Generate] User has ${creditsBalance} credits available, using credits for this generation`);
+        }
+      }
+      
+      // If no credits, check subscription limits
+      if (!usingCredits) {
+        const subscriptionCheck = await billingService.enforceSubscriptionLimits(
+          userEmail,
+          service,
+          1 // requestedCount
+        );
+        
+        if (!subscriptionCheck.allowed) {
+          console.log(`[Generate] Subscription limit exceeded for ${userEmail}: ${subscriptionCheck.used || 0}/${subscriptionCheck.limit}`);
+          const upgradeUrl = `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/upgrade`;
+          return res.status(429).json({
+            ok: false,
+            error: 'subscription_limit_exceeded',
+            usage: {
+              used: subscriptionCheck.used || 0,
+              limit: subscriptionCheck.limit,
+              remaining: subscriptionCheck.remaining || 0,
+              plan: subscriptionCheck.plan,
+            },
+            creditsBalance: creditsBalance,
+            upgradeUrl: upgradeUrl,
+          });
+        }
+      }
+    }
+    
     // Check quota by site_hash (CRITICAL: Track by site, not by user)
+    // This is a secondary check for site-based quota (for non-authenticated requests)
     const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
     
     // Get or create site
     await siteService.getOrCreateSite(siteHash, siteUrl);
     
-    // Check site quota
+    // Check site quota (only if user is not authenticated, or as a fallback)
     const quotaCheck = await siteService.checkSiteQuota(siteHash);
     
     if (!quotaCheck.hasQuota) {
@@ -244,17 +368,34 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
 
       const content = openaiResponse.choices[0].message.content.trim();
 
-      // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
-      // Do NOT deduct per user - all users on the same site share the quota
-      await siteService.deductSiteQuota(siteHash, 1);
+      // Deduct credits if using credits, otherwise deduct from site quota
+      let remainingCredits = creditsBalance;
+      if (usingCredits && identityId) {
+        const spendResult = await creditsService.spendCredits(identityId, 1, {
+          service,
+          type: 'meta',
+          site_hash: siteHash,
+        });
+        
+        if (spendResult.success) {
+          remainingCredits = spendResult.remainingBalance;
+          console.log(`[Generate] Deducted 1 credit for meta generation. Remaining: ${remainingCredits}`);
+        } else {
+          console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+        }
+      } else {
+        // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+        // Do NOT deduct per user - all users on the same site share the quota
+        await siteService.deductSiteQuota(siteHash, 1);
+      }
       
-      // Get updated usage after deduction
-      const updatedUsage = await siteService.getSiteUsage(siteHash);
+      // Get updated usage after deduction (only if not using credits)
+      const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
       
       const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
-      const limit = planLimits[updatedUsage.plan] || 10;
-      const remaining = updatedUsage.remaining;
-      const used = updatedUsage.used;
+      const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 10) : null;
+      const remaining = updatedUsage ? updatedUsage.remaining : null;
+      const used = updatedUsage ? updatedUsage.used : 0;
 
       // Return the raw content (JSON string) for meta generation
       return res.json({
@@ -262,11 +403,12 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
         alt_text: content, // Reusing alt_text field for backward compatibility
         content: content,  // Also include as content
         usage: {
-          used,
-          limit,
-          remaining: remaining,
+          used: used || 0,
+          limit: limit || Infinity,
+          remaining: usingCredits ? null : remaining,
           plan: limits.plan,
-          credits: limits.credits || 0,
+          credits: remainingCredits,
+          usingCredits: usingCredits,
           resetDate: getNextResetDate()
         },
         tokens: openaiResponse.usage
@@ -335,28 +477,47 @@ app.post('/api/generate', combinedAuth, async (req, res) => {
     
     const altText = openaiResponse.choices[0].message.content.trim();
 
-    // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
-    // Do NOT deduct per user - all users on the same site share the quota
-    await siteService.deductSiteQuota(siteHash, 1);
+    // Deduct credits if using credits, otherwise deduct from site quota
+    let remainingCredits = creditsBalance;
+    if (usingCredits && identityId) {
+      const spendResult = await creditsService.spendCredits(identityId, 1, {
+        image_id: image_data?.image_id || null,
+        service,
+        site_hash: siteHash,
+      });
+      
+      if (spendResult.success) {
+        remainingCredits = spendResult.remainingBalance;
+        console.log(`[Generate] Deducted 1 credit. Remaining: ${remainingCredits}`);
+      } else {
+        console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+        // Continue anyway - generation succeeded, just log the error
+      }
+    } else {
+      // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+      // Do NOT deduct per user - all users on the same site share the quota
+      await siteService.deductSiteQuota(siteHash, 1);
+    }
     
-    // Get updated usage after deduction
-    const updatedUsage = await siteService.getSiteUsage(siteHash);
+    // Get updated usage after deduction (only if not using credits)
+    const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
     
     const planLimits = { free: 50, pro: 1000, agency: 10000 };
-    const limit = planLimits[updatedUsage.plan] || 50;
-    const remaining = updatedUsage.remaining;
-    const used = updatedUsage.used;
+    const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 50) : null;
+    const remaining = updatedUsage ? updatedUsage.remaining : null;
+    const used = updatedUsage ? updatedUsage.used : null;
     
     // Return response with usage data
     res.json({
       success: true,
       alt_text: altText,
       usage: {
-        used,
-        limit,
-        remaining: remaining,
+        used: used || 0,
+        limit: limit || Infinity,
+        remaining: usingCredits ? null : remaining,
         plan: limits.plan,
-        credits: limits.credits || 0,
+        credits: remainingCredits,
+        usingCredits: usingCredits,
         resetDate: getNextResetDate()
       },
       tokens: openaiResponse.usage
@@ -939,7 +1100,25 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection at:', promise);
   console.error('Reason:', reason);
+  
+  // Send to Sentry if available
+  if (Sentry) {
+    Sentry.captureException(reason);
+  }
+  
   // Don't exit - let the server continue running
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  
+  // Send to Sentry if available
+  if (Sentry) {
+    Sentry.captureException(error);
+  }
+  
+  // Exit process for uncaught exceptions (they're usually fatal)
+  process.exit(1);
 });
 
 if (require.main === module) {
@@ -958,4 +1137,20 @@ if (require.main === module) {
   });
 }
 
-module.exports = app;
+// Global error handler (must be last middleware)
+const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
+app.use(notFoundHandler); // 404 handler
+app.use(errorHandler); // Error handler
+
+// Capture unhandled errors with Sentry if available
+if (Sentry) {
+  app.use(Sentry.Handlers.errorHandler());
+}
+
+// Export utility functions for partner API
+// Export app and utility functions
+module.exports = Object.assign(app, {
+  requestChatCompletion,
+  buildPrompt,
+  buildUserMessage,
+});

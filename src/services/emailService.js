@@ -8,6 +8,7 @@ const { sendEmail } = require('../utils/resendClient');
 const { billingFromEmail } = require('../emails/emailConfig');
 const { hasRecentEvent, hasRecentEventForPlugin, logEvent } = require('./emailEventService');
 const { recordInstallation } = require('./pluginInstallationService');
+const analyticsService = require('./analyticsService');
 
 // Try to load React Email render helper (may fail if templates not compiled)
 let emailRenderHelper = null;
@@ -180,6 +181,14 @@ async function sendDashboardWelcome({ email }) {
       console.error(`[EmailService] Failed to send dashboard welcome email to ${email}:`, result.error);
       return { success: false, error: result.error };
     }
+
+    // Log analytics event (background - don't block email sending)
+    analyticsService.logEventBackground({
+      email,
+      eventName: 'welcome_sent',
+      source: 'server',
+      eventData: { success: result.success },
+    });
 
     console.log(`[EmailService] Dashboard welcome email sent to ${email}`);
     return { success: true, emailId: result.id };
@@ -567,6 +576,15 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
       errorMessage: result.success ? null : result.error,
     });
 
+    // Log analytics event (background - don't block email sending)
+    analyticsService.logEventBackground({
+      email,
+      eventName: 'plugin_signup_sent',
+      plugin: pluginName,
+      source: 'server',
+      eventData: { siteUrl, success: result.success },
+    });
+
     if (!result.success) {
       console.error(`[EmailService] Failed to send plugin signup email to ${email}:`, result.error);
       return { success: false, error: result.error };
@@ -808,6 +826,104 @@ async function sendUsageSummary({ email, pluginName, stats = {} }) {
   }
 }
 
+/**
+ * Send magic link email for authentication
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} params.token - Magic link token
+ * @param {string} [params.redirectUrl] - Redirect URL after verification
+ * @returns {Promise<Object>} Result with success and optional error
+ */
+async function sendMagicLink({ email, token, redirectUrl }) {
+  const eventType = 'magic_link';
+  
+  // Check for recent event (de-duplication)
+  const hasRecent = await hasRecentEvent({ email, eventType, windowMinutes: 5 });
+  if (hasRecent) {
+    console.log(`[EmailService] Magic link email deduped for ${email} (recent event exists)`);
+    await logEvent({
+      email,
+      eventType,
+      context: { deduped: true },
+      success: true,
+    });
+    return { success: true, deduped: true };
+  }
+
+  try {
+    // Build magic link URL
+    const baseUrl = process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const verifyUrl = `${baseUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${redirectUrl ? `&redirect=${encodeURIComponent(redirectUrl)}` : ''}`;
+    const brandName = process.env.EMAIL_BRAND_NAME || 'AltText AI';
+
+    // Simple HTML email template for magic link
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Sign in to ${brandName}</title>
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #f8f9fa; border-radius: 8px; padding: 30px; text-align: center;">
+            <h1 style="color: #2c3e50; margin-bottom: 20px;">Sign in to ${brandName}</h1>
+            <p style="color: #666; margin-bottom: 30px;">Click the button below to sign in to your account. This link will expire in 1 hour.</p>
+            <a href="${verifyUrl}" style="display: inline-block; background: #007bff; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; margin-bottom: 30px;">Sign in</a>
+            <p style="color: #999; font-size: 14px; margin-top: 30px;">If you didn't request this link, you can safely ignore this email.</p>
+            <p style="color: #999; font-size: 12px; margin-top: 20px;">Or copy and paste this link into your browser:<br><a href="${verifyUrl}" style="color: #007bff; word-break: break-all;">${verifyUrl}</a></p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const text = `Sign in to ${brandName}\n\nClick the link below to sign in to your account. This link will expire in 1 hour.\n\n${verifyUrl}\n\nIf you didn't request this link, you can safely ignore this email.`;
+
+    const subject = `Sign in to ${brandName}`;
+
+    const tags = [
+      { name: 'event', value: 'magic_link' },
+    ];
+
+    const result = await sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+      tags,
+    });
+
+    // Log event (success or failure)
+    await logEvent({
+      email,
+      eventType,
+      context: { hasRedirect: !!redirectUrl },
+      success: result.success,
+      emailId: result.id,
+      errorMessage: result.success ? null : result.error,
+    });
+
+    if (!result.success) {
+      console.error(`[EmailService] Failed to send magic link email to ${email}:`, result.error);
+      return { success: false, error: result.error };
+    }
+
+    console.log(`[EmailService] Magic link email sent to ${email}`);
+    return { success: true, emailId: result.id };
+  } catch (error) {
+    // Log exception
+    await logEvent({
+      email,
+      eventType,
+      context: {},
+      success: false,
+      errorMessage: error.message,
+    });
+    console.error(`[EmailService] Exception sending magic link email:`, error);
+    return { success: false, error: error.message || 'Failed to send email' };
+  }
+}
+
 module.exports = {
   sendWaitlistWelcome,
   sendDashboardWelcome,
@@ -818,4 +934,5 @@ module.exports = {
   sendPasswordReset,
   sendUsageSummary,
   subscribe,
+  sendMagicLink,
 };

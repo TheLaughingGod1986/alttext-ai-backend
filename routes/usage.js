@@ -8,6 +8,7 @@ const { supabase, handleSupabaseResponse } = require('../db/supabase-client');
 const { optionalAuth, authenticateToken } = require('../auth/jwt');
 const siteService = require('../src/services/siteService');
 const licenseService = require('../services/licenseService');
+const usageService = require('../src/services/usageService');
 
 const router = express.Router();
 
@@ -631,6 +632,83 @@ async function resetOrganizationTokens() {
     throw error;
   }
 }
+
+/**
+ * POST /sync/usage
+ * Sync usage data from plugin
+ * Accepts daily counts, recent actions, version, plan, and settings
+ * Only stores snapshot if plugin had activity in last 24 hours
+ */
+router.post('/sync/usage', optionalAuth, async (req, res) => {
+  try {
+    const { email, plugin, version, usage, siteUrl, plan, settings, recentActions } = req.body;
+
+    // Validate required fields
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
+    }
+
+    if (!plugin) {
+      return res.status(400).json({
+        success: false,
+        error: 'Plugin slug is required',
+        code: 'MISSING_PLUGIN'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+
+    // Store usage snapshot
+    const snapshotResult = await usageService.storeUsageSnapshot({
+      email: emailLower,
+      plugin,
+      siteUrl,
+      version,
+      usage,
+      recentActions: recentActions || [],
+      plan: plan || 'free',
+      settings: settings || {},
+    });
+
+    if (!snapshotResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: snapshotResult.error || 'Failed to store usage snapshot',
+        code: 'SNAPSHOT_ERROR'
+      });
+    }
+
+    // If snapshot was skipped (no recent activity), return success but indicate skip
+    if (snapshotResult.skipped) {
+      return res.status(200).json({
+        success: true,
+        skipped: true,
+        reason: snapshotResult.reason,
+        message: 'Snapshot skipped - no recent activity in last 24 hours'
+      });
+    }
+
+    // Detect stale versions
+    const staleVersionsResult = await usageService.detectStaleVersions(emailLower);
+
+    return res.status(200).json({
+      success: true,
+      snapshotId: snapshotResult.snapshotId,
+      staleVersions: staleVersionsResult.success ? staleVersionsResult.staleVersions : [],
+    });
+  } catch (error) {
+    console.error('[Usage Routes] Error in /sync/usage:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to sync usage',
+      code: 'SYNC_ERROR'
+    });
+  }
+});
 
 module.exports = {
   router,
