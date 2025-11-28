@@ -205,8 +205,9 @@ async function getRecentEvents(email) {
       return [];
     }
 
-    // Format events to match spec
-    return (events || []).map((event) => ({
+    // Format events to match spec and ensure max 50 events
+    const limitedEvents = (events || []).slice(0, 50);
+    return limitedEvents.map((event) => ({
       event: event.event_name,
       created_at: event.created_at,
       meta: event.event_data || {},
