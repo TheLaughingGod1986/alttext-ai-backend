@@ -184,9 +184,19 @@ async function handleSuccessfulCheckout(session) {
     // Retrieve session with line_items expanded if not already present
     let sessionWithItems = session;
     if (!session.line_items) {
-      sessionWithItems = await stripe.checkout.sessions.retrieve(session.id, {
-        expand: ['line_items.data.price']
-      });
+      try {
+        sessionWithItems = await stripe.checkout.sessions.retrieve(session.id, {
+          expand: ['line_items.data.price']
+        });
+      } catch (error) {
+        console.error('[Checkout] Error retrieving session with line_items:', error);
+        throw new Error('Failed to retrieve checkout session details');
+      }
+    }
+
+    // Validate line_items exist
+    if (!sessionWithItems?.line_items?.data || sessionWithItems.line_items.data.length === 0) {
+      throw new Error('No line items found in checkout session');
     }
 
     const priceId = sessionWithItems.line_items.data[0].price.id;
