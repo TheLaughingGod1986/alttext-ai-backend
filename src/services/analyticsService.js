@@ -75,7 +75,8 @@ function checkThrottle(email, ip, eventName) {
     
     if (emailThrottle) {
       if (emailThrottle.resetAt > now) {
-        if (emailThrottle.count >= THROTTLE_CONFIG.EMAIL_MAX_EVENTS_PER_MINUTE) {
+        // Check if we've already reached the limit (count starts at 1, so 100 means we've logged 100 events)
+        if (emailThrottle.count > THROTTLE_CONFIG.EMAIL_MAX_EVENTS_PER_MINUTE) {
           return { throttled: true, reason: 'EMAIL_RATE_LIMIT_EXCEEDED' };
         }
         emailThrottle.count++;
