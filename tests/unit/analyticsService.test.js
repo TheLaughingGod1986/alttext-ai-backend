@@ -373,8 +373,9 @@ describe('Analytics Service', () => {
 
   describe('Throttling', () => {
     beforeEach(() => {
-      // Reset throttle maps by accessing internal function
-      // We'll test throttling through logEvent
+      // Clear throttle maps before each test
+      analyticsService.clearThrottleMaps();
+      supabaseMock.__reset();
     });
 
     it('should throttle when email rate limit is exceeded', async () => {
