@@ -56,7 +56,6 @@ describe('Generate endpoint', () => {
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
-      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test Post' }
