@@ -10,6 +10,7 @@ const { supabase } = require('../../db/supabase-client');
 const { getIdentityDashboard } = require('../services/identityService');
 const { getAnalyticsData } = require('../services/dashboardService');
 const billingService = require('../services/billingService');
+const creditsService = require('../services/creditsService');
 const plansConfig = require('../config/plans');
 
 const router = express.Router();
@@ -132,12 +133,19 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       quotaRemaining = Math.max(0, limit - monthlyImages);
     }
 
+    // Get credits balance
+    const creditsResult = await creditsService.getBalanceByEmail(email);
+    const creditsBalance = creditsResult.success ? (creditsResult.balance || 0) : 0;
+
     return res.status(200).json({
       ok: true,
       ...payload,
       subscriptionStatus,
       quotaRemaining,
       quotaUsed,
+      credits: {
+        balance: creditsBalance,
+      },
     });
   } catch (err) {
     console.error('[Dashboard] GET /dashboard error:', err);
