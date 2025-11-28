@@ -9,9 +9,6 @@ describe('Analytics Service', () => {
     // Clear throttle maps before each test
     analyticsService.clearThrottleMaps();
     jest.clearAllMocks();
-    // Clear module cache to ensure fresh schema imports
-    delete require.cache[require.resolve('../../src/validation/analyticsEventSchema')];
-    delete require.cache[require.resolve('../../src/services/analyticsService')];
   });
 
   describe('logEvent', () => {
