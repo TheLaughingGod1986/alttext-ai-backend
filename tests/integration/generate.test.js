@@ -55,6 +55,8 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test Post' }
@@ -84,6 +86,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('X-License-Key', 'org-license')
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'License Site' }
@@ -120,6 +123,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -149,6 +153,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -176,6 +181,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -201,6 +207,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -226,6 +233,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -256,6 +264,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         service: 'seo-ai-meta',
         type: 'meta',
@@ -280,6 +289,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .set('X-Wp-User-Id', '123')
       .set('X-Wp-User-Name', 'wpadmin')
       .send({
@@ -309,6 +319,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -335,6 +346,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('X-License-Key', 'out-of-quota-license')
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -379,6 +391,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: 'https://example.com/image.jpg' },
         context: { post_title: 'Test' }
@@ -402,6 +415,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         image_data: { url: '' }, // Empty URL
         context: { post_title: 'Test' }
@@ -431,6 +445,7 @@ describe('Generate endpoint', () => {
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
       .send({
         // Missing image_data entirely
         context: { post_title: 'Test' }
@@ -463,6 +478,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -493,6 +509,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -518,6 +535,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -550,6 +568,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -579,6 +598,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -608,6 +628,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -631,6 +652,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -658,6 +680,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
@@ -685,6 +708,7 @@ describe('Generate endpoint', () => {
       const res = await request(app)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           context: { post_title: 'Test' }
