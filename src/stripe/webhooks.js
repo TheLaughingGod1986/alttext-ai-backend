@@ -6,7 +6,9 @@
 const { getStripe } = require('../utils/stripeClient');
 const { supabase } = require('../../db/supabase-client');
 const billingService = require('../services/billingService');
+const creditsService = require('../services/creditsService');
 const emailService = require('../services/emailService');
+const analyticsService = require('../services/analyticsService');
 const { 
   handleSuccessfulCheckout, 
   handleSubscriptionUpdate, 
@@ -74,6 +76,10 @@ async function handleWebhookEvent(event) {
         await handleInvoicePaymentFailedWebhook(event.data.object);
         break;
 
+      case 'payment_intent.succeeded':
+        await handlePaymentIntentSucceeded(event.data.object);
+        break;
+
       default:
         console.log(`⚠️  Unhandled webhook event: ${event.type}`);
     }
@@ -110,10 +116,17 @@ async function handleCheckoutSessionCompleted(session) {
     customerEmail: session.customer_details?.email,
     userId: session.metadata?.userId,
     service: session.metadata?.service,
+    type: session.metadata?.type,
     timestamp: new Date().toISOString()
   });
   
   try {
+    // Check if this is a credit purchase
+    if (session.metadata?.type === 'credits') {
+      await handleCreditPurchase(session);
+      return;
+    }
+
     // Check if license already exists for this session (idempotency)
     const userId = session.metadata?.userId;
     if (userId) {
@@ -143,6 +156,67 @@ async function handleCheckoutSessionCompleted(session) {
       customerId: session.customer,
       timestamp: new Date().toISOString()
     });
+    throw error;
+  }
+}
+
+/**
+ * Handle credit purchase from checkout session
+ */
+async function handleCreditPurchase(session) {
+  try {
+    const stripe = getStripe();
+    if (!stripe) {
+      console.error('[Webhook] Stripe not configured for credit purchase');
+      return;
+    }
+
+    const email = session.customer_details?.email || session.metadata?.user_email;
+    if (!email) {
+      console.error('[Webhook] No email found in credit purchase session:', session.id);
+      return;
+    }
+
+    const emailLower = email.toLowerCase();
+    const amount = parseInt(session.metadata?.amount) || 1; // Default to 1 if not specified
+    const paymentIntentId = session.payment_intent;
+
+    // Get or create identity
+    const identityResult = await creditsService.getOrCreateIdentity(emailLower);
+    if (!identityResult.success) {
+      console.error('[Webhook] Failed to get/create identity for credit purchase:', identityResult.error);
+      return;
+    }
+
+    // Add credits
+    const addResult = await creditsService.addCredits(
+      identityResult.identityId,
+      amount,
+      paymentIntentId
+    );
+
+    if (!addResult.success) {
+      console.error('[Webhook] Failed to add credits:', addResult.error);
+      return;
+    }
+
+    console.log(`✅ Added ${amount} credits to ${emailLower}. New balance: ${addResult.newBalance}`);
+
+    // Log analytics event
+    analyticsService.logEvent({
+      email: emailLower,
+      eventName: 'credits_purchased',
+      plugin: session.metadata?.plugin_slug || 'alttext-ai',
+      source: 'server',
+      eventData: {
+        amount,
+        newBalance: addResult.newBalance,
+        paymentIntentId,
+        sessionId: session.id,
+      },
+    });
+  } catch (error) {
+    console.error('[Webhook] Error handling credit purchase:', error);
     throw error;
   }
 }
@@ -220,6 +294,28 @@ async function handleSubscriptionUpdated(event) {
   const syncResult = await billingService.syncSubscriptionFromWebhook(event);
   if (!syncResult.success) {
     console.error('[Webhook] Failed to sync subscription update:', syncResult.error);
+  }
+
+  // Log analytics event for plan changes
+  if (customerEmail && syncResult.success && syncResult.data?.subscription) {
+    const dbSubscription = syncResult.data.subscription;
+    const pluginSlug = dbSubscription.plugin_slug || 'alttext-ai';
+    
+    // Check if plan changed by comparing with existing subscription
+    // For now, log all subscription updates as potential plan changes
+    // In the future, we could compare old vs new plan
+    analyticsService.logEvent({
+      email: customerEmail,
+      eventName: 'plan_changed',
+      plugin: pluginSlug,
+      source: 'server',
+      eventData: {
+        subscriptionId: subscription.id,
+        plan: dbSubscription.plan,
+        status: dbSubscription.status,
+        stripePriceId: dbSubscription.stripe_price_id,
+      },
+    });
   }
 }
 
@@ -388,6 +484,33 @@ async function handleInvoicePaymentFailedWebhook(invoice) {
       return;
     }
 
+    // Determine plugin from subscription metadata
+    const subscriptionId = invoice.subscription;
+    let pluginSlug = 'alttext-ai'; // Default
+    if (subscriptionId) {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
+      } catch (error) {
+        console.error('[Webhook] Error retrieving subscription for payment failure:', error);
+      }
+    }
+
+    // Log analytics event for payment failure
+    analyticsService.logEvent({
+      email,
+      eventName: 'payment_failed',
+      plugin: pluginSlug,
+      source: 'server',
+      eventData: {
+        invoiceId: invoice.id,
+        subscriptionId: invoice.subscription,
+        amount: invoice.amount_due,
+        currency: invoice.currency,
+        attemptCount: invoice.attempt_count,
+      },
+    });
+
     // Send payment failed email
     // Note: We may need to add a sendPaymentFailed method to emailService
     // For now, we'll log it
@@ -400,6 +523,55 @@ async function handleInvoicePaymentFailedWebhook(invoice) {
   } catch (error) {
     console.error('[Webhook] Error handling payment failure:', error);
     throw error;
+  }
+}
+
+/**
+ * Handle payment_intent.succeeded event
+ * Used as backup for credit purchases if checkout.session.completed fails
+ */
+async function handlePaymentIntentSucceeded(paymentIntent) {
+  try {
+    // Only process if this is a credit purchase (check metadata)
+    if (paymentIntent.metadata?.type !== 'credits') {
+      // Not a credit purchase, skip
+      return;
+    }
+
+    console.log(`💰 Payment intent succeeded for credit purchase: ${paymentIntent.id}`);
+
+    const email = paymentIntent.metadata?.user_email || paymentIntent.receipt_email;
+    if (!email) {
+      console.error('[Webhook] No email found in payment intent:', paymentIntent.id);
+      return;
+    }
+
+    const emailLower = email.toLowerCase();
+    const amount = parseInt(paymentIntent.metadata?.amount) || 1;
+
+    // Get or create identity
+    const identityResult = await creditsService.getOrCreateIdentity(emailLower);
+    if (!identityResult.success) {
+      console.error('[Webhook] Failed to get/create identity for payment intent:', identityResult.error);
+      return;
+    }
+
+    // Add credits (idempotent check via payment intent ID)
+    const addResult = await creditsService.addCredits(
+      identityResult.identityId,
+      amount,
+      paymentIntent.id
+    );
+
+    if (!addResult.success) {
+      console.error('[Webhook] Failed to add credits from payment intent:', addResult.error);
+      return;
+    }
+
+    console.log(`✅ Added ${amount} credits from payment intent to ${emailLower}. New balance: ${addResult.newBalance}`);
+  } catch (error) {
+    console.error('[Webhook] Error handling payment intent succeeded:', error);
+    // Don't throw - payment already succeeded, credits can be added manually if needed
   }
 }
 

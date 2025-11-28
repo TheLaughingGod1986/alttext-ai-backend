@@ -27,7 +27,8 @@ function createTestServer() {
     '../../routes/license',
     '../../routes/organization',
     '../../routes/email',
-    '../../src/routes/email'
+    '../../src/routes/email',
+    '../../src/routes/analytics'
   ];
   
   routeModules.forEach(modulePath => {

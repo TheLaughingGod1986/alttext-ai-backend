@@ -5,9 +5,11 @@
 const express = require('express');
 const crypto = require('crypto');
 const { supabase } = require('../db/supabase-client');
-const { generateToken, hashPassword, comparePassword, authenticateToken } = require('./jwt');
+const { generateToken, hashPassword, comparePassword, authenticateToken, generateRefreshToken, verifyRefreshToken, REFRESH_TOKEN_EXPIRES_IN } = require('./jwt');
 const emailService = require('../src/services/emailService');
 const licenseService = require('../services/licenseService');
+const { getOrCreateIdentity } = require('../src/services/identityService');
+const billingService = require('../src/services/billingService');
 
 const router = express.Router();
 
@@ -175,24 +177,81 @@ router.post('/register', async (req, res) => {
 
 /**
  * Login user
+ * Supports both password and magic link flows
+ * - If password is provided: traditional password login
+ * - If only email is provided: send magic link email
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, redirectUrl } = req.body;
 
     // Validate input
-    if (!email || !password) {
+    if (!email) {
       return res.status(400).json({
-        error: 'Email and password are required',
-        code: 'MISSING_FIELDS'
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
       });
     }
 
+    const emailLower = email.toLowerCase();
+
+    // Magic link flow (no password provided)
+    if (!password) {
+      // Generate magic link token
+      const token = generateResetToken(); // Reuse reset token generator
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Store token in password_reset_tokens table (reuse for magic links)
+      // We'll use a special type or just reuse the table
+      // For now, store it and we'll check in verify endpoint
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', emailLower)
+        .single();
+
+      // Always return success to prevent email enumeration
+      if (user) {
+        // Invalidate any existing unused tokens
+        await supabase
+          .from('password_reset_tokens')
+          .update({ used: true })
+          .eq('userId', user.id)
+          .eq('used', false);
+
+        // Store new token
+        await supabase
+          .from('password_reset_tokens')
+          .insert({
+            userId: user.id,
+            token,
+            expiresAt: expiresAt.toISOString(),
+            used: false
+          });
+
+        // Send magic link email
+        emailService.sendMagicLink({
+          email: emailLower,
+          token,
+          redirectUrl
+        }).catch(err => {
+          console.error('Failed to send magic link email:', err);
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a magic link has been sent.',
+        method: 'magic_link'
+      });
+    }
+
+    // Password login flow
     // Find user
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email.toLowerCase())
+      .eq('email', emailLower)
       .single();
 
     if (userError || !user) {
@@ -211,10 +270,38 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Generate JWT token
-    const token = generateToken(user);
+    // Get or create identity
+    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
+    
+    // Get subscription plan
+    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
+    const plan = subscriptionCheck.plan || 'free';
 
-    // Service-specific default limits (if tokens_remaining not available)
+    // Generate JWT token with identityId
+    const tokenPayload = {
+      id: user.id,
+      identityId: identity?.id || user.id,
+      email: user.email,
+      plan: plan
+    };
+    const token = generateToken(tokenPayload);
+
+    // Generate and store refresh token
+    const refreshToken = generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+
+    if (identity) {
+      await supabase
+        .from('identities')
+        .update({
+          refresh_token: refreshToken,
+          refresh_token_expires_at: refreshExpiresAt.toISOString(),
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('id', identity.id);
+    }
+
+    // Service-specific default limits
     const defaultLimits = {
       'alttext-ai': 50,
       'seo-ai-meta': 10
@@ -224,10 +311,12 @@ router.post('/login', async (req, res) => {
     res.json({
       success: true,
       token,
+      refreshToken,
       user: {
         id: user.id,
+        identityId: identity?.id || user.id,
         email: user.email,
-        plan: user.plan,
+        plan: plan,
         tokensRemaining: user.tokens_remaining || user.tokensRemaining || defaultLimits[userService] || 50,
         credits: user.credits || 0,
         resetDate: user.reset_date || user.resetDate,
@@ -245,30 +334,178 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * Get current user info
+ * Verify magic link token
+ * POST /auth/verify
  */
-router.get('/me', authenticateToken, async (req, res) => {
+router.post('/verify', async (req, res) => {
   try {
+    const { email, token, redirectUrl } = req.body;
+
+    // Validate input
+    if (!email || !token) {
+      return res.status(400).json({
+        error: 'Email and token are required',
+        code: 'MISSING_FIELDS'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+
+    // Find user
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, plan, created_at')
-      .eq('id', req.user.id)
+      .select('id')
+      .eq('email', emailLower)
       .single();
 
     if (userError || !user) {
       return res.status(404).json({
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
+        error: 'Invalid verification token',
+        code: 'INVALID_TOKEN'
       });
+    }
+
+    // Find valid token
+    const { data: resetToken, error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('userId', user.id)
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString())
+      .single();
+
+    if (tokenError || !resetToken) {
+      return res.status(400).json({
+        error: 'Invalid or expired verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Mark token as used
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetToken.id);
+
+    // Get or create identity
+    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
+    
+    // Get subscription plan
+    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
+    const plan = subscriptionCheck.plan || 'free';
+
+    // Generate JWT token with identityId
+    const tokenPayload = {
+      id: user.id,
+      identityId: identity?.id || user.id,
+      email: emailLower,
+      plan: plan
+    };
+    const jwtToken = generateToken(tokenPayload);
+
+    // Generate and store refresh token
+    const refreshToken = generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+
+    if (identity) {
+      await supabase
+        .from('identities')
+        .update({
+          refresh_token: refreshToken,
+          refresh_token_expires_at: refreshExpiresAt.toISOString(),
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('id', identity.id);
     }
 
     res.json({
       success: true,
+      token: jwtToken,
+      refreshToken,
       user: {
-        ...user,
-        credits: user.credits || 0
-      }
+        id: user.id,
+        identityId: identity?.id || user.id,
+        email: emailLower,
+        plan: plan
+      },
+      redirectUrl: redirectUrl || null
     });
+
+  } catch (error) {
+    console.error('Verify error:', error);
+    res.status(500).json({
+      error: 'Failed to verify token',
+      code: 'VERIFY_ERROR'
+    });
+  }
+});
+
+/**
+ * Get current user info
+ * Returns full profile from identities table with subscription and installations
+ */
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email not found in token',
+        code: 'MISSING_EMAIL'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+    const identityId = req.user.identityId || req.user.id;
+
+    // Fetch all data in parallel
+    const [identityResult, userResult, subscriptionResult, installationsResult] = await Promise.all([
+      // Get identity
+      supabase
+        .from('identities')
+        .select('*')
+        .eq('id', identityId)
+        .single(),
+      
+      // Get user (legacy support)
+      supabase
+        .from('users')
+        .select('id, email, plan, created_at')
+        .eq('email', emailLower)
+        .single(),
+      
+      // Get subscription
+      billingService.checkSubscription(emailLower, 'alttext-ai'),
+      
+      // Get installations
+      supabase
+        .from('plugin_installations')
+        .select('*')
+        .eq('email', emailLower)
+        .order('last_seen_at', { ascending: false }),
+    ]);
+
+    const identity = identityResult.data;
+    const user = userResult.data;
+    const subscription = subscriptionResult.subscription;
+    const installations = installationsResult.data || [];
+
+    // Build response
+    const response = {
+      success: true,
+      user: {
+        id: user?.id || identityId,
+        identityId: identity?.id || identityId,
+        email: emailLower,
+        plan: subscriptionResult.plan || user?.plan || 'free',
+        subscription: subscription || null,
+        installations: installations,
+        createdAt: identity?.created_at || user?.created_at,
+        lastSeenAt: identity?.last_seen_at,
+      }
+    };
+
+    res.json(response);
 
   } catch (error) {
     console.error('Get user error:', error);

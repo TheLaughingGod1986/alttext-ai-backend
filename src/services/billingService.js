@@ -7,6 +7,8 @@
 const { supabase } = require('../../db/supabase-client');
 const { getStripe } = require('../utils/stripeClient');
 const emailService = require('./emailService');
+const usageService = require('./usageService');
+const plansConfig = require('../config/plans');
 
 /**
  * Create or get Stripe customer for an email
@@ -374,6 +376,147 @@ async function listSubscriptions(email) {
   return getUserSubscriptions(email);
 }
 
+/**
+ * Check subscription for a user and plugin
+ * Returns subscription tier and limits
+ * @param {string} email - User email address
+ * @param {string} plugin - Plugin slug (default: 'alttext-ai')
+ * @returns {Promise<Object>} Result with subscription tier, plan, and limits
+ */
+async function checkSubscription(email, plugin = 'alttext-ai') {
+  try {
+    const emailLower = email.toLowerCase();
+    
+    // Get active subscription for this plugin
+    const subscriptionResult = await getSubscriptionByPlugin(emailLower, plugin);
+    
+    if (!subscriptionResult.success) {
+      return {
+        success: false,
+        error: subscriptionResult.error,
+        tier: 'free',
+        plan: 'free',
+        limits: plansConfig[plugin]?.free || { tokens: 50 },
+      };
+    }
+
+    const subscription = subscriptionResult.subscription;
+    
+    // If no active subscription, return free tier
+    if (!subscription || subscription.status !== 'active') {
+      return {
+        success: true,
+        tier: 'free',
+        plan: 'free',
+        limits: plansConfig[plugin]?.free || { tokens: 50 },
+        subscription: null,
+      };
+    }
+
+    // Get plan limits from config
+    const plan = subscription.plan || 'free';
+    const pluginConfig = plansConfig[plugin] || plansConfig['alttext-ai'];
+    const planLimits = pluginConfig[plan] || pluginConfig.free;
+
+    return {
+      success: true,
+      tier: plan,
+      plan: plan,
+      limits: planLimits,
+      subscription: subscription,
+    };
+  } catch (error) {
+    console.error('[BillingService] Exception checking subscription:', error);
+    return {
+      success: false,
+      error: error.message,
+      tier: 'free',
+      plan: 'free',
+      limits: plansConfig[plugin]?.free || { tokens: 50 },
+    };
+  }
+}
+
+/**
+ * Enforce subscription limits for a user
+ * Checks current usage against plan limits
+ * @param {string} email - User email address
+ * @param {string} plugin - Plugin slug (default: 'alttext-ai')
+ * @param {number} requestedCount - Number of images requested (default: 1)
+ * @returns {Promise<Object>} Result with allowed status, remaining, and limit
+ */
+async function enforceSubscriptionLimits(email, plugin = 'alttext-ai', requestedCount = 1) {
+  try {
+    const emailLower = email.toLowerCase();
+    
+    // Get subscription info
+    const subscriptionCheck = await checkSubscription(emailLower, plugin);
+    
+    if (!subscriptionCheck.success) {
+      // On error, default to free tier limits
+      const freeLimits = plansConfig[plugin]?.free || { tokens: 50 };
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: freeLimits.tokens,
+        plan: 'free',
+        error: subscriptionCheck.error,
+      };
+    }
+
+    const { tier, plan, limits } = subscriptionCheck;
+    
+    // Agency plan is unlimited
+    if (plan === 'agency') {
+      return {
+        allowed: true,
+        remaining: Infinity,
+        limit: Infinity,
+        plan: 'agency',
+        unlimited: true,
+      };
+    }
+
+    // Get current usage
+    const usageResult = await usageService.getUsageSummary(emailLower);
+    
+    if (!usageResult.success) {
+      // On error, be conservative and deny
+      return {
+        allowed: false,
+        remaining: 0,
+        limit: limits.tokens || 50,
+        plan: plan,
+        error: usageResult.error,
+      };
+    }
+
+    const monthlyImages = usageResult.usage?.monthlyImages || 0;
+    const limit = limits.tokens || 50;
+    const remaining = Math.max(0, limit - monthlyImages);
+    const allowed = remaining >= requestedCount;
+
+    return {
+      allowed,
+      remaining,
+      limit,
+      plan: plan,
+      used: monthlyImages,
+    };
+  } catch (error) {
+    console.error('[BillingService] Exception enforcing subscription limits:', error);
+    // On error, be conservative and deny
+    const freeLimits = plansConfig[plugin]?.free || { tokens: 50 };
+    return {
+      allowed: false,
+      remaining: 0,
+      limit: freeLimits.tokens,
+      plan: 'free',
+      error: error.message,
+    };
+  }
+}
+
 module.exports = {
   createOrGetCustomer,
   createSubscription,
@@ -383,5 +526,7 @@ module.exports = {
   getUserSubscriptions,
   listSubscriptions, // Alias for getUserSubscriptions
   getSubscriptionByPlugin,
+  checkSubscription,
+  enforceSubscriptionLimits,
 };
 
