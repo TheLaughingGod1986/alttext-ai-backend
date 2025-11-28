@@ -6,7 +6,14 @@
 const express = require('express');
 const { authenticateToken } = require('../../auth/jwt');
 const billingService = require('../services/billingService');
-const creditsService = require('../services/creditsService');
+// Optional: creditsService may not exist in all environments
+let creditsService;
+try {
+  creditsService = require('../services/creditsService');
+} catch (e) {
+  // creditsService not available, will handle gracefully in routes that use it
+  creditsService = null;
+}
 const { getStripe } = require('../utils/stripeClient');
 const { z } = require('zod');
 const rateLimit = require('express-rate-limit');
@@ -489,6 +496,12 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
     }
 
     // Spend credits
+    if (!creditsService) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
+    }
     const result = await creditsService.spendCredits(identityId, amount, metadata);
 
     if (!result.success) {
@@ -538,6 +551,12 @@ router.get('/credits/balance', billingRateLimiter, authenticateToken, async (req
     const email = req.user.email.toLowerCase();
 
     // Get or create identity
+    if (!creditsService) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
+    }
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
       return res.status(500).json({
@@ -593,6 +612,12 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
     const limit = Math.min(parseInt(req.query.limit) || 50, 100); // Max 100 per page
 
     // Get or create identity
+    if (!creditsService) {
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
+    }
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
       return res.status(500).json({
