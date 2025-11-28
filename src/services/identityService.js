@@ -135,26 +135,51 @@ async function refreshJwt(oldToken) {
  * @returns {Promise<Object>} Dashboard data with installations, subscription, and usage
  */
 async function getIdentityDashboard(email) {
-  const lower = email.toLowerCase();
+  try {
+    const lower = email.toLowerCase();
 
-  // Fetch all data in parallel
-  const [installationsResult, subscription, usageSummary] = await Promise.all([
-    // Get installations
-    supabase
-      .from('plugin_installations')
-      .select('*')
-      .eq('email', lower),
-    // Get subscription
-    getSubscriptionForEmail(lower),
-    // Get usage summary
-    usageService.getUsageSummary(lower),
-  ]);
+    // Fetch all data in parallel
+    const [installationsResult, subscription, usageSummary] = await Promise.all([
+      // Get installations
+      supabase
+        .from('plugin_installations')
+        .select('*')
+        .eq('email', lower),
+      // Get subscription
+      getSubscriptionForEmail(lower),
+      // Get usage summary
+      usageService.getUsageSummary(lower),
+    ]);
 
-  return {
-    installations: installationsResult.data || [],
-    subscription: subscription || null,
-    usage: usageSummary.usage || {},
-  };
+    // Extract installations data or use empty array
+    const installations = installationsResult.data || [];
+    if (installationsResult.error && installationsResult.error.code !== 'PGRST116') {
+      // PGRST116 is "not found" which is fine, log other errors
+      console.error('[IdentityService] Error fetching installations:', installationsResult.error);
+    }
+
+    // Extract usage data or use defaults
+    let usage = {};
+    if (usageSummary && usageSummary.success && usageSummary.usage) {
+      usage = usageSummary.usage;
+    } else if (usageSummary && !usageSummary.success) {
+      console.error('[IdentityService] Error fetching usage:', usageSummary.error);
+    }
+
+    return {
+      installations,
+      subscription: subscription || null,
+      usage,
+    };
+  } catch (err) {
+    console.error('[IdentityService] Error in getIdentityDashboard:', err);
+    // Return defaults on error
+    return {
+      installations: [],
+      subscription: null,
+      usage: {},
+    };
+  }
 }
 
 module.exports = {
