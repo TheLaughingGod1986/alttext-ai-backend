@@ -64,7 +64,8 @@ function createTestServer() {
           if (server && typeof server.unref === 'function') {
             server.unref();
           }
-          return server;
+          // Always return the server, even if unref was called
+          return server || this;
         }
       }
       return originalServerListen.apply(this, args);
