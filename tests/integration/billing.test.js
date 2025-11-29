@@ -11,13 +11,21 @@ let app;
 
 describe('Billing routes', () => {
   beforeAll(() => {
+    console.log('[billing.test] beforeAll: Creating test server...');
     app = createTestServer();
+    console.log('[billing.test] beforeAll: createTestServer returned:', { 
+      type: typeof app, 
+      isNull: app === null, 
+      isUndefined: app === undefined,
+      hasListen: typeof app?.listen 
+    });
     if (!app) {
       throw new Error('Failed to create test server: createTestServer returned null');
     }
     if (typeof app.listen !== 'function') {
       throw new Error('Failed to create test server: app is not an Express app');
     }
+    console.log('[billing.test] beforeAll: Test server created successfully');
   });
   beforeAll(() => {
     process.env.ALTTEXT_AI_STRIPE_PRICE_PRO = 'price_pro';
@@ -54,6 +62,12 @@ describe('Billing routes', () => {
   });
 
   test('returns plans', async () => {
+    console.log('[billing.test] returns plans test: app state:', { 
+      type: typeof app, 
+      isNull: app === null, 
+      isUndefined: app === undefined,
+      hasListen: typeof app?.listen 
+    });
     // Ensure app is set - if it's null, the beforeAll should have failed
     if (!app || typeof app.listen !== 'function') {
       throw new Error(`app is invalid in test: type=${typeof app}, isNull=${app === null}, hasListen=${typeof app?.listen}`);

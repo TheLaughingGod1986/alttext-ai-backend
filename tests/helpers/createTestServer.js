@@ -39,6 +39,7 @@ function createTestServer() {
   }
   
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
+  // This patch is critical for GitHub Actions sandbox environment
   if (!listenPatched) {
     const http = require('http');
     const originalServerListen = http.Server.prototype.listen;
@@ -49,17 +50,29 @@ function createTestServer() {
         const port = args[0];
         const hasHost = typeof args[1] === 'string';
         const hasCallback = typeof args[1] === 'function' || typeof args[2] === 'function';
-        const cb = typeof args[1] === 'function' ? args[1] : args[2];
+        
         // If host already specified, respect it; otherwise force localhost
         if (!hasHost) {
-          const server = originalServerListen.call(this, port, '127.0.0.1', cb);
-          if (server && typeof server.unref === 'function') {
-            server.unref();
+          // Determine callback - could be args[1] or args[2]
+          const cb = typeof args[1] === 'function' ? args[1] : (typeof args[2] === 'function' ? args[2] : undefined);
+          
+          // Call original listen with localhost
+          // If callback exists, pass it; otherwise just pass port and hostname
+          const result = cb 
+            ? originalServerListen.call(this, port, '127.0.0.1', cb)
+            : originalServerListen.call(this, port, '127.0.0.1');
+          
+          // Unref to prevent keeping process alive, but always return the server
+          // Supertest needs the server instance to call address() on it
+          if (result && typeof result.unref === 'function') {
+            result.unref();
           }
-          // Always return the server, even if unref was called
-          return server || this;
+          // Always return the server instance (result) or this if result is falsy
+          // This ensures supertest can call address() on the returned value
+          return result || this;
         }
       }
+      // If host is specified or port is not a number, use original behavior
       return originalServerListen.apply(this, args);
     };
     listenPatched = true;
