@@ -16,6 +16,14 @@ const axios = require('axios');
 const app = createTestServer();
 
 describe('Generate endpoint', () => {
+  // Helper function to mock checkSubscription middleware query
+  function mockCheckSubscription() {
+    supabaseMock.__queueResponse('subscriptions', 'select', {
+      data: null,
+      error: null
+    });
+  }
+
   // Helper function to mock site service queries
   function mockSiteService(siteHash = 'test-site-hash', tokensUsed = 0, siteUrl = null) {
     const resetDate = new Date();
@@ -83,7 +91,19 @@ describe('Generate endpoint', () => {
   });
 
   test('generates alt text with JWT auth', async () => {
-    // Queue site service mocks FIRST (they're called early in the request)
+    // Queue checkSubscription middleware mocks FIRST (runs before site service)
+    mockCheckSubscription();
+    // If no subscription, checkCreditsFallback is called - mock identities query
+    supabaseMock.__queueResponse('identities', 'select', {
+      data: null,
+      error: { code: 'PGRST116' }
+    });
+    supabaseMock.__queueResponse('identities', 'insert', {
+      data: { id: 'identity-123', email: 'gen@example.com' },
+      error: null
+    });
+    
+    // Queue site service mocks (they're called early in the request)
     mockSiteService();
     
     // Then queue other mocks
@@ -121,6 +141,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generates alt text with license key auth', async () => {
+    mockCheckSubscription();
     mockSiteService();
     
     supabaseMock.__queueResponse('organizations', 'select', {
@@ -154,6 +175,7 @@ describe('Generate endpoint', () => {
   // Additional generate endpoint tests
 
   test('generate requires authentication', async () => {
+    mockCheckSubscription();
     mockSiteService();
     const res = await request(app)
       .post('/api/generate')
@@ -168,6 +190,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles missing API key', async () => {
+    mockCheckSubscription();
     mockSiteService();
     const originalKey = process.env.ALTTEXT_OPENAI_API_KEY;
     delete process.env.ALTTEXT_OPENAI_API_KEY;
@@ -195,6 +218,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles quota exhausted', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 32, plan: 'free' }, error: null });
@@ -225,6 +249,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles OpenAI API errors', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 33, plan: 'free' }, error: null });
@@ -252,6 +277,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles OpenAI rate limiting', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 34, plan: 'free' }, error: null });
@@ -279,6 +305,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles timeout errors', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 35, plan: 'free' }, error: null });
@@ -306,6 +333,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles meta generation type', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 36, plan: 'free' }, error: null });
@@ -339,6 +367,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles WordPress user info in headers', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 37, plan: 'free' }, error: null });
@@ -366,6 +395,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate uses credits when tokens exhausted', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 38, plan: 'free' }, error: null });
@@ -431,6 +461,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles invalid OpenAI API key', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 39, plan: 'free' }, error: null });
@@ -470,6 +501,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles missing image URL', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 40, plan: 'free' }, error: null });
@@ -501,6 +533,7 @@ describe('Generate endpoint', () => {
   });
 
   test('generate handles missing image_data object', async () => {
+    mockCheckSubscription();
     mockSiteService();
     supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
     supabaseMock.__queueResponse('users', 'select', { data: { id: 41, plan: 'free' }, error: null });
