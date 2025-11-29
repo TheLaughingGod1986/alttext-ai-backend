@@ -4,9 +4,24 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const jestMock = require('jest-mock');
 
+// Mock the checkout module before it's imported by routes
+jest.mock('../../src/stripe/checkout', () => {
+  const mockHandleSuccessfulCheckout = jest.fn().mockResolvedValue(undefined);
+  const mockHandleSubscriptionUpdate = jest.fn().mockResolvedValue(undefined);
+  const mockHandleInvoicePaid = jest.fn().mockResolvedValue(undefined);
+  
+  return {
+    createCheckoutSession: jest.fn().mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' }),
+    createCustomerPortalSession: jest.fn().mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' }),
+    handleSuccessfulCheckout: mockHandleSuccessfulCheckout,
+    handleSubscriptionUpdate: mockHandleSubscriptionUpdate,
+    handleInvoicePaid: mockHandleInvoicePaid
+  };
+});
+
 const checkoutModule = require('../../src/stripe/checkout');
-const checkoutSpy = jest.spyOn(checkoutModule, 'createCheckoutSession').mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
-const portalSpy = jest.spyOn(checkoutModule, 'createCustomerPortalSession').mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
+const checkoutSpy = checkoutModule.createCheckoutSession;
+const portalSpy = checkoutModule.createCustomerPortalSession;
 let server;
 
 describe('Billing routes', () => {
@@ -30,8 +45,10 @@ describe('Billing routes', () => {
 
   beforeEach(() => {
     supabaseMock.__reset();
-    checkoutSpy.mockClear().mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
-    portalSpy.mockClear().mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
+    checkoutSpy.mockClear();
+    checkoutSpy.mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
+    portalSpy.mockClear();
+    portalSpy.mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
     
     // Reset Stripe mock and ensure default implementation
     const stripeMock = require('../mocks/stripe.mock');
@@ -1208,7 +1225,10 @@ describe('Billing routes', () => {
 
       webhookMiddleware(req, res, next);
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid webhook signature' });
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'INVALID_SIGNATURE',
+        message: expect.stringContaining('Invalid webhook signature')
+      }));
 
       // Restore
       if (originalSecret) {
