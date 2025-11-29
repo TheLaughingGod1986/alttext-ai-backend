@@ -7,6 +7,13 @@ jest.mock('axios', () => ({
   })
 }));
 
+// Mock accessControlService FIRST (before other service mocks) to ensure it's hoisted
+// Note: requireSubscription uses '../services/accessControlService' from src/middleware/
+// So we need to mock it from the middleware's perspective
+jest.mock('../../src/services/accessControlService', () => ({
+  evaluateAccess: jest.fn().mockResolvedValue({ allowed: true })
+}));
+
 // Mock subscription/credits/usage services used by checkSubscription middleware
 jest.mock('../../src/services/billingService', () => ({
   getSubscriptionForEmail: jest.fn(async () => ({ success: true, subscription: null })),
@@ -148,6 +155,39 @@ describe('Generate endpoint', () => {
       }
     });
     siteServiceMock.__setState(0, 50, 'free');
+    
+    // Reset accessControlService mock
+    const accessControlService = require('../../src/services/accessControlService');
+    accessControlService.evaluateAccess.mockClear();
+    accessControlService.evaluateAccess.mockResolvedValue({ allowed: true });
+    
+    // Ensure siteService mocks are properly set up
+    siteServiceMock.getOrCreateSite.mockResolvedValue({
+      site_hash: 'test-site-hash',
+      token_limit: 50,
+      tokens_used: 0,
+      tokens_remaining: 50,
+      plan: 'free',
+      reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    });
+    siteServiceMock.checkSiteQuota.mockResolvedValue({
+      hasAccess: true,
+      hasQuota: true,
+      used: 0,
+      limit: 50,
+      remaining: 50,
+      plan: 'free',
+      resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      site_hash: 'test-site-hash'
+    });
+    siteServiceMock.getSiteUsage.mockResolvedValue({
+      used: 0,
+      limit: 50,
+      remaining: 50,
+      plan: 'free',
+      resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      site_hash: 'test-site-hash'
+    });
   });
 
   test('generates alt text with JWT auth', async () => {
@@ -195,6 +235,10 @@ describe('Generate endpoint', () => {
         context: { post_title: 'Test Post' }
       });
 
+    if (res.status !== 200) {
+      console.log('Response status:', res.status);
+      console.log('Response body:', JSON.stringify(res.body, null, 2));
+    }
     expect(res.status).toBe(200);
     expect(res.body.alt_text).toBe('Generated alt text.');
     expect(axios.post).toHaveBeenCalled();

@@ -37,7 +37,13 @@ const imageDataSchema = z.object({
  */
 const generateRequestSchema = z.object({
   image_data: imageDataSchema.optional(),
-  context: z.string().optional(),
+  context: z.union([
+    z.string(),
+    z.object({
+      post_title: z.string().optional(),
+      filename: z.string().optional(),
+    }).passthrough() // Allow additional properties
+  ]).optional(),
   regenerate: z.boolean().optional().default(false),
   service: z.enum(['alttext-ai', 'seo-ai-meta']).optional().default('alttext-ai'),
   type: z.enum(['alt-text', 'meta']).optional(),
@@ -46,9 +52,12 @@ const generateRequestSchema = z.object({
   model: z.string().optional(),
 }).refine(
   (data) => {
-    // For meta generation, context is required
+    // For meta generation, context is required (as string)
     if (data.type === 'meta' || (data.service === 'seo-ai-meta' && !data.image_data)) {
-      return data.context && data.context.trim().length > 0;
+      if (typeof data.context === 'string') {
+        return data.context.trim().length > 0;
+      }
+      return !!data.context;
     }
     // For alt text generation, image_data is required
     return !!data.image_data;
