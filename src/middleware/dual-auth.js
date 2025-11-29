@@ -300,27 +300,57 @@ async function authenticateBySiteHashForQuota(req, res, next) {
 }
 
 /**
- * Combined authentication: Try JWT/License first, fallback to site hash
+ * Combined authentication: Try JWT/License first, then set up site hash for quota tracking
  * This is the main middleware for /api/generate endpoint
- * Updated to prioritize X-Site-Hash for quota tracking
+ * Updated to handle both JWT/license auth AND site hash for quota tracking
  */
 async function combinedAuth(req, res, next) {
-  // Check for X-Site-Hash first (required for quota tracking)
+  // First, try JWT or license key authentication (to set req.user or req.organization)
+  const authHeader = req.headers['authorization'];
+  const jwtToken = authHeader && authHeader.split(' ')[1];
+  const licenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
 
+  // If JWT or license key is provided, authenticate with that first
+  if (jwtToken || licenseKey) {
+    // Authenticate with JWT/license first (sets req.user or req.organization)
+    // Use a flag to track if we should continue after dualAuthenticate
+    let jwtAuthSucceeded = false;
+    
+    dualAuthenticate(req, res, (err) => {
+      if (err) {
+        // JWT/license auth failed - error response already sent
+        return;
+      }
+      
+      jwtAuthSucceeded = true;
+      
+      // After JWT/license auth succeeds, also set up site hash for quota tracking if provided
+      if (siteHash) {
+        authenticateBySiteHashForQuota(req, res, (err2) => {
+          if (err2) {
+            // If site hash setup fails, continue anyway (JWT auth succeeded)
+            // Site hash is mainly for quota tracking, not required if JWT auth worked
+            console.warn('[CombinedAuth] Site hash setup failed, but JWT auth succeeded:', err2.message);
+          }
+          // Continue to next middleware regardless
+          next();
+        });
+      } else {
+        // No site hash, proceed to next middleware
+        next();
+      }
+    });
+    
+    // Return early - the callback will handle next()
+    return;
+  }
+
+  // No JWT/license, but check for site hash (for free tier)
   if (siteHash) {
     // Use site hash authentication for quota tracking
     // This allows free tier sites to work without JWT/license
     return authenticateBySiteHashForQuota(req, res, next);
-  }
-
-  // Fallback to dual auth (JWT or license key)
-  const authHeader = req.headers['authorization'];
-  const jwtToken = authHeader && authHeader.split(' ')[1];
-  const licenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
-
-  if (jwtToken || licenseKey) {
-    return dualAuthenticate(req, res, next);
   }
 
   // No authentication provided

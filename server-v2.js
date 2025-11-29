@@ -1135,39 +1135,53 @@ app.post('/api/webhook/reset', async (req, res) => {
   return app;
 }
 
-// Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  console.error('Stack:', error.stack);
-  // Don't exit - let the server continue running
-  // Render will restart if needed
-});
+// Export factory function as default
+module.exports = createApp;
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise);
-  console.error('Reason:', reason);
-  
-  // Send to Sentry if available
-  if (Sentry) {
-    Sentry.captureException(reason);
-  }
-  
-  // Don't exit - let the server continue running
-});
+// Export helper functions for partner API
+module.exports.requestChatCompletion = requestChatCompletion;
+module.exports.buildPrompt = buildPrompt;
+module.exports.buildUserMessage = buildUserMessage;
 
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  
-  // Send to Sentry if available
-  if (Sentry) {
-    Sentry.captureException(error);
-  }
-  
-  // Exit process for uncaught exceptions (they're usually fatal)
-  process.exit(1);
-});
+// ============================================================================
+// PROCESS-LEVEL ERROR HANDLERS
+// ============================================================================
+// These handlers run ONLY when the server is started via CLI (require.main === module)
+// They do NOT run during Jest tests, keeping tests isolated and predictable
+// ============================================================================
+if (require.main === module) {
+  process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+    console.error('Stack:', error.stack);
+    
+    // Send to Sentry if available
+    if (Sentry) {
+      Sentry.captureException(error);
+    }
+    
+    // Exit process for uncaught exceptions (they're usually fatal)
+    process.exit(1);
+  });
 
-// Production startup (when run directly)
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise);
+    console.error('Reason:', reason);
+    
+    // Send to Sentry if available
+    if (Sentry) {
+      Sentry.captureException(reason);
+    }
+    
+    // Don't exit - let the server continue running
+  });
+}
+
+// ============================================================================
+// PRODUCTION STARTUP
+// ============================================================================
+// Only starts HTTP server when run with: node server-v2.js
+// Never runs during tests
+// ============================================================================
 if (require.main === module) {
   const app = createApp();
   app.listen(PORT, () => {
@@ -1184,11 +1198,3 @@ if (require.main === module) {
     process.exit(0);
   });
 }
-
-// Export factory function as default
-module.exports = createApp;
-
-// Export helper functions for partner API
-module.exports.requestChatCompletion = requestChatCompletion;
-module.exports.buildPrompt = buildPrompt;
-module.exports.buildUserMessage = buildUserMessage;
