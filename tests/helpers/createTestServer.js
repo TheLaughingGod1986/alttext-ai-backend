@@ -26,27 +26,16 @@ jest.mock('../../db/supabase-client', () => {
 
 let listenPatched = false;
 
-// Cache for server instance to make createTestServer() idempotent
-// This prevents unnecessary module cache clearing which can interfere with other tests
-// Note: Cache is per-process, shared across all test files
-let cachedServer = null;
-let cachedServerPath = null;
-let cacheInitialized = false;
-
 /** 
  * Create a test server instance
- * Idempotent: returns cached instance if available and valid, otherwise creates new one
- * Only clears module cache when necessary (e.g., module failed to load or returned invalid result)
+ * Always returns a valid Express app instance
+ * Uses module cache when available, only clears cache when module fails to load or returns invalid result
  */
 function createTestServer() {
   // Ensure NODE_ENV is set to test BEFORE any modules are loaded
   // This must happen first to ensure mocks are used
   if (process.env.NODE_ENV !== 'test') {
     process.env.NODE_ENV = 'test';
-    // If NODE_ENV changed, invalidate cache
-    cachedServer = null;
-    cachedServerPath = null;
-    cacheInitialized = false;
   }
   
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
@@ -76,32 +65,18 @@ function createTestServer() {
     listenPatched = true;
   }
   
-  // Try to use cached server if available and valid
-  // The cached server instance itself is what matters - it's a JavaScript object
-  // that persists even if the module cache is cleared
-  if (cacheInitialized && cachedServer && typeof cachedServer.listen === 'function') {
-    // Double-check the cached server is still valid
-    // Express apps are JavaScript objects that persist even if module cache is cleared
-    try {
-      // Verify it's still callable (has listen method)
-      if (typeof cachedServer.listen === 'function') {
-        return cachedServer;
-      }
-    } catch (e) {
-      // Cache is invalid, clear it and reload
-      cachedServer = null;
-      cachedServerPath = null;
-      cacheInitialized = false;
-    }
-  }
-  
   // Try to load server - use cached module if available, otherwise load fresh
   let app;
   const serverPath = require.resolve('../../server-v2');
   
   try {
-    // Try to require the server - will use cache if available, otherwise load fresh
-    app = require('../../server-v2');
+    // First attempt: try to use cached module if available
+    if (require.cache[serverPath]) {
+      app = require('../../server-v2');
+    } else {
+      // Module not in cache, require it (will be cached automatically)
+      app = require('../../server-v2');
+    }
     
     // Validate the app
     if (!app) {
@@ -134,15 +109,10 @@ function createTestServer() {
       }
     }
     
-    // Validate one more time before caching
+    // Final validation - ensure we never return null
     if (!app || typeof app.listen !== 'function') {
-      throw new Error('server-v2 module did not export a valid Express app after loading');
+      throw new Error('server-v2 module did not export a valid Express app');
     }
-    
-    // Cache the valid server instance
-    cachedServer = app;
-    cachedServerPath = serverPath;
-    cacheInitialized = true;
     
     return app;
   } catch (error) {
@@ -163,16 +133,6 @@ function createTestServer() {
         if (!app || typeof app.listen !== 'function') {
           throw new Error('server-v2 module did not export an Express app after cache clear');
         }
-        
-        // Validate one more time before caching
-        if (!app || typeof app.listen !== 'function') {
-          throw new Error('server-v2 module did not export a valid Express app after cache clear and retry');
-        }
-        
-        // Cache the valid server instance
-        cachedServer = app;
-        cachedServerPath = serverPath;
-        cacheInitialized = true;
         
         return app;
       } catch (retryError) {
