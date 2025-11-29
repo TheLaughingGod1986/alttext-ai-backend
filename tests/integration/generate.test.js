@@ -17,36 +17,51 @@ const app = createTestServer();
 
 describe('Generate endpoint', () => {
   // Helper function to mock site service queries
-  function mockSiteService(siteHash = 'test-site-hash', tokensUsed = 0) {
+  function mockSiteService(siteHash = 'test-site-hash', tokensUsed = 0, siteUrl = null) {
     const resetDate = new Date();
     resetDate.setMonth(resetDate.getMonth() + 1);
     resetDate.setDate(1);
     
-    // getOrCreateSite - first select (check if exists)
+    const siteData = {
+      site_hash: siteHash,
+      site_url: siteUrl || null,
+      plan: 'free',
+      tokens_used: tokensUsed,
+      tokens_remaining: 50 - tokensUsed,
+      token_limit: 50,
+      reset_date: resetDate.toISOString()
+    };
+    
+    // 1. getOrCreateSite - first select (check if exists)
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
+      data: siteData,
       error: null
     });
-    // checkSiteQuota/getSiteUsage - second select
+    // 2. checkSiteQuota -> getSiteUsage - second select
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
+      data: siteData,
       error: null
     });
-    // deductSiteQuota - third select (get site before update)
+    // 3. getSiteUsage (line 284) - third select - EXTRA QUERY I MISSED!
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed, tokens_remaining: 50 - tokensUsed, token_limit: 50, reset_date: resetDate.toISOString() },
+      data: siteData,
       error: null
     });
-    // deductSiteQuota - update with select().single() (returns updated site)
+    // 4. deductSiteQuota - fourth select (get site before update) - CRITICAL: must return site
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1, token_limit: 50, reset_date: resetDate.toISOString() },
+      data: siteData,
       error: null
     });
-    // deductSiteQuota - insert into usage_tracking
+    // 5. deductSiteQuota - update().select().single() returns updated site (uses 'select' method)
+    supabaseMock.__queueResponse('sites', 'select', {
+      data: { ...siteData, tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1 },
+      error: null
+    });
+    // 6. deductSiteQuota - insert into usage_tracking
     supabaseMock.__queueResponse('usage_tracking', 'insert', { error: null });
-    // getSiteUsage after deduction - fourth select
+    // 7. getSiteUsage after deduction (line 474) - final select
     supabaseMock.__queueResponse('sites', 'select', {
-      data: { site_hash: siteHash, plan: 'free', tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1, token_limit: 50, reset_date: resetDate.toISOString() },
+      data: { ...siteData, tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1 },
       error: null
     });
   }
@@ -68,8 +83,10 @@ describe('Generate endpoint', () => {
   });
 
   test('generates alt text with JWT auth', async () => {
+    // Queue site service mocks FIRST (they're called early in the request)
     mockSiteService();
     
+    // Then queue other mocks
     supabaseMock.__queueResponse('organization_members', 'select', {
       data: [],
       error: null
