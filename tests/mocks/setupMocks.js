@@ -3,6 +3,21 @@ const mockAuthEmail = {
   sendPasswordResetEmail: jest.fn(() => Promise.resolve())
 };
 
+// Ensure NODE_ENV is test before any mocks
+if (process.env.NODE_ENV !== 'test') {
+  process.env.NODE_ENV = 'test';
+}
+
+// Mock @supabase/supabase-js directly to prevent storage-js from loading
+// This prevents the "Class extends value" error
+jest.mock('@supabase/supabase-js', () => {
+  // Return a mock createClient that returns the supabase mock
+  const supabaseMock = require('./supabase.mock');
+  return {
+    createClient: jest.fn(() => supabaseMock.supabase)
+  };
+});
+
 jest.mock('../../db/supabase-client', () => require('./supabase.mock'));
 jest.mock('stripe', () => require('./stripe.mock'));
 jest.mock('resend', () => require('./resend.mock'));
