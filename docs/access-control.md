@@ -2,216 +2,219 @@
 
 ## Overview
 
-The access control system provides centralized, standardized access control for AI generation endpoints. It evaluates subscription status, credit balance, and plan limits to determine whether a user can perform AI actions.
+The backend uses a unified access control system that combines subscription status, credit balance, and plan limits to determine whether a user can perform AI generation actions.
 
-## Error Format
+## NO_ACCESS Error Codes
 
-All access control failures return a standardized JSON response:
+All access denials return a standardized error format:
 
 ```json
 {
   "ok": false,
   "code": "NO_ACCESS",
-  "reason": "subscription_inactive",
-  "message": "Your subscription is inactive. Please renew to continue."
+  "reason": "<specific_reason>",
+  "message": "<human_readable_message>"
 }
 ```
 
-### Response Fields
+### Error Code Constants
 
-- `ok` (boolean): Always `false` for access denials
-- `code` (string): Always `"NO_ACCESS"` for access control failures
-- `reason` (string): Specific reason code (see below)
-- `message` (string): Human-readable error message
+Defined in `src/constants/errorCodes.js`:
 
-### HTTP Status Codes
+- **NO_ACCESS**: Main error code for all access denials
+- **REASONS**: Specific denial reasons:
+  - `no_subscription`: User has no subscription and no credits
+  - `subscription_inactive`: User's subscription exists but is inactive
+  - `no_credits`: User has no credits remaining
+  - `plan_limit`: User has reached their plan limit
+  - `no_identity`: User identity could not be determined
 
-- `401 Unauthorized`: Authentication required (no email in token)
-- `403 Forbidden`: Access denied (subscription/credits check failed)
-- `500 Internal Server Error`: Unexpected server error
+## requireSubscription Middleware
 
-## Access Denial Reasons
+**Location:** `src/middleware/requireSubscription.js`
 
-The `reason` field can be one of the following values:
+### Purpose
 
-### `no_subscription`
-User has no active subscription and no credits remaining.
+Enforces subscription-based access control for AI generation endpoints. Must be used after `authenticateToken` middleware.
 
-**Message**: "No active subscription found. Please subscribe to continue."
-
-**When it occurs**:
-- User has no subscription record
-- User has a free plan with 0 credits
-- User's subscription was never created
-
-### `subscription_inactive`
-User has a subscription but it is not in active status.
-
-**Message**: "Your subscription is inactive. Please renew to continue."
-
-**When it occurs**:
-- Subscription status is `cancelled`, `past_due`, or `incomplete`
-- Subscription has expired (renews_at is in the past)
-- Subscription is in trial but trial has ended
-
-### `no_credits`
-User has no credits remaining and cannot use the service.
-
-**Message**: "You have no credits remaining. Please purchase credits or subscribe."
-
-**When it occurs**:
-- User has 0 credits and no active subscription
-- User's credits have been exhausted
-
-### `plan_limit`
-User has reached their plan's usage limit.
-
-**Message**: "You have reached your plan limit. Please upgrade to continue."
-
-**When it occurs**:
-- User has exceeded monthly quota for their plan
-- Note: This reason is reserved for future implementation
-
-### `no_identity`
-User authentication failed or email is missing from token.
-
-**Message**: "Authentication required."
-
-**When it occurs**:
-- No JWT token provided
-- Token is invalid or expired
-- Token does not contain email field
-
-## Access Control Logic
-
-The access control system evaluates access in the following order:
-
-1. **Identity Check**: Verify user identity exists (via `creditsService.getOrCreateIdentity`)
-2. **Subscription Status**: Load subscription status (via `billingService.getUserSubscriptionStatus`)
-3. **Credit Balance**: Load credit balance (via `creditsService.getBalanceByEmail`)
-4. **Decision Logic**:
-   - If no subscription → Check credits → Deny if no credits
-   - If inactive subscription → Check credits → Deny if no credits
-   - If credits > 0 → **Allow** (credits override subscription)
-   - If active subscription → **Allow** (even with 0 credits)
-   - Default → Deny
-
-### Credits Override
-
-**Important**: If a user has credits > 0, access is granted regardless of subscription status. This allows credit-based users to use the service even if their subscription is inactive or expired.
-
-## Implementation Details
-
-### Middleware: `requireSubscription`
-
-The `requireSubscription` middleware must be used after `authenticateToken` middleware:
+### Usage
 
 ```javascript
-app.post('/api/generate', authenticateToken, requireSubscription, handler);
+const requireSubscription = require('./src/middleware/requireSubscription');
+
+router.post('/api/generate', authenticateToken, requireSubscription, handler);
 ```
 
-**Flow**:
-1. Extract email from `req.user.email`
-2. If no email → Return 401 with `no_identity` reason
-3. Call `accessControlService.evaluateAccess(email, req.path)`
-4. If allowed → Call `next()`
-5. If denied → Return 403 with standardized error format
+### Behavior
 
-### Service: `accessControlService`
+1. Extracts email from authenticated request (`req.user.email`)
+2. Calls `accessControlService.evaluateAccess()` to check access
+3. If allowed: proceeds to next middleware/handler
+4. If denied: returns 403 with standardized NO_ACCESS error
 
-The `accessControlService.evaluateAccess(email, action)` function:
+### Error Responses
 
-- **Never throws errors** - always returns allow/deny decision
-- **Fail-safe**: On any error, denies access (prioritizes blocking over allowing)
-- Returns `{ allowed: true }` or `{ allowed: false, code, reason, message }`
-
-### Service: `billingService.getUserSubscriptionStatus`
-
-Returns standardized subscription status:
-
-```javascript
-{
-  plan: "free" | "pro" | "agency",
-  status: "active" | "cancelled" | "past_due" | "incomplete",
-  renewsAt: ISO string | null,
-  canceledAt: ISO string | null,
-  trialEndsAt: ISO string | null,
-  raw: {...} // Raw subscription data
-}
-```
-
-## Plugin/Website Integration
-
-### Handling NO_ACCESS Errors
-
-When the plugin or website receives a `NO_ACCESS` error, it should:
-
-1. **Check the `reason` field** to determine the specific issue
-2. **Display appropriate UI** based on the reason:
-   - `no_subscription` → Show subscription upgrade modal
-   - `subscription_inactive` → Show subscription renewal prompt
-   - `no_credits` → Show credit purchase options
-   - `plan_limit` → Show plan upgrade options
-3. **Redirect to billing** if needed:
-   - Use the billing endpoints to create checkout sessions
-   - Link to customer portal for subscription management
-
-### Example Error Handling
-
-```javascript
-try {
-  const response = await fetch('/api/generate', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'X-Site-Hash': siteHash,
-    },
-    body: JSON.stringify({ image_data, service: 'alttext-ai' }),
-  });
-
-  const data = await response.json();
-
-  if (!data.ok && data.code === 'NO_ACCESS') {
-    switch (data.reason) {
-      case 'no_subscription':
-        showUpgradeModal();
-        break;
-      case 'subscription_inactive':
-        showRenewalPrompt();
-        break;
-      case 'no_credits':
-        showCreditPurchase();
-        break;
-      default:
-        showGenericError(data.message);
-    }
-    return;
+- **401 Unauthorized**: No email in token
+  ```json
+  {
+    "ok": false,
+    "code": "NO_ACCESS",
+    "reason": "no_identity",
+    "message": "Authentication required."
   }
+  ```
 
-  // Handle successful generation
-} catch (error) {
-  // Handle network errors
+- **403 Forbidden**: Access denied
+  ```json
+  {
+    "ok": false,
+    "code": "NO_ACCESS",
+    "reason": "no_subscription",
+    "message": "No active subscription found. Please subscribe to continue."
+  }
+  ```
+
+## accessControlService Logic
+
+**Location:** `src/services/accessControlService.js`
+
+### evaluateAccess Function
+
+Evaluates access for a user to perform an AI action by combining:
+- Subscription status (from `billingService`)
+- Credit balance (from `creditsService`)
+- Plan limits
+
+### Decision Logic Flow
+
+1. **No Subscription or Free Plan**
+   - If user has credits > 0: **ALLOW** (credits override)
+   - If user has no credits: **DENY** (`no_subscription`)
+
+2. **Inactive Subscription**
+   - If user has credits > 0: **ALLOW** (credits override)
+   - If user has no credits: **DENY** (`subscription_inactive`)
+
+3. **Credits Override**
+   - If user has credits > 0: **ALLOW** (regardless of subscription status)
+
+4. **Free Plan**
+   - If user has credits > 0: **ALLOW**
+   - If user has no credits: **DENY** (`no_credits`)
+
+5. **Active Paid Subscription**
+   - **ALLOW** (even without credits - plan limits enforced elsewhere)
+
+6. **Default (Fail-safe)**
+   - **DENY** (`no_credits`)
+
+### Key Principles
+
+- **Credits Override**: Credits always allow access, even if subscription is inactive
+- **Fail-Safe**: On any error, access is denied (prioritize blocking over allowing)
+- **Never Throws**: Service always returns allow/deny decision, never throws errors
+
+## How Plugin/Website Should Interpret Denial Reasons
+
+### Client-Side Handling
+
+When receiving a `NO_ACCESS` error, clients should:
+
+1. **Check the `reason` field** (not just the `code`)
+2. **Display appropriate user message** from the `message` field
+3. **Take appropriate action** based on reason:
+
+#### `no_subscription`
+- **Action**: Show upgrade/subscribe prompt
+- **Message**: "You need a subscription or credits to use this feature"
+- **UI**: Display subscription plans or credit purchase options
+
+#### `subscription_inactive`
+- **Action**: Show renewal prompt
+- **Message**: "Your subscription has expired. Please renew to continue"
+- **UI**: Display renewal button or billing portal link
+
+#### `no_credits`
+- **Action**: Show credit purchase prompt
+- **Message**: "You have no credits remaining. Purchase credits to continue"
+- **UI**: Display credit pack purchase options
+
+#### `plan_limit`
+- **Action**: Show upgrade prompt
+- **Message**: "You've reached your plan limit. Upgrade to continue"
+- **UI**: Display upgrade options
+
+#### `no_identity`
+- **Action**: Re-authenticate user
+- **Message**: "Authentication required. Please log in again"
+- **UI**: Redirect to login
+
+### Example Client Code
+
+```javascript
+async function generateAltText(imageUrl) {
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ imageUrl })
+    });
+
+    const data = await response.json();
+
+    if (!data.ok && data.code === 'NO_ACCESS') {
+      switch (data.reason) {
+        case 'no_subscription':
+          showSubscribeModal();
+          break;
+        case 'subscription_inactive':
+          showRenewalPrompt();
+          break;
+        case 'no_credits':
+          showCreditPurchaseModal();
+          break;
+        case 'plan_limit':
+          showUpgradePrompt();
+          break;
+        case 'no_identity':
+          redirectToLogin();
+          break;
+      }
+      return { error: data.message };
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Generation error:', error);
+    return { error: 'Failed to generate alt text' };
+  }
 }
 ```
 
-## Testing
+## Integration Points
 
-### Unit Tests
+### Routes Using requireSubscription
 
-- `tests/unit/accessControlService.test.js`: Tests access control logic
-- `tests/unit/requireSubscription.test.js`: Tests middleware behavior
+- `/api/generate` - AI image generation
+- `/api/review` - AI content review
 
-### Integration Tests
+### Services Used
 
-- `tests/integration/accessControl.test.js`: Tests end-to-end access control scenarios
+- `billingService.getUserSubscriptionStatus()` - Gets subscription status
+- `creditsService.getOrCreateIdentity()` - Gets/creates user identity
+- `creditsService.getBalanceByEmail()` - Gets credit balance
 
-## Migration Notes
+## Error Handler Integration
 
-The new `requireSubscription` middleware replaces the previous `checkSubscription` middleware. Key differences:
+The `errorHandler` middleware maps `NO_ACCESS` to `access_denied` reason for consistent error responses across the API.
 
-1. **Standardized errors**: All errors use the `NO_ACCESS` code format
-2. **Credits override**: Credits now override subscription checks
-3. **Fail-safe**: Errors always result in denial (safer default)
+## Best Practices
 
-The old `checkSubscription` middleware can be deprecated but is kept for backward compatibility with legacy routes if needed.
-
+1. **Always check `reason` field** - Don't just check for `NO_ACCESS` code
+2. **Use `message` field for user display** - It contains human-readable text
+3. **Handle all reason types** - Don't assume only one type of denial
+4. **Credits override subscription** - Users with credits can always use the service
+5. **Fail-safe design** - Errors result in denial, not allowance
