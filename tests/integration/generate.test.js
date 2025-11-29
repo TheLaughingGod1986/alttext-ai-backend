@@ -9,7 +9,15 @@ jest.mock('axios', () => ({
 
 // Mock subscription/credits/usage services used by checkSubscription middleware
 jest.mock('../../src/services/billingService', () => ({
-  getSubscriptionForEmail: jest.fn(async () => ({ success: true, subscription: null }))
+  getSubscriptionForEmail: jest.fn(async () => ({ success: true, subscription: null })),
+  getUserSubscriptionStatus: jest.fn(async () => ({
+    plan: 'free',
+    status: 'inactive',
+    renewsAt: null,
+    canceledAt: null,
+    trialEndsAt: null,
+    raw: null,
+  }))
 }));
 
 jest.mock('../../src/services/creditsService', () => ({
@@ -18,6 +26,8 @@ jest.mock('../../src/services/creditsService', () => ({
     identityId: `${email || 'anon'}-identity`
   })),
   getBalance: jest.fn(async () => ({ success: true, balance: 5 })),
+  // getBalanceByEmail should return credits directly for access control
+  getBalanceByEmail: jest.fn(async () => ({ success: true, balance: 5 })),
   spendCredits: jest.fn(async () => ({ success: true, remainingBalance: 4 }))
 }));
 
@@ -187,6 +197,10 @@ describe('Generate endpoint', () => {
         context: { post_title: 'Test Post' }
       });
 
+    if (res.status !== 200) {
+      console.log('Response status:', res.status);
+      console.log('Response body:', JSON.stringify(res.body, null, 2));
+    }
     expect(res.status).toBe(200);
     expect(res.body.alt_text).toBe('Generated alt text.');
     expect(axios.post).toHaveBeenCalled();
