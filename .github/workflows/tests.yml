@@ -24,6 +24,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Set up test environment variables
+        run: |
+          echo "JWT_SECRET=test-jwt-secret-for-ci" >> $GITHUB_ENV
+          echo "NODE_ENV=test" >> $GITHUB_ENV
+
       - name: Run unit tests
         run: npm run test:unit
         timeout-minutes: 5
