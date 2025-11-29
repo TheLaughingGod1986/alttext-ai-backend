@@ -10,26 +10,23 @@ jest.mock('axios', () => ({
 // Mock subscription/credits/usage services used by checkSubscription middleware
 jest.mock('../../src/services/billingService', () => ({
   getSubscriptionForEmail: jest.fn(async () => ({ success: true, subscription: null })),
-  getUserSubscriptionStatus: jest.fn(async () => ({
-    plan: 'free',
-    status: 'inactive',
-    renewsAt: null,
-    canceledAt: null,
-    trialEndsAt: null,
-    raw: null,
-  }))
+  // Return null to trigger the first check (no subscription)
+  getUserSubscriptionStatus: jest.fn(async () => null)
 }));
 
-jest.mock('../../src/services/creditsService', () => ({
-  getOrCreateIdentity: jest.fn(async (email) => ({
-    success: true,
-    identityId: `${email || 'anon'}-identity`
-  })),
-  getBalance: jest.fn(async () => ({ success: true, balance: 5 })),
-  // getBalanceByEmail should return credits directly for access control
-  getBalanceByEmail: jest.fn(async () => ({ success: true, balance: 5 })),
-  spendCredits: jest.fn(async () => ({ success: true, remainingBalance: 4 }))
-}));
+jest.mock('../../src/services/creditsService', () => {
+  const mockGetBalanceByEmail = jest.fn(async () => ({ success: true, balance: 5 }));
+  
+  return {
+    getOrCreateIdentity: jest.fn(async (email) => ({
+      success: true,
+      identityId: `${email || 'anon'}-identity`
+    })),
+    getBalance: jest.fn(async () => ({ success: true, balance: 5 })),
+    getBalanceByEmail: mockGetBalanceByEmail,
+    spendCredits: jest.fn(async () => ({ success: true, remainingBalance: 4 }))
+  };
+});
 
 jest.mock('../../src/services/eventService', () => ({
   logEvent: jest.fn(async () => ({ success: true, eventId: 'event_123' })),
@@ -37,6 +34,7 @@ jest.mock('../../src/services/eventService', () => ({
   updateCreditsBalanceCache: jest.fn(async () => {}),
   getEventRollup: jest.fn(async () => ({ success: true, rollup: {} }))
 }));
+
 
 jest.mock('../../src/services/usageService', () => ({
   getUsageSummary: jest.fn(async () => ({
@@ -197,10 +195,6 @@ describe('Generate endpoint', () => {
         context: { post_title: 'Test Post' }
       });
 
-    if (res.status !== 200) {
-      console.log('Response status:', res.status);
-      console.log('Response body:', JSON.stringify(res.body, null, 2));
-    }
     expect(res.status).toBe(200);
     expect(res.body.alt_text).toBe('Generated alt text.');
     expect(axios.post).toHaveBeenCalled();
