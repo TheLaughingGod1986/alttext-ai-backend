@@ -267,6 +267,9 @@ async function handleSuccessfulCheckout(session) {
       .single();
 
     if (updateError) throw updateError;
+    if (!updatedUser) {
+      throw new Error(`User ${userId} not found after update`);
+    }
 
     console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
