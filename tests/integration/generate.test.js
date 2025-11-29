@@ -99,7 +99,7 @@ const { generateToken } = require('../../auth/jwt');
 const axios = require('axios');
 const siteServiceMock = require('../../src/services/siteService');
 
-const app = createTestServer();
+let app;
 
 describe('Generate endpoint', () => {
   // Helper function to mock checkSubscription middleware query
@@ -118,6 +118,15 @@ describe('Generate endpoint', () => {
   beforeAll(() => {
     process.env.ALTTEXT_OPENAI_API_KEY = 'test-openai-key';
     process.env.SEO_META_OPENAI_API_KEY = 'test-seo-meta-key';
+    try {
+      app = createTestServer();
+      if (!app) {
+        throw new Error('createTestServer returned null/undefined');
+      }
+    } catch (error) {
+      console.error('Error creating test server:', error);
+      throw error;
+    }
   });
 
   beforeEach(() => {
