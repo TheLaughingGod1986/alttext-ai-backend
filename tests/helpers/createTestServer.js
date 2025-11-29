@@ -17,6 +17,11 @@ let listenPatched = false;
  * Clears module cache to ensure clean state
  */
 function createTestServer() {
+  // Ensure NODE_ENV is set to test
+  if (process.env.NODE_ENV !== 'test') {
+    process.env.NODE_ENV = 'test';
+  }
+  
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
   if (!listenPatched) {
     const http = require('http');
@@ -67,8 +72,43 @@ function createTestServer() {
     }
   });
   
-  const app = require('../../server-v2');
-  return app;
+  try {
+    // Force clear the cache and require fresh
+    const serverPath = require.resolve('../../server-v2');
+    delete require.cache[serverPath];
+    
+    const app = require('../../server-v2');
+    
+    // Debug logging
+    if (!app) {
+      console.error('[createTestServer] server-v2 module returned null/undefined');
+      const mod = require.cache[serverPath];
+      console.error('[createTestServer] Module in cache:', mod ? 'exists' : 'missing');
+      if (mod && mod.exports) {
+        console.error('[createTestServer] Module exports type:', typeof mod.exports);
+        console.error('[createTestServer] Module exports keys:', Object.keys(mod.exports || {}).slice(0, 10));
+      }
+      throw new Error('server-v2 module returned null/undefined');
+    }
+    
+    if (typeof app.listen !== 'function') {
+      console.error('[createTestServer] app.listen is not a function');
+      console.error('[createTestServer] app type:', typeof app);
+      console.error('[createTestServer] app value:', app);
+      console.error('[createTestServer] app keys:', Object.keys(app || {}).slice(0, 10));
+      throw new Error('server-v2 module did not export an Express app (listen is not a function)');
+    }
+    
+    return app;
+  } catch (error) {
+    console.error('[createTestServer] Error loading server-v2:', error.message);
+    if (error.stack) {
+      const stackLines = error.stack.split('\n');
+      console.error('[createTestServer] Stack (first 15 lines):');
+      stackLines.slice(0, 15).forEach(line => console.error('  ', line));
+    }
+    throw error;
+  }
 }
 
 /**

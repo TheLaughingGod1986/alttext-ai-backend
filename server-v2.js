@@ -1123,8 +1123,25 @@ if (Sentry) {
 
 // Export utility functions for partner API
 // Export app and utility functions
-module.exports = Object.assign(app, {
-  requestChatCompletion,
-  buildPrompt,
-  buildUserMessage,
-});
+// Ensure app exists before exporting
+if (!app) {
+  console.error('[server-v2] ERROR: app is null/undefined at export time!');
+  throw new Error('Express app was not initialized');
+}
+
+// Export app and utility functions
+// Directly assign to app to ensure it's exported correctly
+if (typeof requestChatCompletion === 'function') {
+  app.requestChatCompletion = requestChatCompletion;
+}
+app.buildPrompt = buildPrompt;
+app.buildUserMessage = buildUserMessage;
+
+// Final check before export
+if (!app || typeof app.listen !== 'function') {
+  const error = new Error(`[server-v2] Invalid app at export: type=${typeof app}, hasListen=${typeof app?.listen}`);
+  console.error(error.message);
+  throw error;
+}
+
+module.exports = app;

@@ -78,9 +78,15 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const siteServiceMock = require('../../src/services/siteService');
 
-const app = createTestServer();
+let app;
 
 describe('License routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     supabaseMock.__reset();
     siteServiceMock.__setState(0, 50, 'free');

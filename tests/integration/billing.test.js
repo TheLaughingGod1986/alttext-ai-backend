@@ -7,9 +7,15 @@ const jestMock = require('jest-mock');
 const checkoutModule = require('../../src/stripe/checkout');
 const checkoutSpy = jest.spyOn(checkoutModule, 'createCheckoutSession').mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
 const portalSpy = jest.spyOn(checkoutModule, 'createCustomerPortalSession').mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
-const app = createTestServer();
+let app;
 
 describe('Billing routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeAll(() => {
     process.env.ALTTEXT_AI_STRIPE_PRICE_PRO = 'price_pro';
     process.env.FRONTEND_URL = 'https://app.test';
