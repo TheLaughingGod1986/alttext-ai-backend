@@ -50,6 +50,9 @@ describe('Billing Routes', () => {
 
   beforeAll(() => {
     app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
     // Create a test token for authentication
     testToken = createTestToken({ id: 'test-user-id', email: testEmail });
   });
