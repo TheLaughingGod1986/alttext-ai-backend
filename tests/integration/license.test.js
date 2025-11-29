@@ -1,13 +1,89 @@
+jest.mock('../../src/services/siteService', () => {
+  const state = { used: 0, remaining: 50, plan: 'free', limit: 50 };
+  const resetState = (used = 0, limit = 50, plan = 'free') => {
+    state.used = used;
+    state.limit = limit;
+    state.remaining = Math.max(0, limit - used);
+    state.plan = plan;
+    state.resetDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  };
+  resetState();
+
+  const buildSite = (siteHash = 'test-site-hash', siteUrl = null) => ({
+    site_hash: siteHash,
+    site_url: siteUrl || null,
+    token_limit: state.limit,
+    tokens_used: state.used,
+    tokens_remaining: state.remaining,
+    plan: state.plan,
+    reset_date: state.resetDate
+  });
+
+  return {
+    __setState: resetState,
+    getOrCreateSite: jest.fn(async (siteHash = 'test-site-hash', siteUrl = null) => buildSite(siteHash, siteUrl)),
+    checkSiteQuota: jest.fn(async (siteHash = 'test-site-hash') => ({
+      hasAccess: state.remaining > 0,
+      hasQuota: state.remaining > 0,
+      used: state.used,
+      limit: state.limit,
+      remaining: state.remaining,
+      plan: state.plan,
+      resetDate: state.resetDate,
+      site_hash: siteHash
+    })),
+    getSiteUsage: jest.fn(async (siteHash = 'test-site-hash') => ({
+      used: state.used,
+      limit: state.limit,
+      remaining: state.remaining,
+      plan: state.plan,
+      resetDate: state.resetDate,
+      site_hash: siteHash
+    })),
+    getSiteLicense: jest.fn(async (siteHash = 'test-site-hash') => ({
+      site_hash: siteHash,
+      plan: state.plan,
+      tokenLimit: state.limit,
+      tokensRemaining: state.remaining,
+      resetDate: state.resetDate
+    })),
+    deductSiteQuota: jest.fn(async (siteHash = 'test-site-hash', tokens = 1) => {
+      state.used += tokens;
+      state.remaining = Math.max(0, state.remaining - tokens);
+      return buildSite(siteHash);
+    }),
+    createFreeLicenseForSite: jest.fn(async (siteHash = 'test-site-hash', siteUrl = null) => {
+      const licenseKey = 'test-license-' + Math.random().toString(36).substr(2, 9);
+      return {
+        license: {
+          id: 1,
+          license_key: licenseKey,
+          plan: 'free',
+          service: 'alttext-ai',
+          token_limit: 50,
+          tokens_remaining: 50,
+          site_hash: siteHash,
+          site_url: siteUrl,
+          auto_attach_status: 'attached'
+        },
+        site: buildSite(siteHash, siteUrl)
+      };
+    })
+  };
+});
+
 const request = require('supertest');
 const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
+const siteServiceMock = require('../../src/services/siteService');
 
 const app = createTestServer();
 
 describe('License routes', () => {
   beforeEach(() => {
     supabaseMock.__reset();
+    siteServiceMock.__setState(0, 50, 'free');
   });
 
   describe('POST /api/license/activate', () => {
@@ -645,13 +721,9 @@ describe('License routes', () => {
 
     describe('License quota edge cases', () => {
       test('handles negative quota in organization', async () => {
-        // Mock site service queries
-        supabaseMock.__queueResponse('sites', 'select', {
-          data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
-          error: null
-        });
-        supabaseMock.__queueResponse('sites', 'select', {
-          data: { site_hash: 'test-hash', plan: 'free', tokens_used: 0, reset_date: new Date().toISOString() },
+        // Mock checkSubscription middleware
+        supabaseMock.__queueResponse('subscriptions', 'select', {
+          data: null,
           error: null
         });
         supabaseMock.__queueResponse('organizations', 'select', {
