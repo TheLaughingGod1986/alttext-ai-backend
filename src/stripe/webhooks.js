@@ -394,6 +394,10 @@ async function handleInvoicePaidWebhook(event) {
 
     // Get customer email
     const customer = await stripe.customers.retrieve(invoice.customer);
+    if (!customer) {
+      console.warn(`[Webhook] Customer not found: ${invoice.customer}`);
+      return;
+    }
     const email = customer.email?.toLowerCase();
 
     if (!email) {
@@ -480,6 +484,10 @@ async function handleInvoicePaymentFailedWebhook(invoice) {
 
     // Get customer email
     const customer = await stripe.customers.retrieve(invoice.customer);
+    if (!customer) {
+      console.warn(`[Webhook] Customer not found: ${invoice.customer}`);
+      return;
+    }
     const email = customer.email?.toLowerCase();
 
     if (!email) {
