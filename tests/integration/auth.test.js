@@ -4,7 +4,7 @@ const supabaseMock = require('../mocks/supabase.mock');
 const licenseServiceMock = require('../mocks/licenseService.mock');
 const emailService = require('../../src/services/emailService');
 const { generateToken, hashPassword } = require('../../auth/jwt');
-const { createLicenseSnapshot, createLicenseCreationResponse } = require('../mocks/createLicenseMock');
+const { createLicenseSnapshot, createLicenseCreationResponse } = require('../mocks/createLicenseMock');                                                         
 
 // Mock emailService
 jest.mock('../../src/services/emailService', () => ({
@@ -12,9 +12,16 @@ jest.mock('../../src/services/emailService', () => ({
   sendPasswordReset: jest.fn(),
 }));
 
-const app = createTestServer();
+let app;
 
 describe('Auth routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
+
   beforeEach(() => {
     supabaseMock.__reset();
     licenseServiceMock.__reset();

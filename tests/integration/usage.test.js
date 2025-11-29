@@ -3,10 +3,16 @@ const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 
-const app = createTestServer();
+let app;
 const token = generateToken({ id: 20, email: 'usage@example.com', plan: 'pro' });
 
 describe('Usage routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     supabaseMock.__reset();
   });
