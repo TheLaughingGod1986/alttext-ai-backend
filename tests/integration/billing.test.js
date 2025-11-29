@@ -11,9 +11,21 @@ let app;
 
 describe('Billing routes', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    try {
+      app = createTestServer();
+      if (!app) {
+        console.error('[billing.test] createTestServer returned null');
+        throw new Error('Failed to create test server: createTestServer returned null');
+      }
+      if (typeof app.listen !== 'function') {
+        console.error('[billing.test] app.listen is not a function, app type:', typeof app);
+        throw new Error('Failed to create test server: app is not an Express app');
+      }
+      console.log('[billing.test] Test server created successfully');
+    } catch (error) {
+      console.error('[billing.test] Error in beforeAll:', error.message);
+      console.error('[billing.test] Stack:', error.stack);
+      throw error; // Re-throw to fail the test suite
     }
   });
   beforeAll(() => {
@@ -22,6 +34,20 @@ describe('Billing routes', () => {
   });
 
   beforeEach(() => {
+    // Ensure app is set - if it's null, recreate it
+    if (!app) {
+      console.warn('[billing.test] app is null in beforeEach, recreating...');
+      try {
+        app = createTestServer();
+        if (!app) {
+          throw new Error('Failed to recreate test server in beforeEach');
+        }
+      } catch (error) {
+        console.error('[billing.test] Error recreating server in beforeEach:', error.message);
+        throw error;
+      }
+    }
+    
     supabaseMock.__reset();
     checkoutSpy.mockClear().mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
     portalSpy.mockClear().mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
