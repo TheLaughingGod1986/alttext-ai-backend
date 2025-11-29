@@ -1188,7 +1188,10 @@ describe('Billing routes', () => {
       // The exact behavior depends on how the mock is set up
       if (res.status.mock.calls.length > 0) {
         expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Invalid webhook signature' });
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          code: 'INVALID_SIGNATURE',
+          message: expect.stringContaining('Invalid webhook signature')
+        }));
         expect(next).not.toHaveBeenCalled();
       } else {
         // If mock doesn't work as expected, at least verify middleware doesn't crash
@@ -1272,7 +1275,10 @@ describe('Billing routes', () => {
       // Middleware should handle error - either return 400 or handle gracefully
       if (res.status.mock.calls.length > 0) {
         expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith({ error: 'Invalid webhook signature' });
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          code: 'INVALID_SIGNATURE',
+          message: expect.stringContaining('Invalid webhook signature')
+        }));
         expect(next).not.toHaveBeenCalled();
       } else {
         // If mock doesn't work as expected, at least verify middleware doesn't crash
