@@ -77,12 +77,40 @@ describe('Billing routes', () => {
   });
 
   test('returns plans', async () => {
+    // Debug: Check app state
+    console.log('[billing.test] returns plans test - app type:', typeof app, 'app is null:', app === null, 'app is undefined:', app === undefined);
+    
+    // Ensure app is set before test
+    if (!app) {
+      console.error('[billing.test] app is null in test, recreating...');
+      app = createTestServer();
+      if (!app) {
+        throw new Error('app is null and could not be recreated');
+      }
+      console.log('[billing.test] app recreated, type:', typeof app, 'has listen:', typeof app?.listen);
+    }
+    
+    // Double check before using
+    if (!app || typeof app.listen !== 'function') {
+      console.error('[billing.test] app is invalid before request:', { app, type: typeof app, hasListen: typeof app?.listen });
+      throw new Error(`app is invalid: ${app === null ? 'null' : app === undefined ? 'undefined' : 'not an Express app'}`);
+    }
+    
     const res = await request(app).get('/billing/plans');
     expect(res.status).toBe(200);
     expect(res.body.plans).toBeDefined();
   });
 
   test('creates checkout session', async () => {
+    // Ensure app is set before test
+    if (!app) {
+      console.error('[billing.test] app is null in creates checkout session test, recreating...');
+      app = createTestServer();
+      if (!app) {
+        throw new Error('app is null and could not be recreated');
+      }
+    }
+    
     supabaseMock.__queueResponse('users', 'select', {
       data: { id: 10, email: 'bill@example.com', stripe_customer_id: 'cus_test' },
       error: null
