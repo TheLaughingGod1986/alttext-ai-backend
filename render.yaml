@@ -26,6 +26,9 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
         # Your Supabase service role key
+      - key: SUPABASE_ANON_KEY
+        sync: false
+        # Supabase anonymous key (optional, for client-side operations)
 
       # JWT Authentication
       - key: JWT_SECRET
@@ -57,12 +60,26 @@ services:
         # Start with sk_test_..., upgrade to sk_live_... later
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
-      - key: STRIPE_PRICE_PRO
-        value: price_1SKgtuJl9Rm418cMtcxOZRCR
-      - key: STRIPE_PRICE_AGENCY
-        value: price_1SKgu1Jl9Rm418cM8MedRfqr
-      - key: STRIPE_PRICE_CREDITS
-        value: price_1SKgu2Jl9Rm418cM3b1Z9tUW
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+        # Stripe publishable key (optional, for frontend)
+      # AltText AI Stripe Prices
+      - key: ALTTEXT_AI_STRIPE_PRICE_PRO
+        sync: false
+        # Pro plan price ID for alttext-ai service
+      - key: ALTTEXT_AI_STRIPE_PRICE_AGENCY
+        sync: false
+        # Agency plan price ID for alttext-ai service
+      - key: ALTTEXT_AI_STRIPE_PRICE_CREDITS
+        sync: false
+        # Credits price ID for alttext-ai service
+      # SEO AI Meta Stripe Prices
+      - key: SEO_AI_META_STRIPE_PRICE_PRO
+        sync: false
+        # Pro plan price ID for seo-ai-meta service
+      - key: SEO_AI_META_STRIPE_PRICE_AGENCY
+        sync: false
+        # Agency plan price ID for seo-ai-meta service
 
       # Frontend URL (WordPress site)
       - key: FRONTEND_URL
@@ -85,6 +102,9 @@ services:
       - key: RESEND_FROM_EMAIL
         sync: false
         # Legacy support (optional, use EMAIL_FROM instead)
+      - key: RESEND_AUDIENCE_ID
+        sync: false
+        # Resend audience ID for subscriber management (optional)
 
       # Optional
       - key: WEBHOOK_SECRET
