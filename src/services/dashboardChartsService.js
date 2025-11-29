@@ -6,6 +6,7 @@
 
 const { supabase } = require('../../db/supabase-client');
 const creditsService = require('./creditsService');
+const eventService = require('./eventService');
 
 // Approximate tokens per image (if not available in usage_logs metadata)
 const DEFAULT_TOKENS_PER_IMAGE = 100;
@@ -89,16 +90,17 @@ async function getDailyUsage(email) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 29); // 30 days total
 
-    // Query usage_logs for last 30 days - include metadata if available
-    const { data: usageLogs, error } = await supabase
-      .from('usage_logs')
+    // Query events table for alttext_generated events (unified event system)
+    const { data: events, error } = await supabase
+      .from('events')
       .select('created_at, metadata')
       .eq('identity_id', identityId)
+      .eq('event_type', 'alttext_generated')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString());
 
     if (error) {
-      console.error('[DashboardChartsService] Error fetching daily usage:', error);
+      console.error('[DashboardChartsService] Error fetching daily usage from events:', error);
       // Return empty array with all days filled with 0
       const dateRange = generateDateRange(startDate, endDate);
       return dateRange.map(date => ({ date, images: 0, tokens: 0 }));
@@ -106,13 +108,16 @@ async function getDailyUsage(email) {
 
     // Group by date and calculate images and tokens
     const usageByDate = {};
-    (usageLogs || []).forEach((log) => {
-      const date = new Date(log.created_at).toISOString().split('T')[0];
+    (events || []).forEach((event) => {
+      const date = new Date(event.created_at).toISOString().split('T')[0];
       if (!usageByDate[date]) {
         usageByDate[date] = { images: 0, tokens: 0 };
       }
       usageByDate[date].images += 1;
-      usageByDate[date].tokens += extractTokensFromLog(log);
+      // Extract token count from metadata or use default
+      const imageCount = event.metadata?.imageCount || 1;
+      const tokens = event.metadata?.tokens || extractTokensFromLog({ metadata: event.metadata });
+      usageByDate[date].tokens += tokens * imageCount;
     });
 
     // Fill in all 30 days (even if 0 count)
@@ -169,16 +174,17 @@ async function getMonthlyUsage(email) {
     startDate.setMonth(startDate.getMonth() - 11); // 12 months total
     startDate.setDate(1); // First day of month
 
-    // Query usage_logs for last 12 months - include metadata if available
-    const { data: usageLogs, error } = await supabase
-      .from('usage_logs')
+    // Query events table for alttext_generated events (unified event system)
+    const { data: events, error } = await supabase
+      .from('events')
       .select('created_at, metadata')
       .eq('identity_id', identityId)
+      .eq('event_type', 'alttext_generated')
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString());
 
     if (error) {
-      console.error('[DashboardChartsService] Error fetching monthly usage:', error);
+      console.error('[DashboardChartsService] Error fetching monthly usage from events:', error);
       // Return empty array with all months filled with 0
       const monthRange = generateMonthRange(startDate, endDate);
       return monthRange.map(month => ({ month, images: 0, tokens: 0 }));
@@ -186,14 +192,17 @@ async function getMonthlyUsage(email) {
 
     // Group by month (YYYY-MM) and calculate images and tokens
     const usageByMonth = {};
-    (usageLogs || []).forEach((log) => {
-      const date = new Date(log.created_at);
+    (events || []).forEach((event) => {
+      const date = new Date(event.created_at);
       const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       if (!usageByMonth[month]) {
         usageByMonth[month] = { images: 0, tokens: 0 };
       }
       usageByMonth[month].images += 1;
-      usageByMonth[month].tokens += extractTokensFromLog(log);
+      // Extract token count from metadata or use default
+      const imageCount = event.metadata?.imageCount || 1;
+      const tokens = event.metadata?.tokens || extractTokensFromLog({ metadata: event.metadata });
+      usageByMonth[month].tokens += tokens * imageCount;
     });
 
     // Fill in all 12 months (even if 0 count)
@@ -256,18 +265,30 @@ async function getCreditTrend(email) {
 
     const currentPlan = subscription?.plan || 'free';
 
-    // Query credit transactions for last 30 days to build trend
+    // Query events table for credit-related events to build trend
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 29); // 30 days
 
-    const { data: transactions, error: transError } = await supabase
-      .from('credits_transactions')
-      .select('created_at, balance_after')
+    // Get credit purchase and usage events
+    const { data: creditEvents, error: transError } = await supabase
+      .from('events')
+      .select('created_at, credits_delta')
       .eq('identity_id', identityId)
+      .in('event_type', ['credit_purchase', 'credit_used', 'credit_refund'])
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString())
       .order('created_at', { ascending: true });
+
+    // Calculate balance_after for each event by accumulating credits_delta
+    let runningBalance = identity?.credits_balance || 0;
+    const transactions = (creditEvents || []).map(event => {
+      runningBalance += event.credits_delta || 0;
+      return {
+        created_at: event.created_at,
+        balance_after: runningBalance,
+      };
+    });
 
     if (transError) {
       console.error('[DashboardChartsService] Error fetching credit transactions:', transError);
@@ -471,15 +492,20 @@ async function getAnalyticsCharts(email) {
       return { heatmap: [], eventSummary: [] };
     }
 
-    // Query analytics_events for last 30 days
+    // Query events table for last 30 days (unified event system)
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 29);
 
+    // Get identity_id for querying events
+    if (!identityResult.success || !identityResult.identityId) {
+      return { heatmap: [], eventSummary: [] };
+    }
+
     const { data: events, error } = await supabase
-      .from('analytics_events')
-      .select('event_name, created_at')
-      .eq('email', emailLower)
+      .from('events')
+      .select('event_type, created_at')
+      .eq('identity_id', identityResult.identityId)
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString());
 
@@ -504,10 +530,10 @@ async function getAnalyticsCharts(email) {
 
     const heatmap = Object.values(heatmapMap);
 
-    // Build event summary: group by event_name
+    // Build event summary: group by event_type
     const eventSummaryMap = {};
     (events || []).forEach((event) => {
-      const eventType = event.event_name || 'unknown';
+      const eventType = event.event_type || 'unknown';
       if (!eventSummaryMap[eventType]) {
         eventSummaryMap[eventType] = { eventType, count: 0 };
       }
@@ -532,11 +558,17 @@ async function getRecentEvents(email) {
   try {
     const emailLower = email.toLowerCase();
 
-    // Query analytics_events for latest 50 events
+    // Get identity_id for querying events
+    const identityResult = await creditsService.getOrCreateIdentity(emailLower);
+    if (!identityResult.success || !identityResult.identityId) {
+      return [];
+    }
+
+    // Query events table for latest 50 events (unified event system)
     const { data: events, error } = await supabase
-      .from('analytics_events')
-      .select('event_name, created_at, event_data')
-      .eq('email', emailLower)
+      .from('events')
+      .select('event_type, created_at, metadata')
+      .eq('identity_id', identityResult.identityId)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -548,9 +580,9 @@ async function getRecentEvents(email) {
     // Format events to match spec and ensure max 50 events
     const limitedEvents = (events || []).slice(0, 50);
     return limitedEvents.map((event) => ({
-      event: event.event_name,
+      event: event.event_type,
       created_at: event.created_at,
-      meta: event.event_data || {},
+      meta: event.metadata || {},
     }));
   } catch (err) {
     console.error('[DashboardChartsService] Exception in getRecentEvents:', err);

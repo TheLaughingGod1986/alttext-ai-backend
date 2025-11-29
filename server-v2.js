@@ -80,6 +80,7 @@ app.use(cors({
 // Stripe webhook needs raw body - must come before express.json()
 app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route
+app.use('/credits/webhook', express.raw({ type: 'application/json' })); // Credits webhook route
 
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
 app.use(express.json({ limit: '2mb' }));
@@ -192,8 +193,10 @@ app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usag
 app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
 app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
 app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
+app.use('/events', require('./src/routes/events')); // Unified events routes (/events/log)
 app.use('/partner', require('./src/routes/partner')); // Partner API routes
-app.use('/credits', authenticateToken, require('./src/routes/credits')); // Credits routes (balance, transactions, purchase)
+// Credits webhook route (no auth required - called by Stripe)
+app.use('/credits', require('./src/routes/credits')); // Credits routes (includes webhook without auth, other routes use authenticateToken)
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {

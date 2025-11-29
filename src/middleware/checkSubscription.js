@@ -8,6 +8,7 @@
 const billingService = require('../services/billingService');
 const usageService = require('../services/usageService');
 const creditsService = require('../services/creditsService');
+const eventService = require('../services/eventService');
 const plansConfig = require('../config/plans');
 
 /**
@@ -113,7 +114,8 @@ async function checkSubscription(req, res, next) {
 
 /**
  * Check credits as fallback when no subscription exists
- * Allows request if user has credits > 0
+ * Uses event rollups to compute credit balance
+ * Allows request if user has credits > 0 from events
  */
 async function checkCreditsFallback(req, res, next, email) {
   try {
@@ -128,8 +130,8 @@ async function checkCreditsFallback(req, res, next, email) {
       });
     }
 
-    // Check credit balance
-    const balanceResult = await creditsService.getBalance(identityResult.identityId);
+    // Check credit balance from events table (source of truth)
+    const balanceResult = await eventService.getCreditBalance(identityResult.identityId);
     
     if (balanceResult.success && balanceResult.balance > 0) {
       // User has credits - set flag for credit deduction after successful generation

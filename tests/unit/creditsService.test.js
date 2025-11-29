@@ -7,6 +7,11 @@ const { supabase } = require('../../db/supabase-client');
 
 // Mock dependencies
 jest.mock('../../db/supabase-client');
+jest.mock('../../src/services/eventService', () => ({
+  logEvent: jest.fn(),
+  getCreditBalance: jest.fn(),
+  updateCreditsBalanceCache: jest.fn(),
+}));
 
 describe('creditsService', () => {
   beforeEach(() => {

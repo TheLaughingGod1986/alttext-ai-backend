@@ -20,31 +20,33 @@ const THROTTLE_CONFIG = {
   CLEANUP_INTERVAL_MS: 60000, // 1 minute
 };
 
-// Cleanup old throttle entries periodically
-setInterval(() => {
-  const now = Date.now();
-  
-  // Clean email throttle map
-  for (const [email, data] of emailThrottleMap.entries()) {
-    if (data.resetAt < now) {
-      emailThrottleMap.delete(email);
+// Cleanup old throttle entries periodically (skip in tests to avoid open handles)
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now();
+    
+    // Clean email throttle map
+    for (const [email, data] of emailThrottleMap.entries()) {
+      if (data.resetAt < now) {
+        emailThrottleMap.delete(email);
+      }
     }
-  }
-  
-  // Clean IP throttle map
-  for (const [ip, data] of ipThrottleMap.entries()) {
-    if (data.resetAt < now) {
-      ipThrottleMap.delete(ip);
+    
+    // Clean IP throttle map
+    for (const [ip, data] of ipThrottleMap.entries()) {
+      if (data.resetAt < now) {
+        ipThrottleMap.delete(ip);
+      }
     }
-  }
-  
-  // Clean duplicate event map
-  for (const [key, timestamp] of duplicateEventMap.entries()) {
-    if (timestamp + THROTTLE_CONFIG.DUPLICATE_WINDOW_MS < now) {
-      duplicateEventMap.delete(key);
+    
+    // Clean duplicate event map
+    for (const [key, timestamp] of duplicateEventMap.entries()) {
+      if (timestamp + THROTTLE_CONFIG.DUPLICATE_WINDOW_MS < now) {
+        duplicateEventMap.delete(key);
+      }
     }
-  }
-}, THROTTLE_CONFIG.CLEANUP_INTERVAL_MS);
+  }, THROTTLE_CONFIG.CLEANUP_INTERVAL_MS);
+}
 
 /**
  * Normalize email address

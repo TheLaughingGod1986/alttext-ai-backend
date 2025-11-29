@@ -10,11 +10,39 @@ jest.mock('express-rate-limit', () => {
   });
 });
 
+let listenPatched = false;
+
 /** 
  * Create a fresh test server instance
  * Clears module cache to ensure clean state
  */
 function createTestServer() {
+  // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
+  if (!listenPatched) {
+    const http = require('http');
+    const originalServerListen = http.Server.prototype.listen;
+    http.Server.prototype.listen = function (...args) {
+      // Normalize arguments so calls like listen(0) or listen(0, callback)
+      // bind to 127.0.0.1 instead of 0.0.0.0
+      if (typeof args[0] === 'number') {
+        const port = args[0];
+        const hasHost = typeof args[1] === 'string';
+        const hasCallback = typeof args[1] === 'function' || typeof args[2] === 'function';
+        const cb = typeof args[1] === 'function' ? args[1] : args[2];
+        // If host already specified, respect it; otherwise force localhost
+        if (!hasHost) {
+          const server = originalServerListen.call(this, port, '127.0.0.1', cb);
+          if (server && typeof server.unref === 'function') {
+            server.unref();
+          }
+          return server;
+        }
+      }
+      return originalServerListen.apply(this, args);
+    };
+    listenPatched = true;
+  }
+  
   // Clear server module cache for fresh instance
   delete require.cache[require.resolve('../../server-v2')];
   

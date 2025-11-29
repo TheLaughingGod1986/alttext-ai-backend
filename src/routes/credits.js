@@ -9,6 +9,7 @@ const creditsService = require('../services/creditsService');
 const { createCreditPackCheckoutSession } = require('../stripe/checkout');
 const { getStripe } = require('../utils/stripeClient');
 const rateLimit = require('express-rate-limit');
+const creditPacks = require('../data/creditPacks');
 
 const router = express.Router();
 
@@ -17,6 +18,23 @@ const creditsRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per window
   message: 'Too many requests, please try again later.',
+});
+
+/**
+ * GET /credits/packs
+ * Returns available credit packs
+ */
+router.get('/packs', authenticateToken, creditsRateLimiter, async (req, res) => {
+  try {
+    return res.json({ ok: true, packs: creditPacks });
+  } catch (error) {
+    console.error('[Credits Routes] GET /credits/packs error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to get credit packs',
+      packs: [],
+    });
+  }
 });
 
 /**
@@ -104,6 +122,174 @@ router.get('/transactions', authenticateToken, creditsRateLimiter, async (req, r
       ok: false,
       error: 'Failed to get transaction history',
       transactions: [],
+    });
+  }
+});
+
+/**
+ * POST /credits/checkout-session
+ * Creates Stripe Checkout Session for credit pack purchase
+ * Body: { packId: "pack_500" }
+ */
+router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (req, res) => {
+  try {
+    const { packId } = req.body;
+
+    if (!packId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'packId is required',
+      });
+    }
+
+    // Find pack in creditPacks array
+    const pack = creditPacks.find(p => p.id === packId);
+    if (!pack) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid pack',
+      });
+    }
+
+    // Get identityId from token or get/create from email
+    let identityId = req.user?.identityId || req.user?.id;
+    if (!identityId && req.user?.email) {
+      const identityResult = await creditsService.getOrCreateIdentity(req.user.email);
+      if (identityResult.success) {
+        identityId = identityResult.identityId;
+      }
+    }
+
+    if (!identityId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Unable to determine user identity',
+      });
+    }
+
+    const stripe = getStripe();
+    if (!stripe) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe not configured',
+      });
+    }
+
+    // Build success and cancel URLs
+    const frontendUrl = process.env.FRONTEND_URL || process.env.FRONTEND_DASHBOARD_URL || 'http://localhost:3000';
+    const successUrl = `${frontendUrl}/credits/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${frontendUrl}/credits/cancel`;
+
+    // Create Stripe checkout session
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'gbp',
+            product_data: {
+              name: `${pack.credits} Credits`,
+            },
+            unit_amount: pack.price,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: {
+        identityId: identityId,
+        credits: pack.credits.toString(),
+      },
+    });
+
+    return res.json({ ok: true, url: session.url });
+  } catch (error) {
+    console.error('[Credits Routes] POST /credits/checkout-session error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to create checkout session',
+    });
+  }
+});
+
+/**
+ * POST /credits/webhook
+ * Handles Stripe confirmation webhook
+ * Requires raw body (must be registered before express.json() middleware)
+ */
+router.post('/webhook', async (req, res) => {
+  try {
+    const stripe = getStripe();
+    if (!stripe) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe not configured',
+      });
+    }
+
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe webhook secret not configured',
+      });
+    }
+
+    // Validate webhook signature
+    let event;
+    try {
+      const signature = req.headers['stripe-signature'];
+      event = stripe.webhooks.constructEvent(req.body, signature, webhookSecret);
+    } catch (err) {
+      console.error('[Credits Webhook] Signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Handle checkout.session.completed event
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const identityId = session.metadata?.identityId;
+      const credits = parseInt(session.metadata?.credits, 10);
+
+      if (!identityId) {
+        console.error('[Credits Webhook] No identityId found in session metadata');
+        return res.status(400).json({
+          ok: false,
+          error: 'identityId not found in session metadata',
+        });
+      }
+
+      if (!credits || credits <= 0) {
+        console.error('[Credits Webhook] Invalid credits amount in session metadata');
+        return res.status(400).json({
+          ok: false,
+          error: 'Invalid credits amount',
+        });
+      }
+
+      // Add credits (addCredits already records the transaction)
+      // addCredits signature: (identityId, amount, stripePaymentIntentId)
+      const addResult = await creditsService.addCredits(identityId, credits, session.id);
+
+      if (!addResult.success) {
+        console.error('[Credits Webhook] Failed to add credits:', addResult.error);
+        return res.status(500).json({
+          ok: false,
+          error: 'Failed to add credits',
+        });
+      }
+
+      console.log(`[Credits Webhook] Added ${credits} credits to identity ${identityId}. New balance: ${addResult.newBalance}`);
+    }
+
+    return res.json({ received: true });
+  } catch (error) {
+    console.error('[Credits Webhook] Error processing webhook:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Webhook processing failed',
     });
   }
 });
