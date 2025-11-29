@@ -11,8 +11,14 @@ const { createTestToken } = require('../helpers/testHelpers');
 describe('PHASE 8: Supabase Failure Modes', () => {
   let app;
 
-  beforeEach(() => {
+  beforeAll(() => {
     app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
+
+  beforeEach(() => {
     supabaseMock.__reset();
   });
 

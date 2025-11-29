@@ -8,17 +8,9 @@ if (process.env.NODE_ENV !== 'test') {
   process.env.NODE_ENV = 'test';
 }
 
-// Mock @supabase/supabase-js directly to prevent storage-js from loading
-// This prevents the "Class extends value" error
-jest.mock('@supabase/supabase-js', () => {
-  // Return a mock createClient that returns the supabase mock
-  const supabaseMock = require('./supabase.mock');
-  return {
-    createClient: jest.fn(() => supabaseMock.supabase)
-  };
-});
-
-jest.mock('../../db/supabase-client', () => require('./supabase.mock'));
+// Note: @supabase/supabase-js and db/supabase-client mocks are in jest.setup.js
+// for early hoisting. Do not duplicate them here to avoid circular imports and
+// module initialization issues.
 jest.mock('stripe', () => require('./stripe.mock'));
 jest.mock('resend', () => require('./resend.mock'));
 jest.mock('../../services/licenseService', () => require('./licenseService.mock'));
@@ -51,23 +43,8 @@ afterEach(() => {
   mockAuthEmail.sendWelcomeEmail.mockClear().mockResolvedValue();
   mockAuthEmail.sendPasswordResetEmail.mockClear().mockResolvedValue();
   
-  // Reset modules to prevent state bleeding
-  // Note: jest.resetModules() is called selectively to avoid breaking mocks
-  // We only reset specific modules that might hold state
-  const modulesToReset = [
-    '../../server-v2',
-    '../../routes/usage',
-    '../../routes/billing',
-    '../../routes/licenses',
-    '../../routes/license'
-  ];
-  
-  modulesToReset.forEach(modulePath => {
-    try {
-      delete require.cache[require.resolve(modulePath)];
-    } catch (e) {
-      // Module might not be loaded yet, ignore
-    }
-  });
+  // Note: Module cache clearing removed to prevent interference with createTestServer()
+  // The createTestServer() function now handles caching and only clears cache when necessary
+  // Clearing server-v2 cache here was causing subsequent tests to fail
 });
 

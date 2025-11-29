@@ -26,24 +26,24 @@ jest.mock('../../db/supabase-client', () => {
 
 let listenPatched = false;
 
+// Cache for server instance to make createTestServer() idempotent
+// This prevents unnecessary module cache clearing which can interfere with other tests
+let cachedServer = null;
+let cachedServerPath = null;
+
 /** 
- * Create a fresh test server instance
- * Clears module cache to ensure clean state
+ * Create a test server instance
+ * Idempotent: returns cached instance if available and valid, otherwise creates new one
+ * Only clears module cache when necessary (e.g., module failed to load or returned invalid result)
  */
 function createTestServer() {
   // Ensure NODE_ENV is set to test BEFORE any modules are loaded
   // This must happen first to ensure mocks are used
   if (process.env.NODE_ENV !== 'test') {
     process.env.NODE_ENV = 'test';
-  }
-  
-  // Mock Supabase client BEFORE loading server-v2 to prevent dependency errors
-  // The db/supabase-client.js will use the mock when NODE_ENV=test
-  // But we need to ensure the mock is loaded first
-  try {
-    require('../mocks/supabase.mock');
-  } catch (e) {
-    // Mock might already be loaded, ignore
+    // If NODE_ENV changed, invalidate cache
+    cachedServer = null;
+    cachedServerPath = null;
   }
   
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
@@ -73,76 +73,93 @@ function createTestServer() {
     listenPatched = true;
   }
   
-  // Clear server module cache for fresh instance
-  delete require.cache[require.resolve('../../server-v2')];
-  
-  // Clear route module caches
-  const routeModules = [
-    '../../auth/routes',
-    '../../routes/usage',
-    '../../routes/billing',
-    '../../routes/licenses',
-    '../../routes/license',
-    '../../routes/organization',
-    '../../routes/email',
-    '../../src/routes/email',
-    '../../src/routes/analytics'
-  ];
-  
-  routeModules.forEach(modulePath => {
-    try {
-      delete require.cache[require.resolve(modulePath)];
-    } catch (e) {
-      // Module might not exist, ignore
+  // Try to use cached server if available and valid
+  if (cachedServer && typeof cachedServer.listen === 'function') {
+    const serverPath = require.resolve('../../server-v2');
+    // If the cached server is from the same module path, reuse it
+    if (cachedServerPath === serverPath && require.cache[serverPath]) {
+      return cachedServer;
     }
-  });
+    // Otherwise, cache is stale, clear it
+    cachedServer = null;
+    cachedServerPath = null;
+  }
+  
+  // Try to load server without clearing cache first
+  let app;
+  const serverPath = require.resolve('../../server-v2');
   
   try {
-    // Force clear the cache and require fresh
-    const serverPath = require.resolve('../../server-v2');
-    delete require.cache[serverPath];
-    
-    // Clear the supabase-client cache to ensure mock is used
-    try {
-      const supabasePath = require.resolve('../../db/supabase-client');
-      delete require.cache[supabasePath];
-    } catch (e) {
-      // Ignore if not found
+    // First attempt: try to use cached module if available
+    if (require.cache[serverPath]) {
+      app = require('../../server-v2');
+    } else {
+      // Module not in cache, require it (will be cached automatically)
+      app = require('../../server-v2');
     }
     
-    const app = require('../../server-v2');
-    
-    // Debug logging
+    // Validate the app
     if (!app) {
-      console.error('[createTestServer] server-v2 module returned null/undefined');
-      const mod = require.cache[serverPath];
-      console.error('[createTestServer] Module in cache:', mod ? 'exists' : 'missing');
-      if (mod && mod.exports) {
-        console.error('[createTestServer] Module exports type:', typeof mod.exports);
-        console.error('[createTestServer] Module exports keys:', Object.keys(mod.exports || {}).slice(0, 10));
-      }
-      throw new Error('server-v2 module returned null/undefined');
+      // Module returned null/undefined - clear cache and retry
+      delete require.cache[serverPath];
+      app = require('../../server-v2');
     }
     
     if (typeof app.listen !== 'function') {
-      console.error('[createTestServer] app.listen is not a function');
-      console.error('[createTestServer] app type:', typeof app);
-      console.error('[createTestServer] app value:', app);
-      console.error('[createTestServer] app keys:', Object.keys(app || {}).slice(0, 10));
-      throw new Error('server-v2 module did not export an Express app (listen is not a function)');
+      // Invalid app - clear cache and retry
+      delete require.cache[serverPath];
+      app = require('../../server-v2');
+      
+      // Validate again
+      if (typeof app.listen !== 'function') {
+        throw new Error('server-v2 module did not export an Express app (listen is not a function)');
+      }
     }
+    
+    // Cache the valid server instance
+    cachedServer = app;
+    cachedServerPath = serverPath;
     
     return app;
   } catch (error) {
-    console.error('[createTestServer] Error loading server-v2:', error.message);
-    console.error('[createTestServer] Error name:', error.name);
-    if (error.stack) {
-      const stackLines = error.stack.split('\n');
-      console.error('[createTestServer] Stack (first 20 lines):');
-      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
+    // If loading failed, try clearing cache and retrying once
+    if (require.cache[serverPath]) {
+      try {
+        delete require.cache[serverPath];
+        // Also clear supabase-client cache to ensure mock is used
+        try {
+          const supabasePath = require.resolve('../../db/supabase-client');
+          delete require.cache[supabasePath];
+        } catch (e) {
+          // Ignore if not found
+        }
+        
+        app = require('../../server-v2');
+        
+        if (!app || typeof app.listen !== 'function') {
+          throw new Error('server-v2 module did not export an Express app after cache clear');
+        }
+        
+        // Cache the valid server instance
+        cachedServer = app;
+        cachedServerPath = serverPath;
+        
+        return app;
+      } catch (retryError) {
+        // Both attempts failed
+        console.error('[createTestServer] Error loading server-v2 after retry:', retryError.message);
+        throw new Error(`Failed to create test server: ${retryError.message}. This is likely due to a dependency issue with @supabase/storage-js.`);
+      }
+    } else {
+      // No cache to clear, error is real
+      console.error('[createTestServer] Error loading server-v2:', error.message);
+      if (error.stack) {
+        const stackLines = error.stack.split('\n');
+        console.error('[createTestServer] Stack (first 20 lines):');
+        stackLines.slice(0, 20).forEach(line => console.error('  ', line));
+      }
+      throw new Error(`Failed to create test server: ${error.message}. This is likely due to a dependency issue with @supabase/storage-js.`);
     }
-    // Re-throw with more context
-    throw new Error(`Failed to create test server: ${error.message}. This is likely due to a dependency issue with @supabase/storage-js. Original error: ${error.name}`);
   }
 }
 

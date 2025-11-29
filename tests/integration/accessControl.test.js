@@ -5,10 +5,12 @@
  */
 
 const request = require('supertest');
-const app = require('../../server-v2');
+const { createTestServer } = require('../helpers/createTestServer');
 const { supabase } = require('../../db/supabase-client');
 const jwt = require('jsonwebtoken');
 const errorCodes = require('../../src/constants/errorCodes');
+
+let app;
 
 // Mock Supabase
 jest.mock('../../db/supabase-client', () => {
@@ -67,6 +69,12 @@ function generateToken(email) {
 }
 
 describe('Access Control Integration Tests', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     jest.clearAllMocks();
 
