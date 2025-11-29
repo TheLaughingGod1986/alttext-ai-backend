@@ -5,6 +5,28 @@ const { generateToken } = require('../../auth/jwt');
 
 let server;
 const token = generateToken({ id: 20, email: 'usage@example.com', plan: 'pro' });
+const TEST_SITE_HASH = 'test-site-hash';
+
+// Mock siteService
+jest.mock('../../src/services/siteService', () => ({
+  getOrCreateSite: jest.fn(),
+  getSiteUsage: jest.fn(),
+  getSiteLicense: jest.fn(),
+  getNextResetDate: jest.fn(() => {
+    const now = new Date();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return nextMonth.toISOString().split('T')[0];
+  }),
+  PLAN_LIMITS: {
+    'alttext-ai': {
+      free: 50,
+      pro: 1000,
+      agency: 10000
+    }
+  }
+}));
+
+const siteService = require('../../src/services/siteService');
 
 describe('Usage routes', () => {
   beforeAll(() => {
@@ -21,28 +43,51 @@ describe('Usage routes', () => {
   });
   beforeEach(() => {
     supabaseMock.__reset();
+    jest.clearAllMocks();
+
+    // Default mocks for siteService
+    siteService.getOrCreateSite.mockResolvedValue({
+      id: 'site_123',
+      site_hash: TEST_SITE_HASH,
+      plan: 'free',
+      license_key: null,
+    });
+
+    const nextResetDate = siteService.getNextResetDate();
+    siteService.getSiteUsage.mockResolvedValue({
+      used: 0,
+      remaining: 50,
+      plan: 'free',
+      limit: 50,
+      resetDate: nextResetDate,
+    });
+
+    siteService.getSiteLicense.mockResolvedValue(null);
   });
 
   test('returns usage summary', async () => {
     supabaseMock.__queueResponse('users', 'select', {
-      data: { id: 20, plan: 'pro', created_at: new Date().toISOString() },
+      data: { id: 20, plan: 'pro', service: 'alttext-ai' },
       error: null
     });
-    supabaseMock.__queueResponse('usage_logs', 'select', {
-      count: 5,
-      error: null
-    });
-    supabaseMock.__queueResponse('credits', 'select', {
-      data: { monthly_limit: 100, used_this_month: 10 },
-      error: null
+
+    siteService.getSiteUsage.mockResolvedValue({
+      used: 5,
+      remaining: 995,
+      plan: 'pro',
+      limit: 1000,
+      resetDate: siteService.getNextResetDate(),
     });
 
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
     expect(res.status).toBe(200);
-    expect(res.body.usage.used).toBe(5);
+    expect(res.body.data.usage.used).toBe(5);
+    expect(res.body.data.usage.limit).toBe(1000);
+    expect(res.body.data.usage.remaining).toBe(995);
   });
 
   test('usage endpoint handles missing user', async () => {
@@ -51,11 +96,14 @@ describe('Usage routes', () => {
       error: { message: 'not found' }
     });
 
+    // When user is not found, route continues with site-based quota
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.data.usage).toBeDefined();
   });
 
   test('returns usage history', async () => {
@@ -70,6 +118,7 @@ describe('Usage routes', () => {
 
     const res = await request(server)
       .get('/usage/history')
+      .set('X-Site-Hash', TEST_SITE_HASH)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
@@ -77,18 +126,13 @@ describe('Usage routes', () => {
   });
 
   test('usage endpoint handles Supabase count error', async () => {
-    supabaseMock.__queueResponse('users', 'select', {
-      data: { id: 20, plan: 'pro', created_at: new Date().toISOString() },
-      error: null
-    });
-    supabaseMock.__queueResponse('usage_logs', 'select', {
-      count: null,
-      error: { message: 'DB connection failed', code: 'PGRST500' }
-    });
+    // Mock siteService.getSiteUsage to throw an error
+    siteService.getSiteUsage.mockRejectedValue(new Error('DB connection failed'));
 
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
     expect(res.status).toBe(500);
     expect(res.body.code).toBe('USAGE_ERROR');
@@ -102,6 +146,7 @@ describe('Usage routes', () => {
 
     const res = await request(server)
       .get('/usage/history')
+      .set('X-Site-Hash', TEST_SITE_HASH)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(500);
@@ -110,48 +155,50 @@ describe('Usage routes', () => {
 
   test('usage endpoint shows zero remaining when quota exhausted', async () => {
     supabaseMock.__queueResponse('users', 'select', {
-      data: { id: 20, plan: 'free', created_at: new Date().toISOString() },
+      data: { id: 20, plan: 'free', service: 'alttext-ai' },
       error: null
     });
-    supabaseMock.__queueResponse('usage_logs', 'select', {
-      count: 50, // Free plan limit reached
-      error: null
-    });
-    supabaseMock.__queueResponse('credits', 'select', {
-      data: { monthly_limit: 50, used_this_month: 50 },
-      error: null
+
+    siteService.getSiteUsage.mockResolvedValue({
+      used: 50,
+      remaining: 0,
+      plan: 'free',
+      limit: 50,
+      resetDate: siteService.getNextResetDate(),
     });
 
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
     expect(res.status).toBe(200);
-    expect(res.body.usage.remaining).toBe(0);
-    expect(res.body.usage.used).toBe(50);
+    expect(res.body.data.usage.remaining).toBe(0);
+    expect(res.body.data.usage.used).toBe(50);
   });
 
   test('usage endpoint handles missing credits record', async () => {
     supabaseMock.__queueResponse('users', 'select', {
-      data: { id: 20, plan: 'pro', created_at: new Date().toISOString() },
+      data: { id: 20, plan: 'pro', service: 'alttext-ai' },
       error: null
     });
-    supabaseMock.__queueResponse('usage_logs', 'select', {
-      count: 10,
-      error: null
-    });
-    supabaseMock.__queueResponse('credits', 'select', {
-      data: null, // No credits record
-      error: null
+
+    siteService.getSiteUsage.mockResolvedValue({
+      used: 10,
+      remaining: 990,
+      plan: 'pro',
+      limit: 1000,
+      resetDate: siteService.getNextResetDate(),
     });
 
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
     expect(res.status).toBe(200);
-    // When credits record is missing, monthlyLimit defaults to plan limit (1000) and usedThisMonth defaults to 0
-    expect(res.body.usage.credits).toBe(1000); // 1000 - 0
+    expect(res.body.data.usage.limit).toBe(1000);
+    expect(res.body.data.usage.remaining).toBe(990);
   });
 
   test('usage history handles pagination parameters', async () => {
@@ -169,6 +216,7 @@ describe('Usage routes', () => {
 
     const res = await request(server)
       .get('/usage/history?page=2&limit=10')
+      .set('X-Site-Hash', TEST_SITE_HASH)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(200);
@@ -190,6 +238,7 @@ describe('Usage routes', () => {
 
     const res = await request(server)
       .get('/usage/history')
+      .set('X-Site-Hash', TEST_SITE_HASH)
       .set('Authorization', `Bearer ${token}`);
 
     expect(res.status).toBe(500);
@@ -202,12 +251,14 @@ describe('Usage routes', () => {
       error: { message: 'Database error', code: 'PGRST500' }
     });
 
+    // When user query fails, route continues with site-based quota
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
-    expect(res.status).toBe(404);
-    expect(res.body.code).toBe('USER_NOT_FOUND');
+    expect(res.status).toBe(200);
+    expect(res.body.data.usage).toBeDefined();
   });
 
   test('usage endpoint handles user null case', async () => {
@@ -216,12 +267,14 @@ describe('Usage routes', () => {
       error: null // Query succeeds but returns no user
     });
 
+    // When user is null, route continues with site-based quota
     const res = await request(server)
       .get('/usage')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Site-Hash', TEST_SITE_HASH);
 
-    expect(res.status).toBe(404);
-    expect(res.body.code).toBe('USER_NOT_FOUND');
+    expect(res.status).toBe(200);
+    expect(res.body.data.usage).toBeDefined();
   });
 });
 

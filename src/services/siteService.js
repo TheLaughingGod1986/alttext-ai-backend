@@ -407,6 +407,7 @@ module.exports = {
   deductSiteQuota,
   getSiteLicense,
   createFreeLicenseForSite,
+  getNextResetDate,
   getTokenLimit,
   PLAN_LIMITS
 };

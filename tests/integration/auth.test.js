@@ -10,6 +10,7 @@ const { createLicenseSnapshot, createLicenseCreationResponse } = require('../moc
 jest.mock('../../src/services/emailService', () => ({
   sendDashboardWelcome: jest.fn(),
   sendPasswordReset: jest.fn(),
+  sendMagicLink: jest.fn(),
 }));
 
 let server;
@@ -33,6 +34,7 @@ describe('Auth routes', () => {
     licenseServiceMock.__reset();
     emailService.sendDashboardWelcome.mockClear().mockResolvedValue({ success: true });
     emailService.sendPasswordReset.mockClear().mockResolvedValue({ success: true });
+    emailService.sendMagicLink.mockClear().mockResolvedValue({ success: true });
     
     // Use standardized license mocks
     const defaultLicense = createLicenseCreationResponse({
@@ -287,25 +289,24 @@ describe('Auth routes', () => {
   });
 
   test('login requires email and password', async () => {
-    // Mock password_reset_tokens insert for magic link flow
-    supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
+    // Mock password_reset_tokens operations for magic link flow
+    // Order: users select, password_reset_tokens update (invalidate old), password_reset_tokens insert
     supabaseMock.__queueResponse('users', 'select', {
       data: { id: 1, email: 'test@example.com', plan: 'free' },
       error: null
     });
+    supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
+    supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
     
     const res = await request(server)
       .post('/auth/login')
       .send({ email: 'test@example.com' });
 
     // When password is missing, login goes into magic link flow (returns 200)
-    // The test expectation should match actual behavior
-    expect([200, 400]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body.message || res.body).toBeDefined();
-    } else {
-      expect(res.body.code).toBe('MISSING_EMAIL');
-    }
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBeDefined();
+    expect(emailService.sendMagicLink).toHaveBeenCalled();
   });
 
   test('login handles user not found', async () => {

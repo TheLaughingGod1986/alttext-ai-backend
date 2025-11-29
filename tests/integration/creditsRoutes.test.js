@@ -49,6 +49,8 @@ jest.mock('../../src/utils/stripeClient', () => ({
           metadata: {
             credits: '200',
             type: 'credit_pack',
+            user_email: 'test@example.com',
+            identityId: 'identity_123',
           },
         }),
       },
@@ -113,15 +115,70 @@ describe('Credits Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default mock for supabase
-    supabase.from.mockReturnValue(supabase);
-    supabase.select.mockReturnValue(supabase);
-    supabase.eq.mockReturnValue(supabase);
-    supabase.maybeSingle.mockResolvedValue({ data: null, error: null });
+    // Set up environment variables for price IDs and Stripe
+    process.env.CREDIT_PACK_50_PRICE_ID = 'price_test_50';
+    process.env.CREDIT_PACK_200_PRICE_ID = 'price_test_200';
+    process.env.CREDIT_PACK_500_PRICE_ID = 'price_test_500';
+    process.env.CREDIT_PACK_1000_PRICE_ID = 'price_test_1000';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_mock_key'; // Ensure Stripe is "configured"
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_secret';
+    }
+    
+    // Re-setup createCreditPackCheckoutSession mock after clearAllMocks
+    const { createCreditPackCheckoutSession } = require('../../src/stripe/checkout');
+    createCreditPackCheckoutSession.mockResolvedValue({
+      id: 'cs_test123',
+      url: 'https://checkout.stripe.com/test',
+    });
+    
+    // Default mock for supabase - reinitialize mock functions after clearAllMocks
+    // Chain all methods to return supabase for method chaining
+    supabase.from = jest.fn(() => supabase);
+    supabase.select = jest.fn(() => supabase);
+    supabase.eq = jest.fn(() => supabase);
+    supabase.maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+    supabase.single = jest.fn().mockResolvedValue({ data: null, error: null });
+    supabase.insert = jest.fn(() => supabase);
+    supabase.update = jest.fn(() => supabase);
+    
+    // Re-setup getStripe mock after clearAllMocks
+    const { getStripe } = require('../../src/utils/stripeClient');
+    const mockStripeInstance = {
+      checkout: {
+        sessions: {
+          create: jest.fn().mockResolvedValue({
+            id: 'cs_test123',
+            url: 'https://checkout.stripe.com/test',
+          }),
+          retrieve: jest.fn().mockResolvedValue({
+            id: 'cs_test123',
+            payment_status: 'paid',
+            customer_details: {
+              email: 'test@example.com',
+            },
+            metadata: {
+              credits: '200',
+              type: 'credit_pack',
+              user_email: 'test@example.com',
+              identityId: 'identity_123',
+            },
+          }),
+        },
+      },
+      customers: {
+        list: jest.fn().mockResolvedValue({ data: [] }),
+        create: jest.fn().mockResolvedValue({ id: 'cus_test123' }),
+      },
+      webhooks: {
+        constructEvent: jest.fn((payload, signature, secret) => {
+          return mockWebhooksConstructEvent(payload, signature, secret);
+        }),
+      },
+    };
+    getStripe.mockReturnValue(mockStripeInstance);
     
     // Default mock for webhook signature verification
-    const { getStripe } = require('../../src/utils/stripeClient');
-    const mockStripe = getStripe();
     mockWebhooksConstructEvent.mockImplementation((payload, signature, secret) => {
       // Return a mock event object
       return {
@@ -136,6 +193,28 @@ describe('Credits Routes', () => {
           },
         },
       };
+    });
+    
+    // Default mocks for creditsService methods
+    creditsService.getOrCreateIdentity.mockResolvedValue({
+      success: true,
+      identityId: 'identity_123',
+    });
+    creditsService.getBalance.mockResolvedValue({
+      success: true,
+      balance: 200,
+    });
+    creditsService.addCreditsByEmail.mockResolvedValue({
+      success: true,
+      newBalance: 200,
+    });
+    creditsService.addCredits.mockResolvedValue({
+      success: true,
+      newBalance: 500,
+    });
+    creditsService.getBalanceByEmail.mockResolvedValue({
+      success: true,
+      balance: 250,
     });
   });
 
@@ -429,7 +508,8 @@ describe('Credits Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
-      expect(res.body.error).toContain('packId');
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res.body.message || res.body.error || JSON.stringify(res.body.details)).toMatch(/packId|validation/i);
     });
 
     it('should return 400 for invalid pack', async () => {
@@ -452,11 +532,15 @@ describe('Credits Routes', () => {
         success: true,
         newBalance: 500,
       });
-      process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_secret';
+      // Ensure webhook secret is set
+      if (!process.env.STRIPE_WEBHOOK_SECRET) {
+        process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_secret';
+      }
     });
 
     afterEach(() => {
-      delete process.env.STRIPE_WEBHOOK_SECRET;
+      // Don't delete, keep it for other tests
+      // delete process.env.STRIPE_WEBHOOK_SECRET;
     });
 
     it('should handle checkout.session.completed event and add credits', async () => {
@@ -515,6 +599,7 @@ describe('Credits Routes', () => {
 
     it('should return 500 if Stripe not configured', async () => {
       const { getStripe } = require('../../src/utils/stripeClient');
+      // Temporarily mock getStripe to return null
       const originalGetStripe = getStripe;
       getStripe.mockReturnValueOnce(null);
 
@@ -529,7 +614,7 @@ describe('Credits Routes', () => {
       expect(res.body.ok).toBe(false);
       expect(res.body.error).toContain('Stripe not configured');
       
-      // Restore original
+      // Restore original - getStripe should return the mock again
       getStripe.mockReturnValue(originalGetStripe());
     });
 

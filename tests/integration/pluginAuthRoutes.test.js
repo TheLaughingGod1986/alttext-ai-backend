@@ -38,6 +38,21 @@ describe('Plugin Auth Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset default mocks
+    mockIdentityService.getOrCreateIdentity.mockResolvedValue({
+      id: 'identity-123',
+      email: 'test@example.com',
+      plugin_slug: 'alttext-ai',
+      jwt_version: 1,
+    });
+    mockIdentityService.issueJwt.mockReturnValue('mock-jwt-token');
+    mockIdentityService.refreshJwt.mockResolvedValue({
+      success: true,
+      token: 'new-jwt-token',
+    });
+    mockPluginInstallationService.recordInstallation.mockResolvedValue({
+      success: true,
+    });
   });
 
   describe('POST /auth/plugin-init', () => {
@@ -283,9 +298,9 @@ describe('Plugin Auth Routes', () => {
     });
   });
 
-  describe('GET /auth/me', () => {
+  describe('GET /auth/plugin-me', () => {
     it('returns ok: true', async () => {
-      const res = await request(server).get('/auth/me');
+      const res = await request(server).get('/auth/plugin-me');
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);

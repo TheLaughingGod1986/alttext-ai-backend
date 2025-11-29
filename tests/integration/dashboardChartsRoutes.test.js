@@ -83,7 +83,8 @@ describe('Dashboard Charts Routes', () => {
 
       expect(res.status).toBe(500);
       expect(res.body.ok).toBe(false);
-      expect(res.body.error).toBeDefined();
+      expect(res.body.message || res.body.error).toBeDefined();
+      expect(res.body.code).toBe('DASHBOARD_ERROR');
     });
   });
 

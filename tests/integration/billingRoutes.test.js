@@ -65,6 +65,12 @@ describe('Billing Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset billingService mocks to default values
+    const billingService = require('../../src/services/billingService');
+    billingService.getUserSubscriptions.mockResolvedValue({
+      success: true,
+      subscriptions: []
+    });
   });
 
   describe('POST /billing/create-checkout', () => {

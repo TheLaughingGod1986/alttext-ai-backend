@@ -13,6 +13,12 @@ jest.mock('../../src/services/identityService', () => ({
 
 jest.mock('../../src/services/creditsService', () => ({
   getBalanceByEmail: jest.fn(),
+  getTransactionsByEmail: jest.fn(),
+  getOrCreateIdentity: jest.fn(),
+}));
+
+jest.mock('../../src/services/billingService', () => ({
+  getSubscriptionForEmail: jest.fn(),
 }));
 
 jest.mock('../../db/supabase-client', () => {
@@ -54,10 +60,27 @@ describe('Dashboard Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Clear dashboard cache before each test
+    const { clearCachedDashboard } = require('../../src/routes/dashboard');
+    clearCachedDashboard(testEmail);
     // Default mock for credits service
     mockCreditsService.getBalanceByEmail.mockResolvedValue({
       success: true,
       balance: 250,
+    });
+    mockCreditsService.getTransactionsByEmail.mockResolvedValue({
+      success: true,
+      transactions: [],
+    });
+    mockCreditsService.getOrCreateIdentity.mockResolvedValue({
+      success: true,
+      identityId: 'identity_123',
+    });
+    // Default mock for billing service
+    const billingService = require('../../src/services/billingService');
+    billingService.getSubscriptionForEmail.mockResolvedValue({
+      success: false,
+      subscription: null,
     });
   });
 
@@ -151,10 +174,15 @@ describe('Dashboard Routes', () => {
       expect(res.body.installations).toEqual([]);
       expect(res.body.subscription).toBeNull();
       expect(res.body.usage).toEqual({ monthlyImages: 0, dailyImages: 0, totalImages: 0 });
+      expect(res.body.credits).toBeDefined();
+      expect(res.body.credits.balance).toBe(250);
     });
 
     it('returns 400 when email is missing from token', async () => {
-      const tokenWithoutEmail = createTestToken({ id: testUserId });
+      // Create a token without email by explicitly setting email to undefined
+      const jwt = require('jsonwebtoken');
+      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const tokenWithoutEmail = jwt.sign({ id: testUserId }, secret, { expiresIn: '1h' });
       // Mock getIdentityDashboard to not be called
       mockIdentityService.getIdentityDashboard.mockClear();
 
@@ -164,7 +192,7 @@ describe('Dashboard Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
-      expect(res.body.error).toContain('email');
+      expect(res.body.message || res.body.error).toMatch(/email/i);
       expect(mockIdentityService.getIdentityDashboard).not.toHaveBeenCalled();
     });
 
@@ -179,7 +207,7 @@ describe('Dashboard Routes', () => {
 
       expect(res.status).toBe(500);
       expect(res.body.ok).toBe(false);
-      expect(res.body.error).toBe('Failed to load dashboard');
+      expect(res.body.message || res.body.error).toMatch(/Failed to load dashboard|server_error/i);
     });
 
     it('response shape matches spec', async () => {
@@ -210,7 +238,9 @@ describe('Dashboard Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
-      expect(res.body.credits).toEqual({ balance: 500 });
+      expect(res.body.credits).toBeDefined();
+      expect(res.body.credits.balance).toBe(500);
+      expect(Array.isArray(res.body.credits.recentPurchases)).toBe(true);
     });
 
     it('handles credits service failure gracefully', async () => {

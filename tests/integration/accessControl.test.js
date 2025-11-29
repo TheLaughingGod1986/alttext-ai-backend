@@ -50,6 +50,7 @@ jest.mock('../../src/services/siteService', () => ({
   checkSiteQuota: jest.fn(),
   getSiteUsage: jest.fn(),
   deductSiteQuota: jest.fn(),
+  getSiteLicense: jest.fn(),
 }));
 
 jest.mock('axios', () => ({
@@ -70,9 +71,17 @@ function generateToken(email) {
 
 describe('Access Control Integration Tests', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
+    server = createTestServer();
+    if (!server) {
       throw new Error('Failed to create test server');
+    }
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
   beforeEach(() => {
@@ -82,6 +91,22 @@ describe('Access Control Integration Tests', () => {
     creditsService.getOrCreateIdentity.mockResolvedValue({
       success: true,
       identityId: 'identity_123',
+    });
+
+    // Default mock for getUserSubscriptionStatus (free plan, inactive)
+    billingService.getUserSubscriptionStatus.mockResolvedValue({
+      plan: 'free',
+      status: 'inactive',
+      renewsAt: null,
+      canceledAt: null,
+      trialEndsAt: null,
+      raw: null,
+    });
+
+    // Default mock for getBalanceByEmail (no credits)
+    creditsService.getBalanceByEmail.mockResolvedValue({
+      success: true,
+      balance: 0,
     });
 
     eventService.getCreditBalance.mockResolvedValue({
@@ -110,6 +135,8 @@ describe('Access Control Integration Tests', () => {
     });
 
     siteService.deductSiteQuota.mockResolvedValue(true);
+
+    siteService.getSiteLicense.mockResolvedValue(null);
 
     axios.post.mockResolvedValue({
       data: {

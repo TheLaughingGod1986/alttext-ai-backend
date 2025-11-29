@@ -6,6 +6,7 @@ const express = require('express');
 const { supabase } = require('../db/supabase-client');
 const { dualAuthenticate, combinedAuth } = require('../src/middleware/dual-auth');
 const licenseService = require('../services/licenseService');
+const siteService = require('../src/services/siteService');
 
 const router = express.Router();
 
@@ -85,6 +86,9 @@ router.post('/auto-attach', async (req, res) => {
     // If no license exists, create new free license for this site
     if (!license) {
       const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
+      if (!result || !result.license) {
+        throw new Error('Failed to create license for site');
+      }
       license = result.license;
       site = result.site;
     }

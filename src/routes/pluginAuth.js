@@ -94,10 +94,10 @@ router.post('/auth/refresh-token', async (req, res) => {
 });
 
 /**
- * GET /auth/me
- * Test endpoint to verify authentication
+ * GET /auth/plugin-me
+ * Test endpoint to verify plugin authentication (no auth required)
  */
-router.get('/auth/me', (req, res) => {
+router.get('/auth/plugin-me', (req, res) => {
   return res.status(200).json({
     ok: true,
   });

@@ -194,7 +194,8 @@ router.get('/summary', async (req, res) => {
     }
 
     // If specific event names requested, use getEventCounts
-    if (eventNames) {
+    // Check if eventNames is present in query (even if empty string)
+    if (eventNames !== undefined) {
       const eventNamesArray = Array.isArray(eventNames) 
         ? eventNames 
         : eventNames.split(',').map(name => name.trim()).filter(Boolean);
