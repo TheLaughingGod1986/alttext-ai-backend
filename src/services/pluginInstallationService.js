@@ -6,7 +6,7 @@
 const { supabase } = require('../../db/supabase-client');
 
 /**
- * Record a plugin installation
+ * Record a plugin installation (upserts if exists)
  * @param {Object} data - Installation data
  * @param {string} data.email - User email
  * @param {string} data.plugin - Plugin slug/name
@@ -21,8 +21,9 @@ const { supabase } = require('../../db/supabase-client');
  */
 async function recordInstallation(data) {
   try {
+    const emailLower = data.email.toLowerCase();
     const payload = {
-      email: data.email.toLowerCase(),
+      email: emailLower,
       plugin_slug: data.plugin,
       site_url: data.site || null,
       version: data.version || null,
@@ -36,19 +37,53 @@ async function recordInstallation(data) {
 
     console.log('[PluginInstallation] Recording installation:', payload);
 
-    const { data: inserted, error } = await supabase
+    // Check if installation already exists (by email + plugin + site_url)
+    const { data: existing, error: lookupError } = await supabase
       .from('plugin_installations')
-      .insert(payload)
-      .select()
-      .single();
+      .select('*')
+      .eq('email', emailLower)
+      .eq('plugin_slug', data.plugin)
+      .eq('site_url', data.site || null)
+      .maybeSingle();
 
-    if (error) {
-      console.error('[PluginInstallation] Error recording installation:', error);
-      return { success: false, error: error.message };
+    let result;
+    if (existing) {
+      // Update existing installation
+      const { data: updated, error: updateError } = await supabase
+        .from('plugin_installations')
+        .update({
+          ...payload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('[PluginInstallation] Error updating installation:', updateError);
+        return { success: false, error: updateError.message };
+      }
+
+      console.log('[PluginInstallation] Installation updated successfully:', updated.id);
+      result = { success: true, record: updated };
+    } else {
+      // Insert new installation
+      const { data: inserted, error: insertError } = await supabase
+        .from('plugin_installations')
+        .insert(payload)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('[PluginInstallation] Error recording installation:', insertError);
+        return { success: false, error: insertError.message };
+      }
+
+      console.log('[PluginInstallation] Installation recorded successfully:', inserted.id);
+      result = { success: true, record: inserted };
     }
 
-    console.log('[PluginInstallation] Installation recorded successfully:', inserted.id);
-    return { success: true, record: inserted };
+    return result;
   } catch (err) {
     console.error('[PluginInstallation] Exception recording installation:', err);
     return { success: false, error: err.message };

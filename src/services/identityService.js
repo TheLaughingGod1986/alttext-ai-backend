@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const { supabase } = require('../../db/supabase-client');
 const billingService = require('./billingService');
 const usageService = require('./usageService');
+const creditsService = require('./creditsService');
+const pluginInstallationService = require('./pluginInstallationService');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
@@ -129,6 +131,87 @@ async function refreshJwt(oldToken) {
 }
 
 /**
+ * Sync identity - upserts identity and plugin installation
+ * @param {Object} data - Sync data
+ * @param {string} data.email - User email (required)
+ * @param {string} [data.plugin] - Plugin slug
+ * @param {string} [data.site] - Site URL
+ * @param {string} [data.version] - Plugin version
+ * @param {string} [data.wpVersion] - WordPress version
+ * @param {string} [data.phpVersion] - PHP version
+ * @returns {Promise<Object>} Result with success status and identity data
+ */
+async function syncIdentity(data) {
+  try {
+    const emailLower = data.email.toLowerCase();
+
+    // Get or create unified identity (from identities table)
+    const identityResult = await creditsService.getOrCreateIdentity(emailLower);
+    if (!identityResult.success) {
+      return { success: false, error: identityResult.error || 'Failed to get/create identity' };
+    }
+
+    const identityId = identityResult.identityId;
+
+    // Upsert plugin installation if plugin is provided
+    let installation = null;
+    if (data.plugin) {
+      const installationResult = await pluginInstallationService.recordInstallation({
+        email: emailLower,
+        plugin: data.plugin,
+        site: data.site,
+        version: data.version,
+        wpVersion: data.wpVersion,
+        phpVersion: data.phpVersion,
+      });
+
+      if (installationResult.success) {
+        installation = installationResult.record;
+      } else {
+        console.warn('[IdentityService] Failed to record installation:', installationResult.error);
+        // Continue even if installation recording fails
+      }
+    }
+
+    // Get full identity with installations
+    const { data: identity } = await supabase
+      .from('identities')
+      .select('*')
+      .eq('id', identityId)
+      .single();
+
+    // Get installations for this email
+    const { data: installations } = await supabase
+      .from('plugin_installations')
+      .select('*')
+      .eq('email', emailLower);
+
+    return {
+      success: true,
+      identity: {
+        id: identity.id,
+        email: identity.email,
+        created_at: identity.created_at,
+        updated_at: identity.updated_at,
+        installations: installations || [],
+      },
+    };
+  } catch (error) {
+    console.error('[IdentityService] Error syncing identity:', error);
+    return { success: false, error: error.message || 'Failed to sync identity' };
+  }
+}
+
+/**
+ * Normalize email to lowercase
+ * @param {string} email - Email address
+ * @returns {string} Normalized email
+ */
+function normalizeEmail(email) {
+  return email ? email.toLowerCase() : '';
+}
+
+/**
  * Get identity dashboard data
  * Aggregates installations, subscription, and usage for an email
  * @param {string} email - User email
@@ -162,5 +245,7 @@ module.exports = {
   issueJwt,
   refreshJwt,
   getIdentityDashboard,
+  syncIdentity,
+  normalizeEmail,
 };
 

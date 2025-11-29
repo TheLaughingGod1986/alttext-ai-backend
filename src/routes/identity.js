@@ -11,15 +11,18 @@ const identityService = require('../services/identityService');
 /**
  * POST /identity/sync
  * Synchronize identity - called by plugins + website
- * Creates or gets identity, links installation if provided, updates last_seen_at
+ * Upserts identity and plugin_installations, returns full updated identity
  * 
  * Payload:
  * - email (required)
- * - plugin (optional, plugin only)
+ * - plugin (optional)
  * - site (optional)
- * - installationId (optional)
+ * - version (optional)
+ * - wpVersion (optional)
+ * - phpVersion (optional)
+ * - installationId (optional, legacy support)
  * 
- * Returns lightweight profile: { ok: true, identityId, email }
+ * Returns full identity: { ok: true, identity: { id, email, installations: [...] } }
  */
 router.post('/sync', async (req, res) => {
   try {
@@ -29,41 +32,46 @@ router.post('/sync', async (req, res) => {
     if (!validation.success) {
       return res.status(400).json({
         ok: false,
-        error: 'VALIDATION_ERROR',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Request validation failed',
         details: validation.error.flatten(),
       });
     }
 
-    const { email, installationId } = validation.data;
+    const { email, plugin, site, version, wpVersion, phpVersion } = validation.data;
 
-    // Get or create identity
-    const { identityId } = await identityService.getOrCreateIdentity(email);
+    // Use syncIdentity method to handle full sync
+    // This upserts identity and plugin_installations
+    const syncResult = await identityService.syncIdentity({
+      email,
+      plugin,
+      site,
+      version,
+      wpVersion,
+      phpVersion,
+    });
 
-    // If installationId is provided, link it to the identity
-    if (installationId) {
-      try {
-        await identityService.linkRecordToIdentity({
-          table: 'plugin_installations',
-          recordId: installationId,
-          identityId,
-        });
-      } catch (linkError) {
-        // Log error but don't fail the request - identity sync succeeded
-        console.error('[IdentityRoutes] Error linking installation to identity:', linkError);
-      }
+    if (!syncResult.success) {
+      return res.status(500).json({
+        ok: false,
+        code: 'SYNC_ERROR',
+        reason: 'server_error',
+        message: syncResult.error || 'Failed to sync identity',
+      });
     }
 
-    // Return lightweight profile
+    // Return full updated identity with installations
     return res.json({
       ok: true,
-      identityId,
-      email: identityService.normalizeEmail(email),
+      identity: syncResult.identity,
     });
   } catch (error) {
     console.error('[IdentityRoutes] Error in /identity/sync:', error);
     return res.status(500).json({
       ok: false,
-      error: 'SYNC_ERROR',
+      code: 'SYNC_ERROR',
+      reason: 'server_error',
       message: error.message || 'Failed to sync identity',
     });
   }

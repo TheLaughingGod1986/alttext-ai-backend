@@ -151,6 +151,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     let quotaRemaining = 0;
     let quotaUsed = 0;
 
+    let subscriptionData = null;
     if (subscriptionResult.success && subscriptionResult.subscription) {
       const subscription = subscriptionResult.subscription;
       
@@ -178,6 +179,21 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       const monthlyImages = payload.usage?.monthlyImages || 0;
       quotaUsed = monthlyImages;
       quotaRemaining = Math.max(0, limit - monthlyImages);
+
+      // Build enhanced subscription data with renewal info
+      // Check if metadata contains full Stripe subscription object
+      const stripeSubscription = subscription.metadata?.stripe_subscription || null;
+      const currentPeriodStart = stripeSubscription?.current_period_start 
+        ? new Date(stripeSubscription.current_period_start * 1000).toISOString()
+        : null;
+
+      subscriptionData = {
+        ...subscription,
+        next_renewal: subscription.renews_at || null,
+        // Use current_period_start from Stripe as last payment date (approximation)
+        // Or use created_at if current_period_start not available
+        last_payment: currentPeriodStart || subscription.created_at || null,
+      };
     }
 
     // Get credits balance
@@ -197,6 +213,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
             amount: t.amount,
             created_at: t.created_at,
             balance_after: t.balance_after,
+            transaction_type: t.transaction_type,
           }));
       }
     } catch (err) {
@@ -204,9 +221,38 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       // Continue without recent purchases
     }
 
+    // Get recent events (last 20 events) - optional
+    let recentEvents = [];
+    try {
+      const identityResult = await creditsService.getOrCreateIdentity(email);
+      if (identityResult.success && identityResult.identityId) {
+        const { supabase } = require('../../db/supabase-client');
+        const { data: events } = await supabase
+          .from('events')
+          .select('id, event_type, created_at, metadata, credits_delta')
+          .eq('identity_id', identityResult.identityId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (events) {
+          recentEvents = events.map(e => ({
+            id: e.id,
+            event_type: e.event_type,
+            created_at: e.created_at,
+            credits_delta: e.credits_delta,
+            metadata: e.metadata || {},
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error fetching recent events:', err);
+      // Continue without recent events
+    }
+
     const response = {
       ok: true,
       ...payload,
+      subscription: subscriptionData || payload.subscription,
       subscriptionStatus,
       quotaRemaining,
       quotaUsed,
@@ -214,6 +260,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         balance: creditsBalance,
         recentPurchases: recentPurchases,
       },
+      recentEvents: recentEvents,
     };
 
     // Cache the response
