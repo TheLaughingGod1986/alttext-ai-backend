@@ -24,18 +24,33 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Set up test environment variables
-        run: |
-          echo "JWT_SECRET=test-jwt-secret-for-ci" >> $GITHUB_ENV
-          echo "NODE_ENV=test" >> $GITHUB_ENV
-
       - name: Run unit tests
+        env:
+          JWT_SECRET: test-jwt-secret-for-ci
+          NODE_ENV: test
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: test-key
+          ALTTEXT_OPENAI_API_KEY: sk-test
+          SEO_META_OPENAI_API_KEY: sk-test
+          STRIPE_SECRET_KEY: sk_test_key
+          RESEND_API_KEY: re_test_key
         run: npm run test:unit
         timeout-minutes: 5
+        continue-on-error: false
 
       - name: Run integration tests
+        env:
+          JWT_SECRET: test-jwt-secret-for-ci
+          NODE_ENV: test
+          SUPABASE_URL: https://test.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: test-key
+          ALTTEXT_OPENAI_API_KEY: sk-test
+          SEO_META_OPENAI_API_KEY: sk-test
+          STRIPE_SECRET_KEY: sk_test_key
+          RESEND_API_KEY: re_test_key
         run: npm run test:integration
         timeout-minutes: 10
+        continue-on-error: false
 
       - name: Upload coverage
         if: always()
