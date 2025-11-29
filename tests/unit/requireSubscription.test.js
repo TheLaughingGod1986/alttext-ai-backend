@@ -123,6 +123,7 @@ describe('requireSubscription middleware', () => {
     expect(res.json).toHaveBeenCalledWith({
       ok: false,
       code: 'SERVER_ERROR',
+      reason: 'server_error',
       message: 'Unexpected error.',
     });
     expect(next).not.toHaveBeenCalled();
