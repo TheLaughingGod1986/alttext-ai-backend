@@ -12,7 +12,7 @@ const axios = require('axios');
 const { supabase } = require('./db/supabase-client');
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./src/middleware/dual-auth');
-const checkSubscription = require('./src/middleware/checkSubscription');
+const requireSubscription = require('./src/middleware/requireSubscription');
 const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
@@ -199,7 +199,7 @@ app.use('/partner', require('./src/routes/partner')); // Partner API routes
 app.use('/credits', require('./src/routes/credits')); // Credits routes (includes webhook without auth, other routes use authenticateToken)
 
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
-app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
+app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) => {
   const requestStartTime = Date.now();
   console.log(`[Generate] Request received at ${new Date().toISOString()}`);
   
@@ -587,7 +587,7 @@ app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
 });
 
 // Review existing alt text for accuracy
-app.post('/api/review', authenticateToken, async (req, res) => {
+app.post('/api/review', authenticateToken, requireSubscription, async (req, res) => {
   try {
     const { alt_text, image_data, context, service = 'alttext-ai' } = req.body;
 

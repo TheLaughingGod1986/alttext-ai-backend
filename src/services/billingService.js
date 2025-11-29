@@ -310,6 +310,100 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
 }
 
 /**
+ * Get subscription status for an email (standardized format for access control)
+ * Returns subscription in a consistent format for access control decisions
+ * @param {string} email - User email address
+ * @returns {Promise<Object>} Standardized subscription status object
+ */
+async function getUserSubscriptionStatus(email) {
+  try {
+    const emailLower = email.toLowerCase();
+    
+    // Get the most recent subscription (any status)
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_email', emailLower)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No subscription found - return free plan
+        return {
+          plan: 'free',
+          status: 'inactive',
+          renewsAt: null,
+          canceledAt: null,
+          trialEndsAt: null,
+          raw: null,
+        };
+      }
+      console.error('[BillingService] Error fetching subscription status:', error);
+      // On error, return free plan (fail-safe)
+      return {
+        plan: 'free',
+        status: 'inactive',
+        renewsAt: null,
+        canceledAt: null,
+        trialEndsAt: null,
+        raw: null,
+      };
+    }
+
+    // No subscription found
+    if (!data) {
+      return {
+        plan: 'free',
+        status: 'inactive',
+        renewsAt: null,
+        canceledAt: null,
+        trialEndsAt: null,
+        raw: null,
+      };
+    }
+
+    // Normalize status
+    let status = data.status || 'inactive';
+    if (status === 'trialing') {
+      status = 'active'; // Treat trialing as active
+    } else if (status === 'past_due' || status === 'unpaid') {
+      status = 'past_due';
+    } else if (status === 'canceled' || status === 'cancelled') {
+      status = 'cancelled';
+    } else if (status !== 'active') {
+      status = 'inactive';
+    }
+
+    // Extract dates
+    const renewsAt = data.renews_at ? new Date(data.renews_at).toISOString() : null;
+    const canceledAt = data.canceled_at ? new Date(data.canceled_at).toISOString() : null;
+    const trialEndsAt = data.trial_ends_at ? new Date(data.trial_ends_at).toISOString() : null;
+
+    return {
+      plan: data.plan || 'free',
+      status: status,
+      renewsAt: renewsAt,
+      canceledAt: canceledAt,
+      trialEndsAt: trialEndsAt,
+      raw: data,
+    };
+  } catch (error) {
+    console.error('[BillingService] Exception getting subscription status:', error);
+    // Fail-safe: return free plan
+    return {
+      plan: 'free',
+      status: 'inactive',
+      renewsAt: null,
+      canceledAt: null,
+      trialEndsAt: null,
+      raw: null,
+    };
+  }
+}
+
+/**
  * Get subscription for an email (returns first active subscription)
  * @param {string} email - User email address
  * @returns {Promise<Object>} Result with success status and subscription data
@@ -556,6 +650,7 @@ module.exports = {
   updateSubscriptionQuantity,
   syncSubscriptionFromWebhook,
   getSubscriptionForEmail,
+  getUserSubscriptionStatus,
   getUserSubscriptions,
   listSubscriptions, // Alias for getUserSubscriptions
   getSubscriptionByPlugin,
