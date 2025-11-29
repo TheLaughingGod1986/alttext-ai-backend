@@ -41,3 +41,4 @@ lcov.info
 
 .env.bak
 # Trigger CI run
+src/emails/dist/
