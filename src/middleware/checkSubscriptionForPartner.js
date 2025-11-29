@@ -5,7 +5,8 @@
  */
 
 const { supabase } = require('../../db/supabase-client');
-const checkSubscription = require('./checkSubscription');
+const requireSubscription = require('./requireSubscription');
+const errorCodes = require('../constants/errorCodes');
 
 /**
  * Middleware to check subscription for partner API requests
@@ -17,7 +18,9 @@ async function checkSubscriptionForPartner(req, res, next) {
     if (!req.partnerApiKey || !req.partnerApiKey.identityId) {
       return res.status(401).json({
         ok: false,
-        error: 'Partner API authentication required',
+        code: 'UNAUTHORIZED',
+        reason: 'authentication_required',
+        message: 'Partner API authentication required',
       });
     }
 
@@ -31,7 +34,9 @@ async function checkSubscriptionForPartner(req, res, next) {
     if (identityError || !identity) {
       return res.status(500).json({
         ok: false,
-        error: 'Identity not found',
+        code: 'IDENTITY_ERROR',
+        reason: 'server_error',
+        message: 'Identity not found',
       });
     }
 
@@ -42,12 +47,14 @@ async function checkSubscriptionForPartner(req, res, next) {
     req.user.email = identity.email;
 
     // Call the standard subscription check middleware
-    return checkSubscription(req, res, next);
+    return requireSubscription(req, res, next);
   } catch (error) {
     console.error('[CheckSubscriptionForPartner] Exception in middleware:', error);
     return res.status(500).json({
       ok: false,
-      error: 'Subscription check failed',
+      code: 'SERVER_ERROR',
+      reason: 'server_error',
+      message: 'Subscription check failed',
     });
   }
 }

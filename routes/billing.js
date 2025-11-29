@@ -396,14 +396,24 @@ router.post('/webhook', webhookMiddleware, webhookHandler);
  */
 router.post('/webhook/test', authenticateToken, async (req, res) => {
   if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not found' });
+    return res.status(404).json({
+      ok: false,
+      code: 'NOT_FOUND',
+      reason: 'resource_not_found',
+      message: 'Not found',
+    });
   }
 
   try {
     await testWebhook(req, res);
   } catch (error) {
     console.error('Test webhook error:', error);
-    res.status(500).json({ error: 'Test webhook failed' });
+    res.status(500).json({
+      ok: false,
+      code: 'WEBHOOK_ERROR',
+      reason: 'server_error',
+      message: 'Test webhook failed',
+    });
   }
 });
 

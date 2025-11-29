@@ -27,7 +27,7 @@ const newEmailRoutes = require('./src/routes/email'); // New email routes
 const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
 const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
 const accountRoutes = require('./src/routes/account'); // Account routes
-const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
+const { router: dashboardRoutes } = require('./src/routes/dashboard'); // Dashboard routes
 const dashboardChartsRoutes = require('./src/routes/dashboardCharts'); // Dashboard charts routes
 const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
 const identityRoutes = require('./src/routes/identity'); // Identity routes
@@ -159,8 +159,10 @@ app.get('/metrics', async (req, res) => {
     res.json(metrics);
   } catch (error) {
     res.status(500).json({
-      error: 'Failed to collect metrics',
-      message: error.message,
+      ok: false,
+      code: 'METRICS_ERROR',
+      reason: 'server_error',
+      message: 'Failed to collect metrics',
     });
   }
 });
@@ -204,7 +206,21 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
   console.log(`[Generate] Request received at ${new Date().toISOString()}`);
   
   try {
-    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
+    // Validate request payload with Zod
+    const { safeParseGenerateInput } = require('./src/validation/generate');
+    const validation = safeParseGenerateInput(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Request validation failed',
+        details: validation.error.flatten(),
+      });
+    }
+
+    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = validation.data;
     console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
 
     // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
@@ -213,8 +229,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     
     if (!siteHash) {
       return res.status(400).json({
-        error: 'X-Site-Hash header is required for quota tracking',
-        code: 'MISSING_SITE_HASH'
+        ok: false,
+        code: 'MISSING_SITE_HASH',
+        reason: 'validation_failed',
+        message: 'X-Site-Hash header is required for quota tracking',
       });
     }
 
@@ -239,14 +257,15 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     if (!apiKey) {
       console.error(`Missing OpenAI API key for service: ${service}`);
       return res.status(500).json({
-        error: 'Failed to generate content',
+        ok: false,
         code: 'GENERATION_ERROR',
-        message: `Missing OpenAI API key for service: ${service}`
+        reason: 'server_error',
+        message: `Missing OpenAI API key for service: ${service}`,
       });
     }
     
     // Check if user should use credits for this request
-    // Note: Subscription/credits check is handled by checkSubscription middleware
+    // Note: Subscription/credits check is handled by requireSubscription middleware
     // The middleware sets req.useCredit = true and req.creditIdentityId if credits should be used
     const usingCredits = req.useCredit === true;
     let creditsBalance = 0;
@@ -273,7 +292,9 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
       console.log(`[Generate] Quota exceeded for site ${siteHash}: ${quotaCheck.used}/${quotaCheck.limit}`);
       return res.status(429).json({
         ok: false,
-        error: 'quota_exceeded',
+        code: 'NO_ACCESS',
+        reason: 'plan_limit',
+        message: 'Quota exceeded',
         usage: {
           used: quotaCheck.used,
           limit: quotaCheck.limit,
@@ -332,9 +353,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
           hasContent: !!openaiResponse?.choices?.[0]?.message?.content
         });
         return res.status(500).json({
-          error: 'Invalid response from AI service',
+          ok: false,
           code: 'INVALID_AI_RESPONSE',
-          message: 'The AI service returned an unexpected response format'
+          reason: 'server_error',
+          message: 'The AI service returned an unexpected response format',
         });
       }
 
@@ -442,9 +464,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
         response: JSON.stringify(openaiResponse, null, 2)
       });
       return res.status(500).json({
-        error: 'Invalid response from AI service',
+        ok: false,
         code: 'INVALID_AI_RESPONSE',
-        message: 'The AI service returned an unexpected response format'
+        reason: 'server_error',
+        message: 'The AI service returned an unexpected response format',
       });
     }
     
@@ -512,8 +535,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     // Handle rate limiting
     if (error.response?.status === 429) {
       return res.status(429).json({
-        error: 'OpenAI rate limit reached. Please try again later.',
-        code: 'OPENAI_RATE_LIMIT'
+        ok: false,
+        code: 'OPENAI_RATE_LIMIT',
+        reason: 'rate_limit_exceeded',
+        message: 'OpenAI rate limit reached. Please try again later.',
       });
     }
     
@@ -521,9 +546,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
       console.error('[Generate] Request timed out - OpenAI API took too long to respond');
       return res.status(504).json({
-        error: 'Request timeout',
+        ok: false,
         code: 'TIMEOUT',
-        message: 'The image generation is taking longer than expected. Please try again.'
+        reason: 'server_error',
+        message: 'The image generation is taking longer than expected. Please try again.',
       });
     }
 
@@ -579,9 +605,10 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     }
 
     res.status(500).json({
-      error: 'Failed to generate alt text',
+      ok: false,
       code: errorCode,
-      message: errorMessage
+      reason: 'server_error',
+      message: errorMessage,
     });
   }
 });
@@ -593,8 +620,10 @@ app.post('/api/review', authenticateToken, requireSubscription, async (req, res)
 
     if (!alt_text || typeof alt_text !== 'string') {
       return res.status(400).json({
-        error: 'Alt text is required',
-        code: 'MISSING_ALT_TEXT'
+        ok: false,
+        code: 'MISSING_ALT_TEXT',
+        reason: 'validation_failed',
+        message: 'Alt text is required',
       });
     }
 
@@ -611,9 +640,10 @@ app.post('/api/review', authenticateToken, requireSubscription, async (req, res)
   } catch (error) {
     console.error('Review error:', error.response?.data || error.message);
     res.status(500).json({
-      error: 'Failed to review alt text',
+      ok: false,
       code: 'REVIEW_ERROR',
-      message: error.response?.data?.error?.message || error.message
+      reason: 'server_error',
+      message: error.response?.data?.error?.message || error.message || 'Failed to review alt text',
     });
   }
 });
@@ -624,24 +654,30 @@ app.post('/api/generate-legacy', optionalAuth, async (req, res) => {
     const { domain, image_data, context, regenerate = false } = req.body;
     
     if (!domain) {
-      return res.status(400).json({ 
-        error: 'Domain is required for legacy endpoint',
-        code: 'MISSING_DOMAIN'
+      return res.status(400).json({
+        ok: false,
+        code: 'MISSING_DOMAIN',
+        reason: 'validation_failed',
+        message: 'Domain is required for legacy endpoint',
       });
     }
     
     // For now, redirect to new auth-required endpoint
     return res.status(410).json({
-      error: 'Legacy domain-based authentication is deprecated. Please create an account.',
+      ok: false,
       code: 'LEGACY_DEPRECATED',
-      upgradeUrl: '/auth/register'
+      reason: 'deprecated',
+      message: 'Legacy domain-based authentication is deprecated. Please create an account.',
+      upgradeUrl: '/auth/register',
     });
     
   } catch (error) {
     console.error('Legacy generate error:', error);
     res.status(500).json({
-      error: 'Legacy endpoint error',
-      code: 'LEGACY_ERROR'
+      ok: false,
+      code: 'LEGACY_ERROR',
+      reason: 'server_error',
+      message: 'Legacy endpoint error',
     });
   }
 });
@@ -652,7 +688,12 @@ app.post('/api/webhook/reset', async (req, res) => {
     const { secret } = req.body;
     
     if (secret !== process.env.WEBHOOK_SECRET) {
-      return res.status(403).json({ error: 'Invalid secret' });
+      return res.status(403).json({
+        ok: false,
+        code: 'INVALID_SECRET',
+        reason: 'authentication_required',
+        message: 'Invalid secret',
+      });
     }
     
     const resetCount = await resetMonthlyTokens();
@@ -664,7 +705,12 @@ app.post('/api/webhook/reset', async (req, res) => {
     });
   } catch (error) {
     console.error('Reset error:', error);
-    res.status(500).json({ error: 'Reset failed' });
+    res.status(500).json({
+      ok: false,
+      code: 'RESET_ERROR',
+      reason: 'server_error',
+      message: 'Reset failed',
+    });
   }
 });
 

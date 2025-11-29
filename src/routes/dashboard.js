@@ -15,6 +15,44 @@ const plansConfig = require('../config/plans');
 
 const router = express.Router();
 
+// Simple in-memory cache for dashboard data
+// Key: email, Value: { data, timestamp }
+const dashboardCache = new Map();
+const CACHE_TTL_MS = 45 * 1000; // 45 seconds (between 30-60 seconds as requested)
+
+/**
+ * Get cached dashboard data if available and not expired
+ */
+function getCachedDashboard(email) {
+  const cached = dashboardCache.get(email);
+  if (!cached) return null;
+  
+  const now = Date.now();
+  if (now - cached.timestamp > CACHE_TTL_MS) {
+    dashboardCache.delete(email);
+    return null;
+  }
+  
+  return cached.data;
+}
+
+/**
+ * Set cached dashboard data
+ */
+function setCachedDashboard(email, data) {
+  dashboardCache.set(email, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Clear cached dashboard data for a user (call after updates)
+ */
+function clearCachedDashboard(email) {
+  dashboardCache.delete(email);
+}
+
 /**
  * GET /me
  * Returns minimal user session data with subscription summary
@@ -84,6 +122,7 @@ router.get('/me', authenticateToken, async (req, res) => {
  * GET /dashboard
  * Returns aggregated dashboard payload (installations + usage + subscription)
  * Uses identityService.getIdentityDashboard for identity layer integration
+ * Cached for 45 seconds to reduce database load
  */
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
@@ -92,8 +131,16 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
+    }
+
+    // Check cache first
+    const cached = getCachedDashboard(email);
+    if (cached) {
+      return res.status(200).json(cached);
     }
 
     const payload = await getIdentityDashboard(email);
@@ -157,7 +204,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       // Continue without recent purchases
     }
 
-    return res.status(200).json({
+    const response = {
       ok: true,
       ...payload,
       subscriptionStatus,
@@ -167,12 +214,19 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         balance: creditsBalance,
         recentPurchases: recentPurchases,
       },
-    });
+    };
+
+    // Cache the response
+    setCachedDashboard(email, response);
+
+    return res.status(200).json(response);
   } catch (err) {
     console.error('[Dashboard] GET /dashboard error:', err);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to load dashboard',
+      code: 'DASHBOARD_ERROR',
+      reason: 'server_error',
+      message: 'Failed to load dashboard',
     });
   }
 });
@@ -213,5 +267,8 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  clearCachedDashboard, // Export for use in other routes that update dashboard data
+};
 

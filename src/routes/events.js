@@ -6,7 +6,6 @@
 
 const express = require('express');
 const { authenticateToken } = require('../../auth/jwt');
-const { checkSubscription } = require('../middleware/checkSubscription');
 const eventService = require('../services/eventService');
 const creditsService = require('../services/creditsService');
 
@@ -36,7 +35,9 @@ router.post('/log', authenticateToken, async (req, res) => {
     if (!eventType) {
       return res.status(400).json({
         ok: false,
-        error: 'eventType is required',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'eventType is required',
       });
     }
 
@@ -55,7 +56,9 @@ router.post('/log', authenticateToken, async (req, res) => {
     if (!identityId) {
       return res.status(400).json({
         ok: false,
-        error: 'Unable to determine identity_id from token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Unable to determine identity_id from token',
       });
     }
 
@@ -64,7 +67,9 @@ router.post('/log', authenticateToken, async (req, res) => {
     if (isNaN(creditsDeltaValue)) {
       return res.status(400).json({
         ok: false,
-        error: 'creditsDelta must be a valid integer',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'creditsDelta must be a valid integer',
       });
     }
 
@@ -81,7 +86,9 @@ router.post('/log', authenticateToken, async (req, res) => {
       if (!subscriptionCheck && (!balanceResult.success || balanceResult.balance <= 0)) {
         return res.status(402).json({
           ok: false,
-          error: 'subscription_required',
+          code: 'NO_ACCESS',
+          reason: 'no_subscription',
+          message: 'No active subscription found. Please subscribe to continue.',
         });
       }
     }
@@ -97,7 +104,9 @@ router.post('/log', authenticateToken, async (req, res) => {
     if (!result.success) {
       return res.status(500).json({
         ok: false,
-        error: result.error || 'Failed to log event',
+        code: 'EVENT_LOG_ERROR',
+        reason: 'server_error',
+        message: result.error || 'Failed to log event',
       });
     }
 
@@ -109,8 +118,9 @@ router.post('/log', authenticateToken, async (req, res) => {
     console.error('[Events] Error logging event:', error);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to log event',
-      message: error.message || 'Unknown error',
+      code: 'EVENT_LOG_ERROR',
+      reason: 'server_error',
+      message: error.message || 'Failed to log event',
     });
   }
 });

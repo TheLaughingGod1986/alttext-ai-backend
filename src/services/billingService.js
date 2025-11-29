@@ -10,6 +10,44 @@ const emailService = require('./emailService');
 const usageService = require('./usageService');
 const plansConfig = require('../config/plans');
 
+// Simple in-memory cache for subscription lookups
+// Key: email, Value: { data, timestamp }
+const subscriptionCache = new Map();
+const SUBSCRIPTION_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+
+/**
+ * Get cached subscription data if available and not expired
+ */
+function getCachedSubscription(email) {
+  const cached = subscriptionCache.get(email);
+  if (!cached) return null;
+  
+  const now = Date.now();
+  if (now - cached.timestamp > SUBSCRIPTION_CACHE_TTL_MS) {
+    subscriptionCache.delete(email);
+    return null;
+  }
+  
+  return cached.data;
+}
+
+/**
+ * Set cached subscription data
+ */
+function setCachedSubscription(email, data) {
+  subscriptionCache.set(email, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+/**
+ * Clear cached subscription data for a user (call after subscription updates)
+ */
+function clearCachedSubscription(email) {
+  subscriptionCache.delete(email);
+}
+
 /**
  * Create or get Stripe customer for an email
  * @param {string} email - User email address
@@ -140,6 +178,10 @@ async function createSubscription({ email, plugin, priceId }) {
     }
 
     console.log(`[BillingService] Created subscription for ${email} and ${plugin}`);
+    
+    // Clear cache for this user
+    clearCachedSubscription(email.toLowerCase());
+    
     return {
       success: true,
       data: { subscription: inserted, isNew: true },
@@ -165,6 +207,13 @@ async function cancelSubscription(subscriptionId) {
     // Cancel in Stripe
     const subscription = await stripe.subscriptions.cancel(subscriptionId);
 
+    // Get email from subscription before updating (for cache clearing)
+    const { data: existingSub } = await supabase
+      .from('subscriptions')
+      .select('user_email')
+      .eq('stripe_subscription_id', subscriptionId)
+      .single();
+
     // Update in database
     const { error } = await supabase
       .from('subscriptions')
@@ -178,6 +227,11 @@ async function cancelSubscription(subscriptionId) {
     if (error) {
       console.error('[BillingService] Error updating canceled subscription:', error);
       // Don't fail if DB update fails - Stripe cancellation succeeded
+    }
+
+    // Clear cache for this user
+    if (existingSub?.user_email) {
+      clearCachedSubscription(existingSub.user_email.toLowerCase());
     }
 
     console.log(`[BillingService] Canceled subscription ${subscriptionId}`);
@@ -301,6 +355,9 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
       return { success: false, error: error.message };
     }
 
+    // Clear cache for this user
+    clearCachedSubscription(email);
+    
     console.log(`[BillingService] Synced subscription ${subscriptionId} from webhook`);
     return { success: true, data: { subscription: inserted } };
   } catch (error) {
@@ -410,25 +467,40 @@ async function getUserSubscriptionStatus(email) {
  */
 async function getSubscriptionForEmail(email) {
   try {
+    const emailLower = email.toLowerCase();
+    
+    // Check cache first
+    const cached = getCachedSubscription(emailLower);
+    if (cached) {
+      return cached;
+    }
+    
     const { data, error } = await supabase
       .from('subscriptions')
       .select('*')
-      .eq('user_email', email.toLowerCase())
+      .eq('user_email', emailLower)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
+    let result;
     if (error) {
       if (error.code === 'PGRST116') {
         // No subscription found
-        return { success: true, subscription: null };
+        result = { success: true, subscription: null };
+      } else {
+        console.error('[BillingService] Error fetching subscription:', error);
+        result = { success: false, error: error.message, subscription: null };
       }
-      console.error('[BillingService] Error fetching subscription:', error);
-      return { success: false, error: error.message, subscription: null };
+    } else {
+      result = { success: true, subscription: data || null };
     }
 
-    return { success: true, subscription: data || null };
+    // Cache the result (even errors are cached to avoid repeated DB calls)
+    setCachedSubscription(emailLower, result);
+    
+    return result;
   } catch (error) {
     console.error('[BillingService] Exception fetching subscription:', error);
     return { success: false, error: error.message, subscription: null };
@@ -656,5 +728,6 @@ module.exports = {
   getSubscriptionByPlugin,
   checkSubscription,
   enforceSubscriptionLimits,
+  clearCachedSubscription, // Export for external cache clearing if needed
 };
 

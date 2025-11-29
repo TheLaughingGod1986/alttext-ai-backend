@@ -633,7 +633,12 @@ function webhookMiddleware(req, res, next) {
     next();
   } catch (error) {
     console.error('Webhook verification failed:', error.message);
-    res.status(400).json({ error: 'Invalid webhook signature' });
+    res.status(400).json({
+      ok: false,
+      code: 'INVALID_SIGNATURE',
+      reason: 'validation_failed',
+      message: 'Invalid webhook signature',
+    });
   }
 }
 
@@ -646,7 +651,12 @@ async function webhookHandler(req, res) {
     res.json({ received: true });
   } catch (error) {
     console.error('Webhook handler error:', error);
-    res.status(500).json({ error: 'Webhook processing failed' });
+    res.status(500).json({
+      ok: false,
+      code: 'WEBHOOK_ERROR',
+      reason: 'server_error',
+      message: 'Webhook processing failed',
+    });
   }
 }
 
@@ -674,7 +684,12 @@ async function testWebhook(req, res) {
 
   } catch (error) {
     console.error('Test webhook error:', error);
-    res.status(500).json({ error: 'Test webhook failed' });
+    res.status(500).json({
+      ok: false,
+      code: 'WEBHOOK_ERROR',
+      reason: 'server_error',
+      message: 'Test webhook failed',
+    });
   }
 }
 

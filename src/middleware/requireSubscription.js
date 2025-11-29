@@ -50,6 +50,7 @@ async function requireSubscription(req, res, next) {
     return res.status(500).json({
       ok: false,
       code: 'SERVER_ERROR',
+      reason: 'server_error',
       message: 'Unexpected error.',
     });
   }

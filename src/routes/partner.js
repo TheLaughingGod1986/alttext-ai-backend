@@ -55,7 +55,9 @@ router.post(
       if (!email) {
         return res.status(500).json({
           ok: false,
-          error: 'Identity email not found',
+          code: 'IDENTITY_ERROR',
+          reason: 'server_error',
+          message: 'Identity email not found',
         });
       }
 

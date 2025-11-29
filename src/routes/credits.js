@@ -10,6 +10,7 @@ const { createCreditPackCheckoutSession } = require('../stripe/checkout');
 const { getStripe } = require('../utils/stripeClient');
 const rateLimit = require('express-rate-limit');
 const creditPacks = require('../data/creditPacks');
+const { z } = require('zod');
 
 const router = express.Router();
 
@@ -18,6 +19,22 @@ const creditsRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per window
   message: 'Too many requests, please try again later.',
+});
+
+// Validation schemas
+const purchaseSchema = z.object({
+  priceId: z.string().min(1).optional(),
+  packSize: z.enum(['50', '200', '1000']).optional(),
+  email: z.string().email().optional(),
+}).refine(
+  (data) => data.priceId || data.packSize,
+  {
+    message: 'Either priceId or packSize is required',
+  }
+);
+
+const checkoutSessionSchema = z.object({
+  packId: z.string().min(1),
 });
 
 /**
@@ -133,14 +150,20 @@ router.get('/transactions', authenticateToken, creditsRateLimiter, async (req, r
  */
 router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (req, res) => {
   try {
-    const { packId } = req.body;
+    // Validate request payload with Zod
+    const validation = checkoutSessionSchema.safeParse(req.body);
 
-    if (!packId) {
+    if (!validation.success) {
       return res.status(400).json({
         ok: false,
-        error: 'packId is required',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Request validation failed',
+        details: validation.error.flatten(),
       });
     }
+
+    const { packId } = validation.data;
 
     // Find pack in creditPacks array
     const pack = creditPacks.find(p => p.id === packId);
@@ -475,11 +498,26 @@ router.post('/purchase', authenticateToken, creditsRateLimiter, async (req, res)
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
     }
 
-    const { priceId, packSize } = req.body;
+    // Validate request payload with Zod
+    const validation = purchaseSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Request validation failed',
+        details: validation.error.flatten(),
+      });
+    }
+
+    const { priceId, packSize } = validation.data;
 
     // Map pack size to price ID if packSize is provided
     let actualPriceId = priceId;

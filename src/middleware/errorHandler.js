@@ -4,6 +4,23 @@
  * Hides stack traces in production for security
  */
 
+const errorCodes = require('../constants/errorCodes');
+
+/**
+ * Map error codes to reasons
+ */
+function getReasonForCode(code) {
+  const reasonMap = {
+    'VALIDATION_ERROR': 'validation_failed',
+    'UNAUTHORIZED': 'authentication_required',
+    'CORS_ERROR': 'cors_violation',
+    'NOT_FOUND': 'resource_not_found',
+    'INTERNAL_ERROR': 'server_error',
+    'NO_ACCESS': 'access_denied',
+  };
+  return reasonMap[code] || 'unknown_error';
+}
+
 /**
  * Error handler middleware
  * Should be registered last, after all routes
@@ -56,10 +73,11 @@ function errorHandler(err, req, res, next) {
     }
   }
 
-  // Build error response
+  // Build error response with unified format
   const errorResponse = {
     ok: false,
-    error: errorCode,
+    code: errorCode,
+    reason: getReasonForCode(errorCode),
     message: errorMessage,
   };
 
@@ -87,7 +105,8 @@ function errorHandler(err, req, res, next) {
 function notFoundHandler(req, res) {
   res.status(404).json({
     ok: false,
-    error: 'NOT_FOUND',
+    code: 'NOT_FOUND',
+    reason: 'resource_not_found',
     message: `Route ${req.method} ${req.path} not found`,
     requestId: req.requestId || null,
   });

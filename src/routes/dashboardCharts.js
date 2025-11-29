@@ -31,7 +31,9 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
     }
 
@@ -50,7 +52,9 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
     console.error('[DashboardCharts] GET /dashboard/usage/daily error:', err);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to load daily usage data',
+      code: 'DASHBOARD_ERROR',
+      reason: 'server_error',
+      message: 'Failed to load daily usage data',
     });
   }
 });
@@ -67,7 +71,9 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
     }
 
@@ -86,7 +92,9 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
     console.error('[DashboardCharts] GET /dashboard/usage/monthly error:', err);
     return res.status(500).json({
       ok: false,
-      error: 'Failed to load monthly usage data',
+      code: 'DASHBOARD_ERROR',
+      reason: 'server_error',
+      message: 'Failed to load monthly usage data',
     });
   }
 });
@@ -103,7 +111,9 @@ router.get('/dashboard/events/recent', authenticateToken, async (req, res) => {
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
     }
 
@@ -134,7 +144,9 @@ router.get('/dashboard/plugins/activity', authenticateToken, async (req, res) =>
     if (!email) {
       return res.status(400).json({
         ok: false,
-        error: 'User email not found in token',
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
       });
     }
 
