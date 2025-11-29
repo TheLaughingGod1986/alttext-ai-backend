@@ -28,8 +28,10 @@ let listenPatched = false;
 
 // Cache for server instance to make createTestServer() idempotent
 // This prevents unnecessary module cache clearing which can interfere with other tests
+// Note: Cache is per-process, shared across all test files
 let cachedServer = null;
 let cachedServerPath = null;
+let cacheInitialized = false;
 
 /** 
  * Create a test server instance
@@ -44,6 +46,7 @@ function createTestServer() {
     // If NODE_ENV changed, invalidate cache
     cachedServer = null;
     cachedServerPath = null;
+    cacheInitialized = false;
   }
   
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
@@ -74,40 +77,55 @@ function createTestServer() {
   }
   
   // Try to use cached server if available and valid
-  if (cachedServer && typeof cachedServer.listen === 'function') {
-    const serverPath = require.resolve('../../server-v2');
-    // If the cached server is from the same module path, reuse it
-    if (cachedServerPath === serverPath && require.cache[serverPath]) {
-      return cachedServer;
+  // The cached server instance itself is what matters - it's a JavaScript object
+  // that persists even if the module cache is cleared
+  if (cacheInitialized && cachedServer && typeof cachedServer.listen === 'function') {
+    // Double-check the cached server is still valid
+    // Express apps are JavaScript objects that persist even if module cache is cleared
+    try {
+      // Verify it's still callable (has listen method)
+      if (typeof cachedServer.listen === 'function') {
+        return cachedServer;
+      }
+    } catch (e) {
+      // Cache is invalid, clear it and reload
+      cachedServer = null;
+      cachedServerPath = null;
+      cacheInitialized = false;
     }
-    // Otherwise, cache is stale, clear it
-    cachedServer = null;
-    cachedServerPath = null;
   }
   
-  // Try to load server without clearing cache first
+  // Try to load server - use cached module if available, otherwise load fresh
   let app;
   const serverPath = require.resolve('../../server-v2');
   
   try {
-    // First attempt: try to use cached module if available
-    if (require.cache[serverPath]) {
-      app = require('../../server-v2');
-    } else {
-      // Module not in cache, require it (will be cached automatically)
-      app = require('../../server-v2');
-    }
+    // Try to require the server - will use cache if available, otherwise load fresh
+    app = require('../../server-v2');
     
     // Validate the app
     if (!app) {
       // Module returned null/undefined - clear cache and retry
       delete require.cache[serverPath];
+      // Also clear supabase-client cache to ensure mock is used
+      try {
+        const supabasePath = require.resolve('../../db/supabase-client');
+        delete require.cache[supabasePath];
+      } catch (e) {
+        // Ignore if not found
+      }
       app = require('../../server-v2');
     }
     
     if (typeof app.listen !== 'function') {
       // Invalid app - clear cache and retry
       delete require.cache[serverPath];
+      try {
+        const supabasePath = require.resolve('../../db/supabase-client');
+        delete require.cache[supabasePath];
+      } catch (e) {
+        // Ignore if not found
+      }
       app = require('../../server-v2');
       
       // Validate again
@@ -116,9 +134,15 @@ function createTestServer() {
       }
     }
     
+    // Validate one more time before caching
+    if (!app || typeof app.listen !== 'function') {
+      throw new Error('server-v2 module did not export a valid Express app after loading');
+    }
+    
     // Cache the valid server instance
     cachedServer = app;
     cachedServerPath = serverPath;
+    cacheInitialized = true;
     
     return app;
   } catch (error) {
@@ -140,9 +164,15 @@ function createTestServer() {
           throw new Error('server-v2 module did not export an Express app after cache clear');
         }
         
+        // Validate one more time before caching
+        if (!app || typeof app.listen !== 'function') {
+          throw new Error('server-v2 module did not export a valid Express app after cache clear and retry');
+        }
+        
         // Cache the valid server instance
         cachedServer = app;
         cachedServerPath = serverPath;
+        cacheInitialized = true;
         
         return app;
       } catch (retryError) {

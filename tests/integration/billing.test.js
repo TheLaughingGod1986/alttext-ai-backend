@@ -11,21 +11,12 @@ let app;
 
 describe('Billing routes', () => {
   beforeAll(() => {
-    try {
-      app = createTestServer();
-      if (!app) {
-        console.error('[billing.test] createTestServer returned null');
-        throw new Error('Failed to create test server: createTestServer returned null');
-      }
-      if (typeof app.listen !== 'function') {
-        console.error('[billing.test] app.listen is not a function, app type:', typeof app);
-        throw new Error('Failed to create test server: app is not an Express app');
-      }
-      console.log('[billing.test] Test server created successfully');
-    } catch (error) {
-      console.error('[billing.test] Error in beforeAll:', error.message);
-      console.error('[billing.test] Stack:', error.stack);
-      throw error; // Re-throw to fail the test suite
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server: createTestServer returned null');
+    }
+    if (typeof app.listen !== 'function') {
+      throw new Error('Failed to create test server: app is not an Express app');
     }
   });
   beforeAll(() => {
@@ -63,6 +54,10 @@ describe('Billing routes', () => {
   });
 
   test('returns plans', async () => {
+    // Ensure app is set - if it's null, the beforeAll should have failed
+    if (!app || typeof app.listen !== 'function') {
+      throw new Error(`app is invalid in test: type=${typeof app}, isNull=${app === null}, hasListen=${typeof app?.listen}`);
+    }
     const res = await request(app).get('/billing/plans');
     expect(res.status).toBe(200);
     expect(res.body.plans).toBeDefined();
