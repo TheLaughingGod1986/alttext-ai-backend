@@ -87,8 +87,12 @@ describe('Dashboard Charts Service', () => {
         { created_at: `${todayStr}T20:00:00Z`, metadata: null },
       ];
 
-      supabaseMock.__queueResponse('usage_logs', 'select', {
-        data: mockUsageLogs,
+      supabaseMock.__queueResponse('events', 'select', {
+        data: mockUsageLogs.map(log => ({
+          created_at: log.created_at,
+          metadata: log.metadata,
+          event_type: 'alttext_generated'
+        })),
         error: null,
       });
 
@@ -158,8 +162,12 @@ describe('Dashboard Charts Service', () => {
         { created_at: `${monthStr}-28T20:00:00Z`, metadata: null },
       ];
 
-      supabaseMock.__queueResponse('usage_logs', 'select', {
-        data: mockUsageLogs,
+      supabaseMock.__queueResponse('events', 'select', {
+        data: mockUsageLogs.map(log => ({
+          created_at: log.created_at,
+          metadata: log.metadata,
+          event_type: 'alttext_generated'
+        })),
         error: null,
       });
 
@@ -306,20 +314,25 @@ describe('Dashboard Charts Service', () => {
 
   describe('getRecentEvents', () => {
     it('should return recent events with correct format', async () => {
+      creditsService.getOrCreateIdentity.mockResolvedValue({
+        success: true,
+        identityId: 'test-identity-id',
+      });
+
       const mockEvents = [
         {
-          event_name: 'alttext_generated',
+          event_type: 'alttext_generated',
           created_at: new Date().toISOString(),
-          event_data: { image_id: 'test-123' },
+          metadata: { image_id: 'test-123' },
         },
         {
-          event_name: 'dashboard_loaded',
+          event_type: 'dashboard_loaded',
           created_at: new Date(Date.now() - 1000).toISOString(),
-          event_data: {},
+          metadata: {},
         },
       ];
 
-      supabaseMock.__queueResponse('analytics_events', 'select', {
+      supabaseMock.__queueResponse('events', 'select', {
         data: mockEvents,
         error: null,
       });
@@ -336,13 +349,18 @@ describe('Dashboard Charts Service', () => {
     });
 
     it('should limit to 50 events', async () => {
+      creditsService.getOrCreateIdentity.mockResolvedValue({
+        success: true,
+        identityId: 'test-identity-id',
+      });
+
       const mockEvents = Array.from({ length: 60 }, (_, i) => ({
-        event_name: 'test_event',
+        event_type: 'test_event',
         created_at: new Date(Date.now() - i * 1000).toISOString(),
-        event_data: {},
+        metadata: {},
       }));
 
-      supabaseMock.__queueResponse('analytics_events', 'select', {
+      supabaseMock.__queueResponse('events', 'select', {
         data: mockEvents,
         error: null,
       });
@@ -354,7 +372,12 @@ describe('Dashboard Charts Service', () => {
     });
 
     it('should return empty array on database error', async () => {
-      supabaseMock.__queueResponse('analytics_events', 'select', {
+      creditsService.getOrCreateIdentity.mockResolvedValue({
+        success: true,
+        identityId: 'test-identity-id',
+      });
+
+      supabaseMock.__queueResponse('events', 'select', {
         data: null,
         error: { message: 'Database error' },
       });
@@ -366,15 +389,20 @@ describe('Dashboard Charts Service', () => {
     });
 
     it('should handle missing event_data gracefully', async () => {
+      creditsService.getOrCreateIdentity.mockResolvedValue({
+        success: true,
+        identityId: 'test-identity-id',
+      });
+
       const mockEvents = [
         {
-          event_name: 'test_event',
+          event_type: 'test_event',
           created_at: new Date().toISOString(),
-          event_data: null,
+          metadata: null,
         },
       ];
 
-      supabaseMock.__queueResponse('analytics_events', 'select', {
+      supabaseMock.__queueResponse('events', 'select', {
         data: mockEvents,
         error: null,
       });
