@@ -1,69 +1,5000 @@
 # Complete Codebase Export
 
-Generated on: 2025-11-29T14:10:44.799Z
+Generated on: 2025-11-29T14:29:40.921Z
 
 ---
 
-## package.json
+## .github/workflows/tests.yml
 
 ```
-{
-  "name": "alttext-ai-api",
-  "version": "1.0.0",
-  "description": "Proxy API for AltText AI WordPress plugin",
-  "main": "server-v2.js",
-  "scripts": {
-    "start": "node server-v2.js",
-    "dev": "nodemon server-v2.js",
-    "test": "jest --runInBand --forceExit",
-    "test:unit": "jest tests/unit --runInBand --forceExit",
-    "test:integration": "jest tests/integration --runInBand --forceExit",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:ci": "jest --runInBand --coverage --ci"
-  },
-  "keywords": [
-    "alttext",
-    "api",
-    "openai",
-    "wordpress"
-  ],
-  "author": "AltText AI",
-  "license": "MIT",
-  "dependencies": {
-    "@anthropic-ai/claude-code": "^2.0.55",
-    "@react-email/components": "^1.0.1",
-    "@react-email/render": "^2.0.0",
-    "@supabase/supabase-js": "^2.84.0",
-    "axios": "^1.6.2",
-    "bcrypt": "^6.0.0",
-    "cors": "^2.8.5",
-    "dayjs": "^1.11.13",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-rate-limit": "^7.1.5",
-    "helmet": "^7.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "resend": "^6.3.0",
-    "stripe": "^19.1.0",
-    "zod": "^4.1.13"
-  },
-  "devDependencies": {
-    "@types/jest": "^29.5.0",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "jest": "^29.7.0",
-    "nodemon": "^3.0.2",
-    "supertest": "^6.3.3",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run unit tests
+        run: npm run test:unit
+        timeout-minutes: 5
+
+      - name: Run integration tests
+        run: npm run test:integration
+        timeout-minutes: 10
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.node-version }}
+          path: coverage
+          if-no-files-found: ignore
+
+```
+
+---
+
+## BRANCH_PROTECTION_SETUP.md
+
+```
+# 🔒 Branch Protection Setup Guide
+
+## Why This Matters
+
+Currently, **Render auto-deploys on every push to `main`, even when GitHub Actions tests fail**. This means broken code can reach production.
+
+**Branch protection prevents broken code from being pushed to `main` in the first place.**
+
+## Quick Setup (5 minutes)
+
+### Step 1: Navigate to Branch Settings
+
+1. Go to: https://github.com/TheLaughingGod1986/optiap-backend/settings/branches
+2. Click **"Add rule"** or **"Add branch protection rule"**
+
+### Step 2: Configure the Rule
+
+**Branch name pattern:** `main`
+
+**Enable these settings:**
+
+✅ **Require status checks to pass before merging**
+   - Check: `Backend Tests / test (18.x)`
+   - Check: `Backend Tests / test (20.x)`
+   - ✅ **Require branches to be up to date before merging**
+
+✅ **Require pull request reviews before merging**
+   - Set: `Required approving reviews: 0` (or 1 if you want reviews)
+   - ✅ Dismiss stale pull request approvals when new commits are pushed
+
+✅ **Restrict pushes that create files**
+   - (Optional, but recommended)
+
+✅ **Do not allow bypassing the above settings**
+   - ✅ **Include administrators**
+
+❌ **Allow force pushes** - **UNCHECKED** (important!)
+❌ **Allow deletions** - **UNCHECKED** (important!)
+
+### Step 3: Save
+
+Click **"Create"** or **"Save changes"**
+
+## What This Does
+
+✅ **Prevents direct pushes to `main` that fail tests**
+   - You'll need to create a pull request
+   - Tests must pass before the PR can be merged
+
+✅ **Blocks force pushes and branch deletion**
+   - Prevents accidental or malicious changes
+
+✅ **Applies to admins too**
+   - Even you can't bypass these rules
+
+## Important Notes
+
+⚠️ **After enabling this:**
+- You can still push to `main` directly, but only if tests pass
+- If tests fail, you'll need to fix them before pushing
+- For major changes, consider using feature branches and pull requests
+
+⚠️ **Render will still auto-deploy**, but now:
+- Only code that passes tests can reach `main`
+- This provides the protection we need
+
+## Alternative: Disable Auto-Deploy in Render
+
+If you prefer manual control:
+
+1. Go to Render dashboard: https://dashboard.render.com
+2. Navigate to service: `alttext-ai-phase2`
+3. **Settings** → **Build & Deploy**
+4. **Disable "Auto-Deploy"**
+5. Manually deploy only after verifying GitHub Actions passes
+
+## Verification
+
+After setting up branch protection:
+
+1. Try pushing code that fails tests → Should be blocked
+2. Fix tests and push again → Should succeed
+3. Check that Render only deploys when tests pass
+
+## Need Help?
+
+- GitHub Docs: https://docs.github.com/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches
+- Render Docs: https://render.com/docs/deploys
+
+
+```
+
+---
+
+## CLEANUP_SUMMARY.md
+
+```
+# Backend Cleanup Summary
+
+**Date:** 2025-01-24  
+**Status:** ✅ Complete - All tests passing, coverage maintained
+
+## Summary
+
+Successfully completed a safe, test-backed cleanup of the backend following the refactoring. All changes were verified with tests after each step, ensuring no functionality was broken.
+
+## Files Deleted
+
+### Dead Code (from dead-code-analysis.json)
+1. ✅ `test-backend.js` - Test script file never imported
+2. ✅ `test-license-flows.js` - Test script file never imported
+3. ✅ `check-supabase-schema.js` - Utility script for schema checking
+4. ✅ `scripts/init-free-user-credits.js` - One-time migration script
+
+### Root Legacy Files
+5. ✅ `test-results.json` - Output artifact
+6. ✅ `PHASE1_IMPLEMENTATION_SUMMARY.md` - Implementation notes
+7. ✅ `VERIFICATION_CHECKLIST.md` - One-off checklist
+8. ✅ `RENDER_SUPABASE_MIGRATION.md` - Legacy migration notes
+9. ✅ `ORGANIZATION_LICENSING_IMPLEMENTATION.md` - Legacy documentation
+10. ✅ `AUTOMATED_LICENSE_DELIVERY.md` - Legacy documentation
+11. ✅ `fetch-render-env.sh` - Not referenced in CI or deployment
+
+### Duplicate Files
+12. ✅ `auth/dual-auth.js` - Duplicate (moved to `middleware/dual-auth.js`)
+
+**Total files deleted:** 12
+
+## Directories Consolidated
+
+### Removed
+- ✅ `/utils` - Consolidated into `/src/utils`
+- ✅ `/scripts` - Empty after cleanup, removed
+
+### Created/Updated
+- ✅ `/config` - Created with environment files and `loadEnv.js`
+- ✅ `/src/utils` - Consolidated utilities location
+
+## Files Moved
+
+### Environment Files
+- ✅ `env.example` → `config/env.example`
+- ✅ `.env.test` → `config/env.test`
+
+### Utilities
+- ✅ `utils/apiKey.js` → `src/utils/apiKey.js`
+- ✅ `utils/logger.js` → `src/utils/logger.js`
+
+## Import Path Updates
+
+All imports were updated to reflect new file locations:
+- ✅ `server-v2.js`: Updated `./utils/apiKey` → `./src/utils/apiKey`
+- ✅ `tests/unit/apiKey.test.js`: Updated `../../utils/apiKey` → `../../src/utils/apiKey`
+
+## Directories Evaluated and Kept
+
+### `/stripe/` - ✅ KEPT
+- **Reason:** Actively used by `routes/billing.js`
+- **Files:** `checkout.js`, `webhooks.js`
+- **Status:** Required for production functionality
+
+### `/migrations/` - ✅ KEPT
+- **Reason:** Contains important database schema (`add_licenses_table.sql`)
+- **Status:** May be needed for reference or manual migration runs
+
+### `/auth/` - ✅ KEPT (partially cleaned)
+- **Remaining files:** `jwt.js`, `routes.js`, `email.js`
+- **Status:** All files are actively used
+- **Action taken:** Removed duplicate `dual-auth.js` (moved to middleware/)
+
+## New Files Created
+
+1. ✅ `config/loadEnv.js` - Centralized environment loading utility
+   - Provides: `getEnv()`, `requireEnv()`, `isProduction()`, `isDevelopment()`, `isTest()`
+
+2. ✅ `validation/auth.js` - Authentication route validation
+   - `validateRegistrationInput()` - Validates registration data
+   - `validateLoginInput()` - Validates login data
+
+3. ✅ `validation/license.js` - License route validation
+   - `validateLicenseActivationInput()` - Validates license activation
+   - `validateAutoAttachInput()` - Validates auto-attach input
+
+4. ✅ `validation/billing.js` - Billing route validation
+   - `validateCheckoutInput()` - Validates checkout session input
+   - `validatePriceId()` - Validates price ID against service
+
+5. ✅ `validation/generate.js` - Generate route validation
+   - `validateGenerateInput()` - Validates generate request input
+
+## Test Results
+
+### Before Cleanup
+- **Tests:** 287 passing
+- **Coverage:** 60.82% statements, 51.57% branches, 59.35% functions, 61.88% lines
+
+### After Cleanup
+- **Tests:** 287 passing ✅
+- **Coverage:** 63.91% statements, 54.13% branches, 62.67% functions, 65.16% lines ✅
+- **Coverage improvement:** +3.09% statements, +2.56% branches, +3.32% functions, +3.28% lines
+
+**Coverage maintained above 60% threshold:** ✅ Yes (63.91%)
+
+## Remaining Technical Debt
+
+### High Priority
+1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches)
+   - **Action needed:** Add comprehensive test coverage
+
+2. **stripe/checkout.js** - Low test coverage (33.76% statements)
+   - **Action needed:** Add tests for untested code paths
+
+3. **services/emailService.js** - Some untested code paths (lines 803-984)
+   - **Action needed:** Add tests for email template generation
+
+### Medium Priority
+1. **Adopt new utilities** - Gradually migrate to:
+   - `src/utils/logger.js` for standardized logging (replace console.log/error/warn)
+   - `src/utils/http.js` for standardized HTTP responses
+   - `config/loadEnv.js` for environment variable management
+
+2. **Validation layer** - Route-specific validators created and ready for adoption:
+   - `validation/auth.js` - Ready to use in `auth/routes.js`
+   - `validation/license.js` - Ready to use in `routes/license.js` and `routes/licenses.js`
+   - `validation/billing.js` - Ready to use in `routes/billing.js`
+   - `validation/generate.js` - Ready to use in `server-v2.js` generate endpoint
+
+### Low Priority
+1. **migrations/** - Consider documenting migration process or adding automated migration runner
+2. **Documentation** - Update README.md to reflect new directory structure
+
+## Directory Structure (Final)
+
+```
+/
+├── auth/                    # Authentication logic (jwt, routes, email)
+├── config/                  # Configuration files
+│   ├── env.example
+│   ├── env.test
+│   └── loadEnv.js          # NEW: Centralized env loading
+├── db/                      # Database client
+│   └── supabase-client.js
+├── middleware/              # Express middleware
+│   └── dual-auth.js
+├── migrations/              # Database migrations (kept)
+│   └── add_licenses_table.sql
+├── routes/                  # API route handlers
+├── services/                # Business logic services
+├── src/                     # Main application code
+│   └── utils/              # Utilities (consolidated)
+│       ├── apiKey.js       # Moved from utils/
+│       ├── http.js
+│       └── logger.js      # Moved from utils/
+├── stripe/                  # Stripe integration (kept - actively used)
+│   ├── checkout.js
+│   └── webhooks.js
+├── validation/              # Validation layer
+│   ├── index.js
+│   ├── validators.js
+│   ├── auth.js              # NEW: Auth route validation
+│   ├── license.js            # NEW: License route validation
+│   ├── billing.js            # NEW: Billing route validation
+│   └── generate.js           # NEW: Generate route validation
+├── tests/                   # Test files
+├── server-v2.js            # Main entry point (KEPT - required)
+├── package.json
+├── jest.config.js
+└── README.md
+```
+
+## Warnings and Notes
+
+1. ⚠️ **server-v2.js** - This is the main entry point (package.json `main` and `start` script). It was NOT deleted as it's required for the application to run.
+
+2. ✅ **No broken imports** - All import paths were updated and verified with tests.
+
+3. ✅ **Backward compatibility** - All public APIs remain unchanged.
+
+4. ✅ **Test stability** - All 287 tests continue to pass after cleanup.
+
+## Next Steps
+
+1. **Review and approve** this cleanup summary
+2. **Gradually adopt** new utilities (logger, HTTP helpers, loadEnv)
+3. **Increase test coverage** for low-coverage files (organization.js, checkout.js)
+4. **Update documentation** to reflect new structure
+5. **Consider** adding automated migration runner for migrations/
+
+## Conclusion
+
+The cleanup was completed successfully with:
+- ✅ 12 files deleted
+- ✅ 2 directories consolidated
+- ✅ 4 files moved to new locations
+- ✅ All 287 tests passing
+- ✅ Coverage improved to 63.91% (above 60% threshold)
+- ✅ No broken functionality
+- ✅ Cleaner, more organized codebase
+
+The backend is now better organized with a clear directory structure and all dead code removed.
+
+
+```
+
+---
+
+## DEPLOYMENT_PROTECTION.md
+
+```
+# ⚠️ CRITICAL: Deployment Protection Setup
+
+## Problem
+
+**Render is currently auto-deploying on every push to `main`, even when GitHub Actions tests fail.**
+
+This means broken code can be deployed to production, which is a critical security and quality risk.
+
+## Immediate Action Required
+
+### Step 1: Disable Auto-Deploy in Render (Temporary Fix)
+
+1. Go to https://dashboard.render.com
+2. Navigate to your service: `alttext-ai-phase2`
+3. Go to **Settings** → **Build & Deploy**
+4. **Disable "Auto-Deploy"**
+5. Save changes
+
+### Step 2: Manual Deployment Process
+
+Until proper CI/CD gates are set up, follow this process:
+
+1. **Push code to GitHub**
+2. **Wait for GitHub Actions to complete**
+   - Check: https://github.com/TheLaughingGod1986/optiap-backend/actions
+   - ✅ All tests must pass (green checkmark)
+3. **Only if tests pass**, manually deploy in Render:
+   - Go to Render dashboard
+   - Click **"Manual Deploy"** → **"Deploy latest commit"**
+
+## Long-Term Solution
+
+Render doesn't natively support GitHub Actions status checks as deployment gates. Options:
+
+### Option A: GitHub Branch Protection (Recommended)
+
+1. Go to GitHub repo: https://github.com/TheLaughingGod1986/optiap-backend
+2. **Settings** → **Branches**
+3. Add branch protection rule for `main`:
+   - ✅ Require status checks to pass before merging
+   - ✅ Require branches to be up to date before merging
+   - Add required status check: `Backend Tests / test (18.x)`
+   - Add required status check: `Backend Tests / test (20.x)`
+4. This prevents broken code from being pushed to `main` in the first place
+
+### Option B: Deployment Script with Status Check
+
+Create a deployment script that:
+1. Checks GitHub Actions status via API
+2. Only triggers Render deployment if status is "success"
+3. Can be run manually or via webhook
+
+### Option C: Use GitHub Actions to Deploy
+
+Instead of Render auto-deploy, use GitHub Actions to:
+1. Run tests
+2. If tests pass, trigger Render deployment via API
+3. This ensures tests always pass before deployment
+
+## Current Status
+
+- ✅ GitHub Actions workflow configured (`.github/workflows/tests.yml`)
+- ❌ Render auto-deploy is NOT gated by test status
+- ⚠️ **Action needed**: Disable auto-deploy or implement one of the solutions above
+
+## Verification
+
+After implementing protection, verify:
+1. Push a commit that fails tests
+2. Confirm Render does NOT deploy
+3. Fix tests and push again
+4. Confirm Render deploys only after tests pass
+
+
+```
+
+---
+
+## README.md
+
+```
+# Oppti Backend
+
+Production-ready Node.js backend API for Oppti services.
+
+## Quick Start
+
+```bash
+npm install
+cp config/env.example .env
+# Edit .env and add your API keys
+npm start
+```
+
+## Tech Stack
+
+- **Runtime:** Node.js 18+
+- **Framework:** Express.js
+- **Database:** Supabase (PostgreSQL)
+- **Authentication:** JWT
+- **Payment:** Stripe
+- **Email:** Resend
+
+## Environment Variables
+
+See `config/env.example` for all required variables. Key variables:
+
+```env
+# Supabase (Required)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# OpenAI (Required)
+ALTTEXT_OPENAI_API_KEY=sk-...
+SEO_META_OPENAI_API_KEY=sk-...
+
+# JWT (Required)
+JWT_SECRET=your-secret-key
+
+# Stripe (Required)
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Email (Required)
+RESEND_API_KEY=re_...
+EMAIL_FROM=OpttiAI <hello@optti.dev>
+EMAIL_BRAND_NAME=OpttiAI
+RESEND_FROM_EMAIL=noreply@yourdomain.com  # Legacy support, use EMAIL_FROM
+RESEND_AUDIENCE_ID=aud_xxx  # Optional: For subscriber management
+```
+
+## Documentation
+
+For detailed documentation, see the `/docs` directory:
+
+- **[Architecture](docs/architecture.md)** - System design, tech stack, technical debt
+- **[Testing](docs/testing.md)** - Test structure, coverage, running tests
+- **[Deployment](docs/deployment.md)** - Deployment instructions, environment setup
+- **[Backend Structure](docs/backend-structure.md)** - Directory organization, file structure
+- **[Migrations](docs/migrations.md)** - Database migration process and history
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run tests
+npm test
+
+# Run tests with coverage
+npm test -- --coverage
+
+# Start development server
+npm start
+```
+
+## License
+
+Proprietary - Oppti
+
+```
+
+---
+
+## auth/email.js
+
+```
+/**
+ * Email service for password reset
+ * Supports multiple email providers via environment variables
+ */
+
+/**
+ * Send password reset email
+ * @param {string} email - User's email address
+ * @param {string} resetUrl - Password reset URL with token
+ * @returns {Promise<boolean>}
+ */
+async function sendPasswordResetEmail(email, resetUrl) {
+  // Debug: Log if API key is missing
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️  RESEND_API_KEY environment variable not found');
+    console.warn('   Checking process.env keys:', Object.keys(process.env).filter(k => k.includes('RESEND')));
+  }
+  
+  // Try Resend first (modern, simple, recommended)
+  if (process.env.RESEND_API_KEY) {
+    console.log('✅ RESEND_API_KEY found, attempting to send email via Resend...');
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      
+      const { data, error } = await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>',
+        to: email,
+        subject: 'Reset Your AltText AI Password',
+        html: `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="color: white; margin: 0; font-size: 24px;">Reset Your Password</h1>
+              </div>
+              <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                <p>You requested to reset your password for AltText AI.</p>
+                <p>Click the button below to reset your password:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 600;">Reset Password</a>
+                </div>
+                <p style="font-size: 14px; color: #6b7280;">Or copy and paste this link into your browser:</p>
+                <p style="font-size: 12px; word-break: break-all; color: #9ca3af; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetUrl}</p>
+                <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">This link will expire in 1 hour.</p>
+                <p style="font-size: 14px; color: #6b7280;">If you didn't request this, please ignore this email.</p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="font-size: 12px; color: #9ca3af; text-align: center;">Best regards,<br>The AltText AI Team</p>
+              </div>
+            </body>
+          </html>
+        `,
+        text: `
+Password Reset Request
+
+You requested to reset your password for AltText AI.
+
+Click the link below to reset your password:
+${resetUrl}
+
+This link will expire in 1 hour.
+
+If you didn't request this, please ignore this email.
+
+Best regards,
+AltText AI Team
+        `.trim()
+      });
+
+      if (error) {
+        console.error('❌ Resend email error:', JSON.stringify(error, null, 2));
+        console.error('   Error details:', error);
+        console.error('   Error code:', error?.message || error);
+        
+        // Common Resend errors
+        if (error?.message?.includes('domain') || error?.message?.includes('verified')) {
+          console.error('   ⚠️  Domain verification issue!');
+          console.error('   💡 Try using: onboarding@resend.dev (test domain)');
+          console.error('   💡 Or verify your domain in Resend dashboard');
+        }
+        if (error?.message?.includes('from') || error?.message?.includes('sender')) {
+          console.error('   ⚠️  From email address issue!');
+          console.error('   💡 Email address must be verified in Resend');
+        }
+        
+        throw error;
+      }
+
+      console.log(`✅ Password reset email sent via Resend to ${email}`);
+      console.log(`   Email ID: ${data?.id || 'unknown'}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to send email via Resend:', error.message || error);
+      console.error('   Full error:', JSON.stringify(error, null, 2));
+      // Fall through to try other services or fallback
+    }
+  }
+
+  // Try SendGrid
+  if (process.env.SENDGRID_API_KEY) {
+    try {
+      const sgMail = require('@sendgrid/mail');
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+      await sgMail.send({
+        to: email,
+        from: process.env.SENDGRID_FROM_EMAIL || 'noreply@alttextai.com',
+        subject: 'Reset Your AltText AI Password',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #667eea;">Reset Your Password</h2>
+            <p>You requested to reset your password for AltText AI.</p>
+            <p><a href="${resetUrl}" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Reset Password</a></p>
+            <p style="font-size: 12px; color: #666;">Or copy this link: ${resetUrl}</p>
+            <p style="font-size: 12px; color: #666;">This link expires in 1 hour.</p>
+          </div>
+        `,
+        text: `Reset Your Password\n\nClick this link: ${resetUrl}\n\nThis link expires in 1 hour.`
+      });
+
+      console.log(`✅ Password reset email sent via SendGrid to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to send email via SendGrid:', error);
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback: Log to console (development/testing)
+  const emailBody = `
+Password Reset Request
+
+You requested to reset your password for AltText AI.
+
+Click the link below to reset your password:
+${resetUrl}
+
+This link will expire in 1 hour.
+
+If you didn't request this, please ignore this email.
+
+Best regards,
+AltText AI Team
+  `.trim();
+
+  console.log('\n===========================================');
+  console.log('📧 PASSWORD RESET EMAIL (MOCKED - NO EMAIL SERVICE CONFIGURED)');
+  console.log('===========================================');
+  console.log(`To: ${email}`);
+  console.log(`Subject: Reset Your AltText AI Password`);
+  console.log('-------------------------------------------');
+  console.log(emailBody);
+  console.log('===========================================');
+  console.log('\n⚠️  Email service not configured. To enable email sending:');
+  console.log('   1. Set RESEND_API_KEY in environment variables (recommended)');
+  console.log('   2. Or set SENDGRID_API_KEY in environment variables');
+  console.log('   3. See backend/env.example for details\n');
+
+  return true;
+}
+
+/**
+ * Send welcome email to new users
+ * @param {string} email - User's email address
+ * @param {string} username - User's email (used as username)
+ * @returns {Promise<boolean>}
+ */
+async function sendWelcomeEmail(email, username) {
+  // Try Resend first
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { Resend } = require('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      
+      const { data, error } = await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>',
+        to: email,
+        subject: 'Welcome to SEO AI Alt Text Generator! 🎉',
+        html: `
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+                <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to SEO AI Alt Text Generator! 🎉</h1>
+              </div>
+              <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                <p style="font-size: 16px;">Hi there!</p>
+                <p>Thank you for signing up for <strong>SEO AI Alt Text Generator</strong>! We're excited to help you improve your website's SEO and accessibility.</p>
+                
+                <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                  <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Get Started:</p>
+                  <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+                    <li>Upload images to WordPress</li>
+                    <li>Alt text generates automatically</li>
+                    <li>Boost Google image search rankings</li>
+                    <li>Improve accessibility (WCAG compliant)</li>
+                  </ul>
+                </div>
+                
+                <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                  <p style="margin: 0; font-weight: 600; color: #10b981;">✨ Your Free Plan Includes:</p>
+                  <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+                    <li><strong>50 AI generations per month</strong></li>
+                    <li>GPT-4o-mini AI model</li>
+                    <li>Automatic generation on upload</li>
+                    <li>Bulk processing</li>
+                    <li>Dashboard and analytics</li>
+                  </ul>
+                </div>
+                
+                <p>Ready to get started? Head to your WordPress dashboard and start optimizing your images!</p>
+                
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="font-size: 14px; color: #6b7280;">Need help? Check out our <a href="https://alttextai.com/docs" style="color: #667eea;">documentation</a> or reach out to our support team.</p>
+                <p style="font-size: 12px; color: #9ca3af; text-align: center; margin-top: 30px;">Best regards,<br>The SEO AI Alt Text Generator Team</p>
+              </div>
+            </body>
+          </html>
+        `,
+        text: `
+Welcome to SEO AI Alt Text Generator!
+
+Thank you for signing up! We're excited to help you improve your website's SEO and accessibility.
+
+Get Started:
+- Upload images to WordPress
+- Alt text generates automatically
+- Boost Google image search rankings
+- Improve accessibility (WCAG compliant)
+
+Your Free Plan Includes:
+- 50 AI generations per month
+- GPT-4o-mini AI model
+- Automatic generation on upload
+- Bulk processing
+- Dashboard and analytics
+
+Ready to get started? Head to your WordPress dashboard and start optimizing your images!
+
+Need help? Check out our documentation at https://alttextai.com/docs
+
+Best regards,
+The SEO AI Alt Text Generator Team
+        `.trim()
+      });
+
+      if (error) {
+        console.error('Resend welcome email error:', error);
+        throw error;
+      }
+
+      console.log(`✅ Welcome email sent via Resend to ${email}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to send welcome email via Resend:', error);
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback: Log to console
+  console.log('\n===========================================');
+  console.log('📧 WELCOME EMAIL (MOCKED - NO EMAIL SERVICE CONFIGURED)');
+  console.log('===========================================');
+  console.log(`To: ${email}`);
+  console.log(`Subject: Welcome to SEO AI Alt Text Generator! 🎉`);
+  console.log('-------------------------------------------');
+  console.log(`Welcome! Thank you for signing up.`);
+  console.log('===========================================\n');
+
+  return true;
+}
+
+module.exports = {
+  sendPasswordResetEmail,
+  sendWelcomeEmail
+};
+
+```
+
+---
+
+## auth/jwt.js
+
+```
+/**
+ * JWT Authentication utilities
+ */
+
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+const crypto = require('crypto');
+
+/**
+ * Generate JWT token for user
+ * Supports both legacy user objects and identity-based objects
+ */
+function generateToken(user) {
+  const payload = {
+    id: user.id || user.identityId,
+    identityId: user.identityId || user.id,
+    email: user.email,
+    plan: user.plan || 'free',
+    iat: Math.floor(Date.now() / 1000)
+  };
+  
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+/**
+ * Generate refresh token
+ * Returns a cryptographically secure random token
+ */
+function generateRefreshToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Verify refresh token (checks if token exists and is not expired)
+ * @param {string} token - Refresh token
+ * @param {Date} expiresAt} expiresAt - Expiration date
+ * @returns {boolean} True if token is valid
+ */
+function verifyRefreshToken(token, expiresAt) {
+  if (!token || !expiresAt) {
+    return false;
+  }
+  
+  const now = new Date();
+  const expiration = new Date(expiresAt);
+  
+  return now < expiration;
+}
+
+/**
+ * Verify JWT token
+ */
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    throw new Error('Invalid token');
   }
 }
+
+/**
+ * Hash password using bcrypt
+ */
+async function hashPassword(password) {
+  const saltRounds = 12;
+  return await bcrypt.hash(password, saltRounds);
+}
+
+/**
+ * Compare password with hash
+ */
+async function comparePassword(password, hash) {
+  return await bcrypt.compare(password, hash);
+}
+
+/**
+ * JWT middleware for protecting routes
+ */
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ 
+      error: 'Access token required',
+      code: 'MISSING_TOKEN'
+    });
+  }
+
+  try {
+    const decoded = verifyToken(token);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(403).json({ 
+      error: 'Invalid or expired token',
+      code: 'INVALID_TOKEN'
+    });
+  }
+}
+
+/**
+ * Optional authentication middleware (doesn't fail if no token)
+ */
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const decoded = verifyToken(token);
+      req.user = decoded;
+    } catch (error) {
+      // Ignore invalid tokens in optional auth
+    }
+  }
+  
+  next();
+}
+
+module.exports = {
+  generateToken,
+  verifyToken,
+  hashPassword,
+  comparePassword,
+  authenticateToken,
+  optionalAuth,
+  generateRefreshToken,
+  verifyRefreshToken,
+  REFRESH_TOKEN_EXPIRES_IN,
+};
+
+```
+
+---
+
+## auth/routes.js
+
+```
+/**
+ * Authentication routes
+ */
+
+const express = require('express');
+const crypto = require('crypto');
+const { supabase } = require('../db/supabase-client');
+const { generateToken, hashPassword, comparePassword, authenticateToken, generateRefreshToken, verifyRefreshToken, REFRESH_TOKEN_EXPIRES_IN } = require('./jwt');
+const emailService = require('../src/services/emailService');
+const licenseService = require('../services/licenseService');
+const { getOrCreateIdentity } = require('../src/services/identityService');
+const billingService = require('../src/services/billingService');
+
+const router = express.Router();
+
+/**
+ * Generate a secure random token for password reset
+ */
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Register new user
+ */
+router.post('/register', async (req, res) => {
+  try {
+    const { email, password, service = 'alttext-ai', siteUrl, siteHash, installId } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'Email and password are required',
+        code: 'MISSING_FIELDS'
+      });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters',
+        code: 'WEAK_PASSWORD'
+      });
+    }
+
+    // Validate service
+    const validServices = ['alttext-ai', 'seo-ai-meta'];
+    const userService = validServices.includes(service) ? service : 'alttext-ai';
+
+    // Service-specific initial limits
+    const initialLimits = {
+      'alttext-ai': 50,
+      'seo-ai-meta': 10
+    };
+
+    // Check if user already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json({
+        error: 'User already exists with this email',
+        code: 'USER_EXISTS'
+      });
+    }
+
+    // Hash password and create user
+    const passwordHash = await hashPassword(password);
+    
+    // Build insert object - only include columns that exist in Supabase
+    // Supabase schema may not have all columns from Prisma schema
+    const userData = {
+      email: email.toLowerCase(),
+      password_hash: passwordHash,
+      plan: 'free'
+    };
+    
+    // Note: service and tokens_remaining columns don't exist in Supabase
+    // They may need to be added via migration or are handled differently
+    
+    const { data: user, error: createError } = await supabase
+      .from('users')
+      .insert(userData)
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Registration error details:', {
+        code: createError.code,
+        message: createError.message,
+        details: createError.details,
+        hint: createError.hint
+      });
+      throw createError;
+    }
+    
+    if (!user) {
+      throw new Error('User creation returned no data');
+    }
+
+    // Generate JWT token
+    const token = generateToken(user);
+
+    // Create free-tier license
+    let license = null;
+    let licenseSnapshot = null;
+    try {
+      console.log(`📋 Creating free license for user ${user.id}`);
+
+      license = await licenseService.createLicense({
+        plan: 'free',
+        service: userService,
+        userId: user.id,
+        siteUrl: siteUrl || null,
+        siteHash: siteHash || null,
+        installId: installId || null,
+        email: user.email,
+        name: user.email.split('@')[0]
+      });
+
+      // Get license snapshot
+      licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
+
+      console.log(`✅ Free license created: ${license.licenseKey}`);
+    } catch (licenseError) {
+      console.error('Error creating free license (non-critical):', licenseError);
+      // Don't fail registration if license creation fails
+      // User can still use the system
+    }
+
+    // Send welcome email (non-blocking)
+    emailService.sendDashboardWelcome({ email: user.email }).catch(err => {
+      console.error('Failed to send welcome email (non-critical):', err);
+      // Don't fail registration if email fails
+    });
+
+    // Build response with license info if available
+    const response = {
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        plan: user.plan,
+        tokensRemaining: licenseSnapshot?.tokensRemaining || initialLimits[userService] || 50,
+        credits: user.credits || 0,
+        resetDate: user.reset_date || user.resetDate,
+        service: user.service || userService
+      }
+    };
+
+    // Include license in response if created
+    if (licenseSnapshot) {
+      response.license = licenseSnapshot;
+    }
+
+    res.status(201).json(response);
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
+    res.status(500).json({
+      error: 'Failed to create account',
+      code: 'REGISTRATION_ERROR',
+      message: error.message || 'Unknown error',
+      details: error.details || null
+    });
+  }
+});
+
+/**
+ * Login user
+ * Supports both password and magic link flows
+ * - If password is provided: traditional password login
+ * - If only email is provided: send magic link email
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password, redirectUrl } = req.body;
+
+    // Validate input
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+
+    // Magic link flow (no password provided)
+    if (!password) {
+      // Generate magic link token
+      const token = generateResetToken(); // Reuse reset token generator
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Store token in password_reset_tokens table (reuse for magic links)
+      // We'll use a special type or just reuse the table
+      // For now, store it and we'll check in verify endpoint
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', emailLower)
+        .single();
+
+      // Always return success to prevent email enumeration
+      if (user) {
+        // Invalidate any existing unused tokens
+        await supabase
+          .from('password_reset_tokens')
+          .update({ used: true })
+          .eq('userId', user.id)
+          .eq('used', false);
+
+        // Store new token
+        await supabase
+          .from('password_reset_tokens')
+          .insert({
+            userId: user.id,
+            token,
+            expiresAt: expiresAt.toISOString(),
+            used: false
+          });
+
+        // Send magic link email
+        emailService.sendMagicLink({
+          email: emailLower,
+          token,
+          redirectUrl
+        }).catch(err => {
+          console.error('Failed to send magic link email:', err);
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a magic link has been sent.',
+        method: 'magic_link'
+      });
+    }
+
+    // Password login flow
+    // Find user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', emailLower)
+      .single();
+
+    if (userError || !user) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await comparePassword(password, user.password_hash);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
+    }
+
+    // Get or create identity
+    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
+    
+    // Get subscription plan
+    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
+    const plan = subscriptionCheck.plan || 'free';
+
+    // Generate JWT token with identityId
+    const tokenPayload = {
+      id: user.id,
+      identityId: identity?.id || user.id,
+      email: user.email,
+      plan: plan
+    };
+    const token = generateToken(tokenPayload);
+
+    // Generate and store refresh token
+    const refreshToken = generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+
+    if (identity) {
+      await supabase
+        .from('identities')
+        .update({
+          refresh_token: refreshToken,
+          refresh_token_expires_at: refreshExpiresAt.toISOString(),
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('id', identity.id);
+    }
+
+    // Service-specific default limits
+    const defaultLimits = {
+      'alttext-ai': 50,
+      'seo-ai-meta': 10
+    };
+    const userService = user.service || 'alttext-ai';
+
+    res.json({
+      success: true,
+      token,
+      refreshToken,
+      user: {
+        id: user.id,
+        identityId: identity?.id || user.id,
+        email: user.email,
+        plan: plan,
+        tokensRemaining: user.tokens_remaining || user.tokensRemaining || defaultLimits[userService] || 50,
+        credits: user.credits || 0,
+        resetDate: user.reset_date || user.resetDate,
+        service: userService
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      error: 'Failed to login',
+      code: 'LOGIN_ERROR'
+    });
+  }
+});
+
+/**
+ * Verify magic link token
+ * POST /auth/verify
+ */
+router.post('/verify', async (req, res) => {
+  try {
+    const { email, token, redirectUrl } = req.body;
+
+    // Validate input
+    if (!email || !token) {
+      return res.status(400).json({
+        error: 'Email and token are required',
+        code: 'MISSING_FIELDS'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+
+    // Find user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', emailLower)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({
+        error: 'Invalid verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Find valid token
+    const { data: resetToken, error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('userId', user.id)
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString())
+      .single();
+
+    if (tokenError || !resetToken) {
+      return res.status(400).json({
+        error: 'Invalid or expired verification token',
+        code: 'INVALID_TOKEN'
+      });
+    }
+
+    // Mark token as used
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetToken.id);
+
+    // Get or create identity
+    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
+    
+    // Get subscription plan
+    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
+    const plan = subscriptionCheck.plan || 'free';
+
+    // Generate JWT token with identityId
+    const tokenPayload = {
+      id: user.id,
+      identityId: identity?.id || user.id,
+      email: emailLower,
+      plan: plan
+    };
+    const jwtToken = generateToken(tokenPayload);
+
+    // Generate and store refresh token
+    const refreshToken = generateRefreshToken();
+    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+
+    if (identity) {
+      await supabase
+        .from('identities')
+        .update({
+          refresh_token: refreshToken,
+          refresh_token_expires_at: refreshExpiresAt.toISOString(),
+          last_seen_at: new Date().toISOString()
+        })
+        .eq('id', identity.id);
+    }
+
+    res.json({
+      success: true,
+      token: jwtToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        identityId: identity?.id || user.id,
+        email: emailLower,
+        plan: plan
+      },
+      redirectUrl: redirectUrl || null
+    });
+
+  } catch (error) {
+    console.error('Verify error:', error);
+    res.status(500).json({
+      error: 'Failed to verify token',
+      code: 'VERIFY_ERROR'
+    });
+  }
+});
+
+/**
+ * Get current user info
+ * Returns full profile from identities table with subscription and installations
+ */
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email not found in token',
+        code: 'MISSING_EMAIL'
+      });
+    }
+
+    const emailLower = email.toLowerCase();
+    const identityId = req.user.identityId || req.user.id;
+
+    // Fetch all data in parallel
+    const [identityResult, userResult, subscriptionResult, installationsResult] = await Promise.all([
+      // Get identity
+      supabase
+        .from('identities')
+        .select('*')
+        .eq('id', identityId)
+        .single(),
+      
+      // Get user (legacy support)
+      supabase
+        .from('users')
+        .select('id, email, plan, created_at')
+        .eq('email', emailLower)
+        .single(),
+      
+      // Get subscription
+      billingService.checkSubscription(emailLower, 'alttext-ai'),
+      
+      // Get installations
+      supabase
+        .from('plugin_installations')
+        .select('*')
+        .eq('email', emailLower)
+        .order('last_seen_at', { ascending: false }),
+    ]);
+
+    const identity = identityResult.data;
+    const user = userResult.data;
+    const subscription = subscriptionResult.subscription;
+    const installations = installationsResult.data || [];
+
+    // Build response
+    const response = {
+      success: true,
+      user: {
+        id: user?.id || identityId,
+        identityId: identity?.id || identityId,
+        email: emailLower,
+        plan: subscriptionResult.plan || user?.plan || 'free',
+        subscription: subscription || null,
+        installations: installations,
+        createdAt: identity?.created_at || user?.created_at,
+        lastSeenAt: identity?.last_seen_at,
+      }
+    };
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({
+      error: 'Failed to get user info',
+      code: 'USER_INFO_ERROR'
+    });
+  }
+});
+
+/**
+ * Refresh token (if needed in future)
+ */
+router.post('/refresh', authenticateToken, async (req, res) => {
+  try {
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.user.id)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    const token = generateToken(user);
+
+    res.json({
+      success: true,
+      token
+    });
+
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      error: 'Failed to refresh token',
+      code: 'REFRESH_ERROR'
+    });
+  }
+});
+
+/**
+ * Request password reset (forgot password)
+ * POST /auth/forgot-password
+ */
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email, siteUrl } = req.body;
+
+    // Validate input
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
+    }
+
+    // Find user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    // Always return success to prevent email enumeration
+    // We don't want attackers to know if an email exists
+    if (userError || !user) {
+      // Still return success, but don't send email
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.'
+      });
+    }
+
+    // Check for recent reset requests (rate limiting - max 3 per hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentResets, error: countError } = await supabase
+      .from('password_reset_tokens')
+      .select('*', { count: 'exact', head: true })
+      .eq('userId', user.id)
+      .gte('createdAt', oneHourAgo)
+      .eq('used', false);
+
+    if (countError) {
+      throw countError;
+    }
+
+    if (recentResets >= 3) {
+      return res.status(429).json({
+        error: 'Too many password reset requests. Please wait 1 hour before requesting another reset.',
+        code: 'RATE_LIMIT_EXCEEDED'
+      });
+    }
+
+    // Invalidate any existing unused tokens for this user
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('userId', user.id)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString());
+
+    // Generate reset token
+    const token = generateResetToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+
+    // Save token to database
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert({
+        userId: user.id,
+        token,
+        expiresAt: expiresAt.toISOString()
+      });
+
+    if (tokenError) {
+      throw tokenError;
+    }
+
+    // Generate reset URL
+    // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
+    const frontendUrl = siteUrl || process.env.FRONTEND_URL || null;
+    
+    // Construct reset URL that points back to WordPress
+    // WordPress will detect the token/email params and show reset form
+    let resetUrl;
+    if (frontendUrl) {
+      // Ensure URL ends with /wp-admin/upload.php?page=ai-alt-gpt (or similar)
+      const baseUrl = frontendUrl.replace(/\/$/, ''); // Remove trailing slash
+      resetUrl = `${baseUrl}?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
+    } else {
+      // Fallback: just return the token in the response (WordPress can construct URL)
+      resetUrl = `?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
+    }
+
+    // Send password reset email (non-blocking)
+    try {
+      await emailService.sendPasswordReset({
+        email: email.toLowerCase(),
+        resetUrl,
+      });
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+      // Don't fail the request if email fails - token is still created
+    }
+
+    // For testing/development: include reset link in response
+    // In production with real email, this would be omitted for security
+    const isDevelopment = process.env.NODE_ENV !== 'production' || process.env.DEBUG_EMAIL === 'true';
+    
+    res.json({
+      success: true,
+      message: 'If an account exists with this email, a password reset link has been sent.',
+      // Include reset link in development mode or when DEBUG_EMAIL is enabled
+      // This allows testing without email service configured
+      ...(isDevelopment && {
+        data: {
+          resetLink: resetUrl,
+          note: 'Email service is in development mode. Use this link to reset your password.'
+        }
+      })
+    });
+
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      error: 'Failed to process password reset request',
+      code: 'RESET_REQUEST_ERROR'
+    });
+  }
+});
+
+/**
+ * Reset password with token
+ * POST /auth/reset-password
+ */
+router.post('/reset-password', async (req, res) => {
+  try {
+    // Support both 'newPassword' and 'password' for compatibility
+    const { email, token, newPassword, password } = req.body;
+    const finalPassword = newPassword || password;
+
+    // Validate input
+    if (!email || !token || !finalPassword) {
+      return res.status(400).json({
+        error: 'Email, token, and new password are required',
+        code: 'MISSING_FIELDS'
+      });
+    }
+
+    if (finalPassword.length < 8) {
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters',
+        code: 'WEAK_PASSWORD'
+      });
+    }
+
+    // Find user
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({
+        error: 'Invalid reset token or email',
+        code: 'INVALID_RESET_TOKEN'
+      });
+    }
+
+    // Find valid reset token
+    const { data: resetToken, error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .select('*')
+      .eq('userId', user.id)
+      .eq('token', token)
+      .eq('used', false)
+      .gt('expiresAt', new Date().toISOString())
+      .single();
+
+    if (tokenError || !resetToken) {
+      return res.status(400).json({
+        error: 'Invalid or expired reset token. Please request a new password reset.',
+        code: 'INVALID_RESET_TOKEN'
+      });
+    }
+
+    // Hash new password
+    const passwordHash = await hashPassword(finalPassword);
+
+    // Update user password
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash: passwordHash })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    // Mark token as used
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetToken.id);
+
+    // Invalidate all other reset tokens for this user
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('userId', user.id)
+      .eq('used', false);
+
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully. You can now login with your new password.'
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      error: 'Failed to reset password',
+      code: 'RESET_PASSWORD_ERROR'
+    });
+  }
+});
+
+module.exports = router;
+
+```
+
+---
+
+## cleanup-report.md
+
+```
+# Backend Refactoring Cleanup Report
+
+## Summary
+
+This report documents the comprehensive refactoring of the AltText AI backend codebase, completed on 2025-01-24. All phases were completed successfully with tests passing and coverage maintained above 60%.
+
+## Files Removed
+
+The following files were identified as safe to delete (dead code analysis):
+
+1. **test-backend.js** - Test script file never imported anywhere
+2. **test-license-flows.js** - Test script file never imported anywhere  
+3. **check-supabase-schema.js** - Utility script for schema checking, never imported
+4. **scripts/init-free-user-credits.js** - One-time migration script, never imported
+
+**Note:** These files were identified but not automatically deleted per the plan's instruction to only mark them as safe to delete. They can be manually removed when ready.
+
+## Services Refactored
+
+### licenseService.js
+- **Status:** ✅ Refactored
+- **Changes:**
+  - Extracted helper functions: `findLicenseByIdOrKey()`, `getOrCreateUserOrganization()`, `findExistingSite()`, `canAddSite()`, `createOrUpdateSite()`
+  - Simplified deeply nested conditionals in `autoAttachLicense()`
+  - Improved code organization and readability
+  - Maintained 100% backward compatibility with existing API
+- **Coverage:** 63.93% statements, 58.13% branches, 90% functions, 66.1% lines
+
+### emailService.js
+- **Status:** ✅ Already well-structured
+- **Note:** Service was already well-organized as a class with clear separation of concerns. No refactoring needed.
+
+## New Directory Structure
+
+The following normalized directory structure was created:
+
+```
+/
+├── src/
+│   └── utils/
+│       └── http.js          # HTTP response utilities
+├── db/
+│   └── supabase-client.js   # Database client (moved from root)
+├── middleware/
+│   └── dual-auth.js         # Dual authentication middleware (moved from auth/)
+├── validation/
+│   ├── validators.js        # Core validation functions (moved from utils/)
+│   └── index.js             # Validation layer with standardized errors
+├── utils/
+│   ├── apiKey.js            # API key utilities
+│   └── logger.js            # Standardized logger (new)
+├── routes/                   # API route handlers (unchanged)
+├── services/                 # Business logic services (unchanged)
+├── stripe/                   # Stripe integration (unchanged)
+└── tests/                    # Test files (unchanged)
+```
+
+## Test Improvements and Coverage Changes
+
+### Test Status
+- **All tests passing:** ✅ 287 tests, 14 test suites
+- **Coverage maintained:** 64.08% statements, 55.07% branches, 63.51% functions, 65.25% lines
+- **Coverage above floor:** ✅ Exceeds 60% requirement
+
+### Test Files Updated
+- Updated import paths for moved files (supabase-client, dual-auth, validation)
+- All existing tests continue to pass after refactoring
+
+## New Utilities Created
+
+### src/utils/http.js
+Standardized HTTP response formatting:
+- `sendSuccess()` - Success responses
+- `sendError()` - Error responses
+- `sendValidationError()` - Validation errors
+- `sendNotFound()` - Not found errors
+- `sendUnauthorized()` - Unauthorized errors
+
+### utils/logger.js
+Standardized logging API:
+- `logger.error(message, meta)`
+- `logger.warn(message, meta)`
+- `logger.info(message, meta)`
+- `logger.debug(message, meta)`
+- Supports LOG_LEVEL environment variable
+
+### validation/index.js
+Validation layer with consistent error objects:
+- `validateEmailInput()` - Email validation with standardized errors
+- `validatePasswordInput()` - Password validation with standardized errors
+- `validateDomainInput()` - Domain validation with standardized errors
+- `createValidationError()` - Creates standardized error objects
+
+## Remaining Technical Debt
+
+### High Priority
+1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches). Needs comprehensive test coverage.
+2. **stripe/checkout.js** - Low test coverage (33.76% statements). Many code paths untested.
+3. **services/emailService.js** - Some untested code paths (lines 803-984 uncovered).
+
+### Medium Priority
+1. **Adopt new logger** - Replace `console.log`/`console.error` with `utils/logger.js` throughout codebase (gradual migration).
+2. **Adopt HTTP utilities** - Use `src/utils/http.js` for standardized responses in routes (gradual migration).
+3. **Adopt validation layer** - Use `validation/index.js` helpers in routes for consistent error handling.
+
+### Low Priority
+1. **Dead code removal** - Remove identified dead code files when ready.
+2. **Performance optimizations** - Consider caching, batching, and memoization opportunities identified in PHASE 9.
+
+## Migration Notes
+
+### Import Path Changes
+The following import paths have changed and need to be updated in any external code:
+
+- `./supabase-client` → `./db/supabase-client`
+- `./auth/dual-auth` → `./middleware/dual-auth`
+- `./utils/validation` → `./validation/validators`
+
+All internal imports have been updated. External code using these modules will need updates.
+
+## Backward Compatibility
+
+✅ **All public APIs remain unchanged:**
+- Service methods maintain identical signatures
+- Route endpoints unchanged
+- Response formats unchanged
+- Authentication mechanisms unchanged
+
+## Next Steps
+
+1. **Review and approve** dead code removal
+2. **Gradually adopt** new utilities (logger, HTTP helpers, validation layer)
+3. **Increase test coverage** for low-coverage files (organization.js, checkout.js)
+4. **Monitor** for any issues in production after deployment
+
+## Conclusion
+
+The refactoring successfully improved code organization, maintainability, and structure while maintaining 100% backward compatibility and test coverage above the 60% floor. The codebase is now better organized with clear separation of concerns and standardized utilities ready for adoption.
+
+
+```
+
+---
+
+## config/loadEnv.js
+
+```
+/**
+ * Centralized Environment Loading
+ * Loads environment variables from .env files based on NODE_ENV
+ */
+
+require('dotenv').config();
+
+/**
+ * Get environment variable with optional default
+ */
+function getEnv(key, defaultValue = null) {
+  return process.env[key] || defaultValue;
+}
+
+/**
+ * Require environment variable (throws if missing)
+ */
+function requireEnv(key) {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Required environment variable ${key} is not set`);
+  }
+  return value;
+}
+
+/**
+ * Check if running in production
+ */
+function isProduction() {
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
+ * Check if running in development
+ */
+function isDevelopment() {
+  return process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+}
+
+/**
+ * Check if running in test
+ */
+function isTest() {
+  return process.env.NODE_ENV === 'test';
+}
+
+module.exports = {
+  getEnv,
+  requireEnv,
+  isProduction,
+  isDevelopment,
+  isTest
+};
+
+
+```
+
+---
+
+## db/migrations/20250125_email_events.sql
+
+```
+-- Email Events Table
+-- Tracks all email sends for logging and de-duplication
+
+create table if not exists email_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid null,
+  email text not null,
+  plugin_slug text null,
+  event_type text not null,
+  context jsonb default '{}'::jsonb,
+  sent_at timestamptz not null default now(),
+  email_id text null,
+  success boolean not null default true,
+  error_message text null
+);
+
+-- Indexes for efficient queries
+create index if not exists email_events_email_event_type_idx
+  on email_events (email, event_type);
+
+create index if not exists email_events_user_event_idx
+  on email_events (user_id, event_type);
+
+create index if not exists email_events_sent_at_idx
+  on email_events (sent_at);
+
+-- Index for de-duplication queries (email + event_type + time window)
+create index if not exists email_events_dedup_idx
+  on email_events (email, event_type, sent_at);
+
+
+```
+
+---
+
+## db/migrations/20250205_create_plugin_installations.sql
+
+```
+-- Plugin Installations Table
+-- Tracks plugin installations across all Optti plugins
+
+create table if not exists plugin_installations (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  plugin_slug text not null,
+  site_url text,
+  version text,
+  wp_version text,
+  php_version text,
+  language text,
+  timezone text,
+  install_source text default 'plugin',
+  last_seen_at timestamptz default now(),
+  created_at timestamptz default now(),
+  constraint plugin_installations_email_ck check (email <> '')
+);
+
+-- Indexes for efficient queries
+create index if not exists plugin_installations_email_idx
+  on plugin_installations (email);
+
+create index if not exists plugin_installations_plugin_slug_idx
+  on plugin_installations (plugin_slug);
+
+create index if not exists plugin_installations_email_plugin_idx
+  on plugin_installations (email, plugin_slug);
+
+create index if not exists plugin_installations_site_url_idx
+  on plugin_installations (site_url);
+
+create index if not exists plugin_installations_last_seen_at_idx
+  on plugin_installations (last_seen_at);
+
+
+```
+
+---
+
+## db/migrations/20250206_create_invoices.sql
+
+```
+-- Invoices Table
+-- Tracks payment invoices and receipts
+
+create table if not exists invoices (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id text not null,
+  user_email text not null,
+  plugin_slug text,
+  amount integer not null,
+  currency text not null default 'usd',
+  hosted_invoice_url text,
+  pdf_url text,
+  created_at timestamptz default now(),
+  paid_at timestamptz,
+  receipt_email_sent boolean default false
+);
+
+-- Indexes for efficient queries
+create index if not exists invoices_invoice_id_idx on invoices (invoice_id);
+create index if not exists invoices_email_idx on invoices (user_email);
+
+
+```
+
+---
+
+## db/migrations/20250206_create_subscriptions.sql
+
+```
+-- Subscriptions Table
+-- Tracks user subscriptions per plugin
+
+create table if not exists subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_email text not null,
+  plugin_slug text not null,
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  stripe_price_id text,
+  plan text not null,
+  status text not null default 'active',
+  quantity int default 1,
+  renews_at timestamptz,
+  canceled_at timestamptz,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint subscriptions_email_plugin_unique unique (user_email, plugin_slug)
+);
+
+-- Indexes for efficient queries
+create index if not exists subscriptions_email_idx on subscriptions (user_email);
+create index if not exists subscriptions_subscription_idx on subscriptions (stripe_subscription_id);
+create index if not exists subscriptions_plugin_idx on subscriptions (plugin_slug);
+
+
+```
+
+---
+
+## db/migrations/20250206_create_views.sql
+
+```
+-- Aggregation Views for User Account Dashboard
+-- These views prevent constantly running expensive SQL from Node
+
+-- View: All installations for a user (normalized email)
+create or replace view vw_user_installations as
+select
+  lower(email) as email,
+  plugin_slug,
+  site_url,
+  version,
+  wp_version,
+  php_version,
+  language,
+  timezone,
+  install_source,
+  last_seen_at,
+  created_at
+from plugin_installations;
+
+-- View: Group installations by plugin (overview)
+-- Shows: plugin_slug, install_count, last_active, first_seen, sites array
+create or replace view vw_user_plugins_overview as
+select
+  lower(email) as email,
+  plugin_slug,
+  count(*) as install_count,
+  max(last_seen_at) as last_active,
+  min(created_at) as first_seen,
+  array_agg(distinct site_url) filter (where site_url is not null) as sites
+from plugin_installations
+group by lower(email), plugin_slug;
+
+-- View: Group installations by site
+-- Shows: Which sites is this email active on, and with which plugins?
+create or replace view vw_user_sites_overview as
+select
+  lower(email) as email,
+  site_url,
+  array_agg(distinct plugin_slug) as plugins,
+  max(last_seen_at) as last_seen
+from plugin_installations
+where site_url is not null
+group by lower(email), site_url;
+
+
+```
+
+---
+
+## db/migrations/20250207_create_sites_usage_tracking.sql
+
+```
+-- Site-Based Usage Tracking Migration
+-- Adds quota tracking fields to sites table and creates usage_tracking table
+
+-- Ensure sites table exists (it may already exist from previous migrations)
+-- Add quota tracking columns if they don't exist
+DO $$ 
+BEGIN
+  -- Add license_key column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'license_key') THEN
+    ALTER TABLE sites ADD COLUMN license_key VARCHAR(64);
+  END IF;
+
+  -- Add plan column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'plan') THEN
+    ALTER TABLE sites ADD COLUMN plan VARCHAR(20) DEFAULT 'free';
+  END IF;
+
+  -- Add token_limit column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'token_limit') THEN
+    ALTER TABLE sites ADD COLUMN token_limit INT DEFAULT 50;
+  END IF;
+
+  -- Add tokens_used column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'tokens_used') THEN
+    ALTER TABLE sites ADD COLUMN tokens_used INT DEFAULT 0;
+  END IF;
+
+  -- Add tokens_remaining column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'tokens_remaining') THEN
+    ALTER TABLE sites ADD COLUMN tokens_remaining INT DEFAULT 50;
+  END IF;
+
+  -- Add reset_date column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'reset_date') THEN
+    ALTER TABLE sites ADD COLUMN reset_date DATE;
+  END IF;
+
+  -- Add created_at column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'created_at') THEN
+    ALTER TABLE sites ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
+  END IF;
+
+  -- Add updated_at column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'sites' AND column_name = 'updated_at') THEN
+    ALTER TABLE sites ADD COLUMN updated_at TIMESTAMP DEFAULT NOW();
+  END IF;
+END $$;
+
+-- Create index on site_hash if it doesn't exist (for fast lookups)
+CREATE INDEX IF NOT EXISTS idx_sites_site_hash ON sites(site_hash);
+
+-- Create index on license_key if it doesn't exist
+CREATE INDEX IF NOT EXISTS idx_sites_license_key ON sites(license_key);
+
+-- Create usage_tracking table for per-site usage logs
+CREATE TABLE IF NOT EXISTS usage_tracking (
+  id BIGSERIAL PRIMARY KEY,
+  site_hash VARCHAR(64) NOT NULL,
+  tokens_used INT DEFAULT 1,
+  generated_at TIMESTAMP DEFAULT NOW(),
+  CONSTRAINT fk_usage_tracking_site_hash 
+    FOREIGN KEY (site_hash) REFERENCES sites(site_hash) ON DELETE CASCADE
+);
+
+-- Create indexes on usage_tracking table
+CREATE INDEX IF NOT EXISTS idx_usage_tracking_site_hash ON usage_tracking(site_hash);
+CREATE INDEX IF NOT EXISTS idx_usage_tracking_generated_at ON usage_tracking(generated_at);
+
+-- Add comment to document the table
+COMMENT ON TABLE usage_tracking IS 'Tracks usage per site (via site_hash), not per user. All users on the same site share the same quota.';
+
+
+```
+
+---
+
+## db/migrations/20250208_create_plugin_identities.sql
+
+```
+-- Plugin Identities Table
+-- Stores identities tied to installations + user emails
+-- Enables JWT versioning, token invalidation, and plugin-based identity separation
+
+create table if not exists plugin_identities (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  plugin_slug text not null,
+  site_url text,
+  jwt_version int default 1,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint plugin_identities_email_ck check (email <> '')
+);
+
+-- Indexes for efficient queries
+create index if not exists plugin_identities_email_idx
+  on plugin_identities (email);
+
+create index if not exists plugin_identities_email_plugin_idx
+  on plugin_identities (email, plugin_slug);
+
+
+```
+
+---
+
+## db/migrations/20250209_add_identity_id_columns.sql
+
+```
+-- Add identity_id columns to all connected tables
+-- These are foreign keys, not required but very helpful for linking records to identities
+
+alter table plugin_installations
+add column if not exists identity_id uuid references identities(id);
+
+alter table subscriptions
+add column if not exists identity_id uuid references identities(id);
+
+alter table usage_logs
+add column if not exists identity_id uuid references identities(id);
+
+alter table email_events
+add column if not exists identity_id uuid references identities(id);
+
+-- Add indexes for efficient lookups
+create index if not exists plugin_installations_identity_id_idx on plugin_installations (identity_id);
+create index if not exists subscriptions_identity_id_idx on subscriptions (identity_id);
+create index if not exists usage_logs_identity_id_idx on usage_logs (identity_id);
+create index if not exists email_events_identity_id_idx on email_events (identity_id);
+
+
+```
+
+---
+
+## db/migrations/20250209_create_identities.sql
+
+```
+-- Unified Identities Table
+-- Stores unified user identities based on email
+-- Links all user data (installations, subscriptions, usage, email events) via identity_id
+
+create table if not exists identities (
+  id uuid primary key default gen_random_uuid(),
+  email text unique not null,
+  created_at timestamptz default now(),
+  last_seen_at timestamptz default now(),
+  constraint identities_email_ck check (email <> '')
+);
+
+-- Indexes for efficient queries
+create index if not exists identities_email_idx on identities (email);
+create index if not exists identities_last_seen_idx on identities (last_seen_at);
+
+
+```
+
+---
+
+## db/migrations/20250215_create_analytics_events.sql
+
+```
+-- Analytics Events Table
+-- Stores analytics events for tracking user behavior across the platform
+-- Links to identities table via identity_id for unified user tracking
+
+create table if not exists analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  identity_id uuid references identities(id),
+  plugin_slug text,
+  event_name text not null,
+  event_data jsonb default '{}'::jsonb,
+  source text default 'plugin',
+  created_at timestamptz default now(),
+  constraint analytics_events_email_ck check (email <> '')
+);
+
+-- Indexes for efficient queries
+create index if not exists analytics_events_email_idx on analytics_events (email);
+create index if not exists analytics_events_event_name_idx on analytics_events (event_name);
+create index if not exists analytics_events_created_at_idx on analytics_events (created_at desc);
+create index if not exists analytics_events_plugin_slug_idx on analytics_events (plugin_slug);
+
+-- Composite index for summary queries (email, event_name, created_at)
+-- This optimizes queries that filter by email and event_name with date range
+create index if not exists analytics_events_email_event_created_idx on analytics_events (email, event_name, created_at desc);
+
+
+```
+
+---
+
+## db/migrations/20250216_add_analytics_indexes.sql
+
+```
+-- Additional Analytics Indexes
+-- Performance optimization for dashboard chart queries
+-- Adds composite indexes for time-series aggregation queries
+
+-- Composite index for email + created_at queries (for time-series data)
+-- Optimizes queries that filter by email and date range
+create index if not exists analytics_events_email_created_at_idx 
+  on analytics_events (email, created_at desc);
+
+-- Composite index for plugin_slug + created_at queries (for plugin-specific analytics)
+-- Optimizes queries that filter by plugin and date range
+create index if not exists analytics_events_plugin_created_at_idx 
+  on analytics_events (plugin_slug, created_at desc);
+
+-- Composite index for email + plugin_slug + created_at (for per-plugin user analytics)
+-- Optimizes queries that filter by email, plugin, and date range
+create index if not exists analytics_events_email_plugin_created_idx 
+  on analytics_events (email, plugin_slug, created_at desc);
+
+
+```
+
+---
+
+## db/migrations/20250216_add_credits_to_identities.sql
+
+```
+-- Add credits_balance column to identities table
+-- Tracks current credit balance for each user identity
+
+alter table identities
+add column if not exists credits_balance integer not null default 0;
+
+-- Index for efficient balance queries
+create index if not exists identities_credits_balance_idx on identities (credits_balance);
+
+
+```
+
+---
+
+## db/migrations/20250216_create_credits_transactions.sql
+
+```
+-- Credits Transactions Table
+-- Tracks all credit transactions: purchases, spending, and refunds
+-- Links to identities table via identity_id
+
+create table if not exists credits_transactions (
+  id uuid primary key default gen_random_uuid(),
+  identity_id uuid not null references identities(id) on delete cascade,
+  transaction_type text not null check (transaction_type in ('purchase', 'spend', 'refund')),
+  amount integer not null,
+  balance_after integer not null,
+  stripe_payment_intent_id text,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  constraint credits_transactions_amount_ck check (amount > 0),
+  constraint credits_transactions_balance_ck check (balance_after >= 0)
+);
+
+-- Indexes for efficient queries
+create index if not exists credits_transactions_identity_id_idx on credits_transactions (identity_id);
+create index if not exists credits_transactions_created_at_idx on credits_transactions (created_at);
+create index if not exists credits_transactions_stripe_payment_intent_id_idx on credits_transactions (stripe_payment_intent_id) where stripe_payment_intent_id is not null;
+create index if not exists credits_transactions_type_idx on credits_transactions (transaction_type);
+
+
+```
+
+---
+
+## db/migrations/20250217_add_refresh_tokens.sql
+
+```
+-- Add Refresh Token Support to Identities Table
+-- Enables JWT refresh token storage for unified authentication
+
+-- Add refresh_token column if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'identities' AND column_name = 'refresh_token') THEN
+    ALTER TABLE identities ADD COLUMN refresh_token TEXT;
+  END IF;
+END $$;
+
+-- Add refresh_token_expires_at column if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_name = 'identities' AND column_name = 'refresh_token_expires_at') THEN
+    ALTER TABLE identities ADD COLUMN refresh_token_expires_at TIMESTAMPTZ;
+  END IF;
+END $$;
+
+-- Create index on refresh_token for fast lookups
+CREATE INDEX IF NOT EXISTS identities_refresh_token_idx ON identities (refresh_token)
+  WHERE refresh_token IS NOT NULL;
+
+
+```
+
+---
+
+## db/migrations/20250217_create_partner_api_keys.sql
+
+```
+-- Partner API Keys Table
+-- Stores API keys for partner/white-label API access
+-- Keys are hashed using bcrypt for security
+
+create table if not exists partner_api_keys (
+  id uuid primary key default gen_random_uuid(),
+  key_hash text unique not null,
+  identity_id uuid not null references identities(id) on delete cascade,
+  name text not null,
+  is_active boolean not null default true,
+  rate_limit_per_minute integer not null default 60,
+  created_at timestamptz default now(),
+  last_used_at timestamptz,
+  rotated_from uuid references partner_api_keys(id),
+  metadata jsonb default '{}'::jsonb,
+  constraint partner_api_keys_name_ck check (name <> ''),
+  constraint partner_api_keys_rate_limit_ck check (rate_limit_per_minute > 0)
+);
+
+-- Indexes for efficient queries
+create index if not exists partner_api_keys_key_hash_idx on partner_api_keys (key_hash);
+create index if not exists partner_api_keys_identity_id_idx on partner_api_keys (identity_id);
+create index if not exists partner_api_keys_is_active_idx on partner_api_keys (is_active);
+create index if not exists partner_api_keys_last_used_idx on partner_api_keys (last_used_at);
+
+
+```
+
+---
+
+## db/migrations/20250217_create_partner_api_usage_logs.sql
+
+```
+-- Partner API Usage Logs Table
+-- Tracks all API calls made with partner API keys
+-- Used for analytics, rate limiting, and auditing
+
+create table if not exists partner_api_usage_logs (
+  id uuid primary key default gen_random_uuid(),
+  api_key_id uuid not null references partner_api_keys(id) on delete cascade,
+  endpoint text not null,
+  status_code integer not null,
+  response_time_ms integer,
+  ip_address text,
+  created_at timestamptz default now(),
+  constraint partner_api_usage_logs_status_code_ck check (status_code >= 100 and status_code < 600)
+);
+
+-- Indexes for efficient queries
+create index if not exists partner_api_usage_logs_api_key_id_idx on partner_api_usage_logs (api_key_id);
+create index if not exists partner_api_usage_logs_created_at_idx on partner_api_usage_logs (created_at);
+create index if not exists partner_api_usage_logs_api_key_created_idx on partner_api_usage_logs (api_key_id, created_at);
+
+-- Composite index for analytics queries
+create index if not exists partner_api_usage_logs_analytics_idx on partner_api_usage_logs (api_key_id, status_code, created_at);
+
+
+```
+
+---
+
+## db/migrations/20250218_create_usage_snapshots.sql
+
+```
+-- Usage Snapshots Table
+-- Stores daily usage snapshots from plugins for cross-platform sync
+-- Tracks plugin versions, usage counts, and settings
+
+create table if not exists usage_snapshots (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  plugin_slug text not null,
+  site_url text,
+  version text,
+  daily_count integer default 0,
+  recent_actions jsonb default '[]'::jsonb,
+  plan text default 'free',
+  settings jsonb default '{}'::jsonb,
+  created_at timestamptz default now(),
+  snapshot_date date default CURRENT_DATE,
+  constraint usage_snapshots_email_ck check (email <> ''),
+  constraint usage_snapshots_plugin_slug_ck check (plugin_slug <> '')
+);
+
+-- Indexes for efficient queries
+create index if not exists usage_snapshots_email_idx on usage_snapshots (email);
+create index if not exists usage_snapshots_plugin_slug_idx on usage_snapshots (plugin_slug);
+create index if not exists usage_snapshots_snapshot_date_idx on usage_snapshots (snapshot_date desc);
+create index if not exists usage_snapshots_email_plugin_date_idx on usage_snapshots (email, plugin_slug, snapshot_date);
+
+-- Unique constraint: one snapshot per email+plugin+date
+create unique index if not exists usage_snapshots_email_plugin_date_unique 
+  on usage_snapshots (email, plugin_slug, snapshot_date);
+
+
+```
+
+---
+
+## db/migrations/20250220_create_daily_usage_summary.sql
+
+```
+-- Daily Usage Summary Table
+-- Pre-computed daily rollups for instant dashboard loads
+-- Updated daily via cron job
+
+create table if not exists daily_usage_summary (
+  id uuid primary key default gen_random_uuid(),
+  identity_id uuid not null references identities(id) on delete cascade,
+  date date not null,
+  credits_purchased integer not null default 0,
+  credits_used integer not null default 0,
+  events_count integer not null default 0,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint daily_usage_summary_identity_date_unique unique (identity_id, date)
+);
+
+-- Indexes for efficient queries
+create index if not exists idx_daily_usage_summary_identity_id on daily_usage_summary (identity_id);
+create index if not exists idx_daily_usage_summary_date on daily_usage_summary (date desc);
+create index if not exists idx_daily_usage_summary_identity_date on daily_usage_summary (identity_id, date desc);
+
+-- Comments for documentation
+comment on table daily_usage_summary is 'Pre-computed daily rollups from events table for instant dashboard loads';
+comment on column daily_usage_summary.identity_id is 'Foreign key to identities table';
+comment on column daily_usage_summary.date is 'Date of the summary (YYYY-MM-DD)';
+comment on column daily_usage_summary.credits_purchased is 'Total credits purchased on this date';
+comment on column daily_usage_summary.credits_used is 'Total credits used on this date';
+comment on column daily_usage_summary.events_count is 'Total number of events on this date';
+
+
+```
+
+---
+
+## db/migrations/20250220_create_unified_events.sql
+
+```
+-- Unified Events Table
+-- Replaces scattered analytics_events and credits_transactions tables
+-- Single source of truth for all platform events: subscriptions, credits, usage analytics, dashboard charts, plugin tracking, etc.
+
+create table if not exists events (
+  id uuid primary key default gen_random_uuid(),
+  identity_id uuid not null references identities(id) on delete cascade,
+  event_type text not null,
+  credits_delta integer default 0,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now() not null
+);
+
+-- Indexes for efficient queries
+-- Identity-based queries (most common)
+create index if not exists idx_events_identity_id on events (identity_id);
+
+-- Event type filtering (for analytics)
+create index if not exists idx_events_event_type on events (event_type);
+
+-- Time-based queries (for dashboards and timelines)
+create index if not exists idx_events_created_at on events (created_at desc);
+
+-- Composite index for ultra-fast dashboard queries
+-- Optimizes: WHERE identity_id = X AND event_type = Y AND created_at >= Z
+create index if not exists idx_events_identity_type_created on events (identity_id, event_type, created_at desc);
+
+-- Comments for documentation
+comment on table events is 'Unified event system - replaces analytics_events and credits_transactions';
+comment on column events.identity_id is 'Foreign key to identities table - unified user tracking';
+comment on column events.event_type is 'Event type: alttext_generated, credit_used, credit_purchase, signup_submitted, signup_deduped, dashboard_loaded, settings_changed, plugin_activated, etc.';
+comment on column events.credits_delta is 'Credit change: negative for usage, positive for purchases';
+comment on column events.metadata is 'Flexible JSON payload: image count, origin, plugin version, etc.';
+
+
+```
+
+---
+
+## db/migrations/20250220_migrate_to_unified_events.sql
+
+```
+-- Migrate existing data from credits_transactions and analytics_events to unified events table
+-- Preserves historical data while consolidating into single table
+-- Old tables remain for historical reference (deprecated)
+
+-- Migrate credits_transactions to events
+-- Map transaction_type to event_type:
+--   'purchase' -> 'credit_purchase'
+--   'spend' -> 'credit_used'
+--   'refund' -> 'credit_refund'
+insert into events (identity_id, event_type, credits_delta, metadata, created_at)
+select 
+  identity_id,
+  case 
+    when transaction_type = 'purchase' then 'credit_purchase'
+    when transaction_type = 'spend' then 'credit_used'
+    when transaction_type = 'refund' then 'credit_refund'
+    else 'credit_transaction'
+  end as event_type,
+  case
+    when transaction_type = 'purchase' then amount
+    when transaction_type = 'spend' then -amount
+    when transaction_type = 'refund' then amount
+    else 0
+  end as credits_delta,
+  jsonb_build_object(
+    'transaction_type', transaction_type,
+    'balance_after', balance_after,
+    'stripe_payment_intent_id', stripe_payment_intent_id,
+    'original_table', 'credits_transactions',
+    'original_id', id
+  ) || coalesce(metadata, '{}'::jsonb) as metadata,
+  created_at
+from credits_transactions
+where identity_id is not null;
+
+-- Migrate analytics_events to events
+-- Map event_name to event_type (preserve most event names as-is)
+-- Extract identity_id from email lookup or use null if not found
+insert into events (identity_id, event_type, credits_delta, metadata, created_at)
+select 
+  coalesce(
+    (select id from identities where email = analytics_events.email limit 1),
+    null
+  ) as identity_id,
+  event_name as event_type,
+  0 as credits_delta, -- Analytics events don't affect credits
+  jsonb_build_object(
+    'plugin_slug', plugin_slug,
+    'source', source,
+    'original_table', 'analytics_events',
+    'original_id', id,
+    'email', email
+  ) || coalesce(event_data, '{}'::jsonb) as metadata,
+  created_at
+from analytics_events
+where email is not null;
+
+-- Add comment to old tables indicating they are deprecated
+comment on table credits_transactions is 'DEPRECATED: Use events table instead. Kept for historical reference.';
+comment on table analytics_events is 'DEPRECATED: Use events table instead. Kept for historical reference.';
+
+
+```
+
+---
+
+## db/supabase-client.js
+
+```
+/**
+ * Supabase Client Configuration
+ * 
+ * This file provides a configured Supabase client instance for database operations.
+ * Replace all Prisma calls with Supabase client calls using this instance.
+ * 
+ * Environment Variables Required:
+ * - SUPABASE_URL: Your Supabase project URL
+ * - SUPABASE_ANON_KEY: Your Supabase anonymous/public key
+ * - SUPABASE_SERVICE_ROLE_KEY: Your Supabase service role key (for server-side operations)
+ */
+
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
+
+// In tests, use the Jest mock and expose the same helpers to keep imports consistent.
+if (process.env.NODE_ENV === 'test') {
+  const mock = require('../tests/mocks/supabase.mock');
+
+  function handleSupabaseError(error, context = '') {
+    if (error) {
+      throw new Error(error.message || `Supabase error ${context}`.trim());
+    }
+  }
+
+  function handleSupabaseResponse({ data, error }, context = '') {
+    if (error) {
+      handleSupabaseError(error, context);
+    }
+    return data;
+  }
+
+  module.exports = {
+    supabase: mock.supabase,
+    handleSupabaseError,
+    handleSupabaseResponse,
+    __queueResponse: mock.__queueResponse,
+    __reset: mock.__reset,
+    __getInsertedData: mock.__getInsertedData,
+    __clearInsertedData: mock.__clearInsertedData
+  };
+} else {
+  // Validate required environment variables
+  if (!process.env.SUPABASE_URL) {
+    throw new Error('SUPABASE_URL environment variable is required');
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
+  }
+
+  // Create Supabase client with service role key for server-side operations
+  // This bypasses Row Level Security (RLS) policies - use with caution
+  const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
+  );
+
+// Supabase query examples:
+// Find user: supabase.from('users').select('*').eq('id', 1).single()
+// Insert: supabase.from('users').insert({...}).select().single()
+// Update: supabase.from('users').update({...}).eq('id', 1)
+
+  /**
+   * Helper function to handle Supabase errors consistently
+   */
+  function handleSupabaseError(error, context = '') {
+    if (error) {
+      console.error(`Supabase error ${context}:`, error);
+      throw new Error(error.message || 'Database operation failed');
+    }
+  }
+
+  /**
+   * Helper function to convert Supabase response to standard format
+   */
+  function handleSupabaseResponse({ data, error }, context = '') {
+    if (error) {
+      handleSupabaseError(error, context);
+    }
+    return data;
+  }
+
+  module.exports = {
+    supabase,
+    handleSupabaseError,
+    handleSupabaseResponse
+  };
+}
+
+```
+
+---
+
+## dead-code-analysis.json
+
+```
+[
+  {
+    "file": "test-backend.js",
+    "lines": "1-386",
+    "reason": "Test script file never imported anywhere in codebase",
+    "safeToDelete": true
+  },
+  {
+    "file": "test-license-flows.js",
+    "lines": "1-87",
+    "reason": "Test script file never imported anywhere in codebase",
+    "safeToDelete": true
+  },
+  {
+    "file": "check-supabase-schema.js",
+    "lines": "1-77",
+    "reason": "Utility script for schema checking, never imported anywhere",
+    "safeToDelete": true
+  },
+  {
+    "file": "scripts/init-free-user-credits.js",
+    "lines": "1-95",
+    "reason": "One-time migration script, never imported anywhere",
+    "safeToDelete": true
+  },
+  {
+    "file": "server-v2.js",
+    "lines": "406-431",
+    "reason": "Legacy endpoint /api/generate-legacy returns 410 deprecated response, never actually processes requests",
+    "safeToDelete": false
+  },
+  {
+    "file": "routes/organization.js",
+    "lines": "1-498",
+    "reason": "File has very low test coverage (6.99% statements, 0% branches, 0% functions, 8.13% lines). Most code paths are untested.",
+    "safeToDelete": false
+  },
+  {
+    "file": "stripe/checkout.js",
+    "lines": "16-169,200,202,204,208,210,244-246,249,271-348,385-424,446-468",
+    "reason": "Low test coverage (33.76% statements, 28.31% branches, 60% functions, 35.61% lines). Many code paths are untested.",
+    "safeToDelete": false
+  },
+  {
+    "file": "services/emailService.js",
+    "lines": "803-984",
+    "reason": "Untested code paths in email service (coverage shows lines 803-984 uncovered)",
+    "safeToDelete": false
+  },
+  {
+    "file": "services/licenseService.js",
+    "lines": "100-101,108-111,152,166,183,225,230,241,260-270,290-344,363,369-375,391-405,425",
+    "reason": "Untested code paths in license service",
+    "safeToDelete": false
+  },
+  {
+    "file": "auth/dual-auth.js",
+    "lines": "77,88-233,258",
+    "reason": "Low test coverage (43.75% statements, 41.17% branches, 50% functions). Many authentication paths untested.",
+    "safeToDelete": false
+  },
+  {
+    "file": "auth/email.js",
+    "lines": "75-90,97-98,105-128,256-257,263",
+    "reason": "Untested code paths in email sending logic",
+    "safeToDelete": false
+  },
+  {
+    "file": "routes/licenses.js",
+    "lines": "73-74,102-129,195,247,290,325-336,355,407-459,477-484,494",
+    "reason": "Untested code paths in license routes",
+    "safeToDelete": false
+  },
+  {
+    "file": "server-v2.js",
+    "lines": "655-846,852-853,859-860,865-876",
+    "reason": "Untested helper functions (reviewAltText, buildReviewPrompt, parseReviewResponse, etc.)",
+    "safeToDelete": false
+  }
+]
+
+
+```
+
+---
+
+## docs/account-dashboard.md
+
+```
+# Account Dashboard API Documentation
+
+## Overview
+
+The Account Dashboard API provides a unified endpoint that aggregates all user account data into a single response. This enables the website dashboard to render everything without multiple scattered API calls.
+
+## Endpoint
+
+**POST** `/account/summary`
+
+### Request
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "email": "user@example.com",
+    "installations": [
+      {
+        "id": "uuid",
+        "plugin_slug": "alttext-ai",
+        "site_url": "https://example.com",
+        "version": "1.0.0",
+        "wp_version": "6.0",
+        "last_seen_at": "2025-01-15T10:00:00Z",
+        "created_at": "2025-01-01T00:00:00Z"
+      }
+    ],
+    "subscriptions": [
+      {
+        "id": "uuid",
+        "user_email": "user@example.com",
+        "plugin_slug": "alttext-ai",
+        "plan": "pro",
+        "status": "active",
+        "renews_at": "2025-02-01T00:00:00Z",
+        "stripe_subscription_id": "sub_123"
+      }
+    ],
+    "usage": {
+      "alttext-ai": {
+        "monthlyImages": 450,
+        "dailyImages": 15,
+        "totalImages": 2000,
+        "quota": 1000,
+        "remaining": 550
+      },
+      "beepbeep-ai": {
+        "monthlyImages": 1421,
+        "dailyImages": 22,
+        "totalImages": 5000,
+        "quota": 1500,
+        "remaining": 79
+      }
+    },
+    "plans": {
+      "alttext-ai": {
+        "currentPlan": "pro",
+        "monthlyImages": 1000,
+        "tokens": 1000
+      },
+      "beepbeep-ai": {
+        "currentPlan": "free",
+        "monthlyImages": 25,
+        "tokens": 25
+      }
+    }
+  }
+}
+```
+
+## Data Sources
+
+### Installations
+
+Source: `plugin_installations` table via `userAccountService.getUserInstallations()`
+
+Returns all plugin installations for the user, including:
+- Plugin slug
+- Site URL
+- Version information
+- Last seen timestamp
+- Installation metadata
+
+### Subscriptions
+
+Source: `subscriptions` table via `billingService.getUserSubscriptions()`
+
+Returns all active and inactive subscriptions, including:
+- Plugin slug
+- Plan tier (free/pro/agency)
+- Subscription status
+- Renewal date
+- Stripe subscription ID
+
+### Usage
+
+Source: `usage_logs` table aggregated via `usageService.getUsageSummary()`
+
+Returns per-plugin usage statistics:
+- `monthlyImages`: Usage count for current month
+- `dailyImages`: Usage count for today
+- `totalImages`: Total usage count (all time)
+- `quota`: Plan-based quota limit (from plans config)
+- `remaining`: Calculated remaining quota (quota - monthlyImages)
+
+**Note:** Currently, usage is aggregated across all plugins since `usage_logs` doesn't store service/plugin information. The usage is distributed evenly across all user's plugins. Future enhancement: Add service/plugin tracking to `usage_logs` table.
+
+### Plans
+
+Source: `src/config/plans.js` merged with subscription data
+
+Returns per-plugin plan information:
+- `currentPlan`: Determined from subscription (or defaults to 'free')
+- `monthlyImages`: Quota limit from plans config
+- `tokens`: Token quota from plans config (same as monthlyImages)
+
+## How Usage is Calculated
+
+1. **Monthly Usage**: Count of `usage_logs` entries created in the current month
+2. **Daily Usage**: Count of `usage_logs` entries created today
+3. **Total Usage**: Count of all `usage_logs` entries for the user
+4. **Quota**: Looked up from `plans.js` based on plugin + current plan
+5. **Remaining**: Calculated as `quota - monthlyImages` (minimum 0)
+
+## How Plan Limits are Determined
+
+1. Get all subscriptions for the user
+2. For each plugin (from installations or subscriptions):
+   - Find matching subscription
+   - Extract `plan` field (free/pro/agency)
+   - Default to 'free' if no subscription
+3. Look up quota in `src/config/plans.js`:
+   ```javascript
+   plansConfig[pluginSlug][plan].tokens
+   ```
+4. Return plan limits merged with usage data
+
+## How Remaining Quota is Computed
+
+```
+remaining = max(0, quota - monthlyImages)
+```
+
+Where:
+- `quota`: From plans config based on plugin + current plan
+- `monthlyImages`: Count of usage_logs in current month
+
+## Error Handling
+
+### Validation Errors (400)
+
+```json
+{
+  "ok": false,
+  "error": "Invalid email"
+}
+```
+
+### Service Errors (500)
+
+```json
+{
+  "ok": false,
+  "error": "Failed to fetch account summary"
+}
+```
+
+Errors are handled gracefully - if one data source fails, others are still returned with empty arrays/objects.
+
+## Rate Limiting
+
+- **Limit**: 30 requests per IP per 15 minutes
+- **Headers**: Standard rate limit headers included
+- **Response**: 429 Too Many Requests when exceeded
+
+## Example Requests
+
+### cURL
+
+```bash
+curl -X POST https://api.optti.dev/account/summary \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com"}'
+```
+
+### JavaScript
+
+```javascript
+const response = await fetch('https://api.optti.dev/account/summary', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'user@example.com' }),
+});
+
+const data = await response.json();
+```
+
+## Response Time
+
+Target response time: < 500ms for typical user data
+
+The endpoint uses `Promise.all` to fetch all data sources in parallel for optimal performance.
+
+## Plugin Integration
+
+Plugins can link users to the dashboard:
+
+```
+https://yourwebsite.com/account?email=user@example.com
+```
+
+The dashboard will use this endpoint to fetch all account data and display:
+- Plugin installations table
+- Subscriptions overview
+- Usage overview per plugin
+- Plan limits and remaining quotas
+
+## Future Enhancements
+
+- [ ] Add service/plugin tracking to `usage_logs` table for accurate per-plugin usage
+- [ ] Add usage history/trends
+- [ ] Add billing/invoice data to summary
+- [ ] Add organization/team data
+- [ ] Add caching layer for frequently accessed data
+- [ ] Add real-time usage updates via WebSocket
+
+## Related Documentation
+
+- [Billing Engine Documentation](./billing-engine.md)
+- [Account Endpoints Documentation](./account-endpoints.md)
+- [Plan Configuration](../src/config/plans.js)
+
+
+```
+
+---
+
+## docs/account-endpoints.md
+
+```
+# Account Endpoints Documentation
+
+## Overview
+
+The account endpoints provide aggregated user data for the Optti dashboard, including installations, plugins, and sites. These endpoints are consumed by the Next.js dashboard frontend.
+
+## Base URL
+
+All endpoints are prefixed with `/account`.
+
+## Endpoints
+
+### POST /account/overview
+
+Returns full account data including installations, plugins, and sites for a user.
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Body:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Validation:**
+- `email` (required): Valid email address format
+
+#### Response
+
+**Success (200):**
+```json
+{
+  "ok": true,
+  "data": {
+    "email": "user@example.com",
+    "installations": [
+      {
+        "email": "user@example.com",
+        "plugin_slug": "alttext-ai",
+        "site_url": "https://example.com",
+        "version": "1.0.0",
+        "wp_version": "6.0",
+        "php_version": "8.0",
+        "language": "en_US",
+        "timezone": "America/New_York",
+        "install_source": "plugin",
+        "last_seen_at": "2025-01-26T12:00:00Z",
+        "created_at": "2025-01-01T10:00:00Z"
+      }
+    ],
+    "plugins": [
+      {
+        "email": "user@example.com",
+        "plugin_slug": "alttext-ai",
+        "install_count": 2,
+        "last_active": "2025-01-26T12:00:00Z",
+        "first_seen": "2025-01-01T10:00:00Z",
+        "sites": ["https://example.com", "https://another.com"]
+      }
+    ],
+    "sites": [
+      {
+        "email": "user@example.com",
+        "site_url": "https://example.com",
+        "plugins": ["alttext-ai", "seo-ai-meta"],
+        "last_seen": "2025-01-26T12:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+**Error (400):**
+```json
+{
+  "ok": false,
+  "error": "Invalid email"
+}
+```
+
+**Error (500):**
+```json
+{
+  "ok": false,
+  "error": "Failed to fetch account data"
+}
+```
+
+#### Example cURL Request
+
+```bash
+curl -X POST https://api.optti.dev/account/overview \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com"}'
+```
+
+#### Use Cases
+
+- Dashboard overview page showing all user data
+- Account summary for user profile
+- Initial data load for dashboard
+
+---
+
+### POST /account/installations
+
+Returns all installations for a user.
+
+#### Request
+
+**Headers:**
+```
+Content-Type: application/json
+```
+
+**Body:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Validation:**
+- `email` (required): Valid email address format
+
+#### Response
+
+**Success (200):**
+```json
+{
+  "ok": true,
+  "installations": [
+    {
+      "email": "user@example.com",
+      "plugin_slug": "alttext-ai",
+      "site_url": "https://example.com",
+      "version": "1.0.0",
+      "wp_version": "6.0",
+      "php_version": "8.0",
+      "language": "en_US",
+      "timezone": "America/New_York",
+      "install_source": "plugin",
+      "last_seen_at": "2025-01-26T12:00:00Z",
+      "created_at": "2025-01-01T10:00:00Z"
+    },
+    {
+      "email": "user@example.com",
+      "plugin_slug": "seo-ai-meta",
+      "site_url": "https://another.com",
+      "version": "2.0.0",
+      "wp_version": "6.1",
+      "php_version": "8.1",
+      "language": "en_US",
+      "timezone": "America/Los_Angeles",
+      "install_source": "plugin",
+      "last_seen_at": "2025-01-25T15:30:00Z",
+      "created_at": "2025-01-15T09:00:00Z"
+    }
+  ]
+}
+```
+
+**Error (400):**
+```json
+{
+  "ok": false,
+  "error": "Invalid email"
+}
+```
+
+**Error (500):**
+```json
+{
+  "ok": false,
+  "error": "Failed to fetch installations"
+}
+```
+
+#### Example cURL Request
+
+```bash
+curl -X POST https://api.optti.dev/account/installations \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com"}'
+```
+
+#### Use Cases
+
+- Installations list page
+- Detailed installation view
+- Installation management interface
+
+---
+
+## Rate Limiting
+
+All account endpoints are rate-limited to **30 requests per 15 minutes** per IP address.
+
+**Rate Limit Response (429):**
+```json
+{
+  "message": "Too many account requests from this IP, please try again later."
+}
+```
+
+## Error Handling
+
+All endpoints follow a consistent error response format:
+
+```json
+{
+  "ok": false,
+  "error": "Error message description"
+}
+```
+
+Common error codes:
+- `400`: Validation error (invalid email format, missing required fields)
+- `429`: Rate limit exceeded
+- `500`: Internal server error (database connection issues, service failures)
+
+## Data Models
+
+### Installation Object
+
+```typescript
+{
+  email: string;              // Normalized to lowercase
+  plugin_slug: string;        // Plugin identifier (e.g., "alttext-ai")
+  site_url: string | null;    // Site URL where plugin is installed
+  version: string | null;     // Plugin version
+  wp_version: string | null;  // WordPress version
+  php_version: string | null; // PHP version
+  language: string | null;    // Language code (e.g., "en_US")
+  timezone: string | null;    // Timezone (e.g., "America/New_York")
+  install_source: string;     // Installation source (default: "plugin")
+  last_seen_at: string;       // ISO 8601 timestamp
+  created_at: string;         // ISO 8601 timestamp
+}
+```
+
+### Plugin Overview Object
+
+```typescript
+{
+  email: string;              // Normalized to lowercase
+  plugin_slug: string;       // Plugin identifier
+  install_count: number;      // Number of installations
+  last_active: string;        // ISO 8601 timestamp of most recent activity
+  first_seen: string;         // ISO 8601 timestamp of first installation
+  sites: string[];            // Array of distinct site URLs
+}
+```
+
+### Site Overview Object
+
+```typescript
+{
+  email: string;              // Normalized to lowercase
+  site_url: string;          // Site URL
+  plugins: string[];          // Array of plugin slugs installed on this site
+  last_seen: string;          // ISO 8601 timestamp of most recent activity
+}
+```
+
+## Notes
+
+- All email addresses are normalized to lowercase before querying
+- Empty arrays are returned when no data is found (not an error)
+- All timestamps are in ISO 8601 format (UTC)
+- The service never throws - all errors are returned as `{ success: false, error: '...' }`
+- Database views are used for performance (prevents expensive SQL queries)
+
+## Future Enhancements
+
+The `getFullAccount` response includes placeholder fields for future Step 3 features:
+- `billing`: Billing and subscription information
+- `subscriptions`: Active subscriptions
+- `usage`: Usage statistics and analytics
+
+These fields are currently `null` or not included in the response.
+
+
+```
+
+---
+
+## docs/architecture.md
+
+```
+# Architecture
+
+## System Overview
+
+Production-ready Node.js backend API for the AltText AI WordPress plugin. Features user authentication, usage tracking, Stripe billing, and organization licensing.
+
+## Tech Stack
+
+- **Runtime:** Node.js 18+
+- **Framework:** Express.js
+- **Database:** Supabase (PostgreSQL)
+- **Authentication:** JWT
+- **Payment:** Stripe
+- **Email:** Resend
+- **AI:** OpenAI API
+
+## Design Decisions
+
+### Directory Structure
+
+The backend follows a clean, scalable structure with `/src` as the single source of truth:
+
+```
+/src
+  /auth          # Authentication logic (jwt, routes, email)
+  /routes        # API route handlers
+  /services      # Business logic services
+  /utils         # Utilities (apiKey, logger, http)
+  /validation    # Input validation layer
+  /middleware    # Express middleware
+  /stripe        # Stripe integration (checkout, webhooks)
+  /db            # Database client
+  /config        # Configuration files
+```
+
+### Authentication
+
+The backend supports multiple authentication methods:
+- **JWT tokens** for personal accounts
+- **License keys** for agency licenses
+- **Site hashes** for site-based quota sharing
+
+The `combinedAuth` middleware handles all three methods, allowing flexible authentication across different use cases.
+
+### Organization-Based Quota System
+
+Quota is tracked per organization, allowing multiple users/sites to share a single pool of tokens/credits. This enables:
+- Agency plans with multiple sites
+- Team collaboration
+- Centralized billing
+
+### Service Architecture
+
+Services are organized by domain:
+- `licenseService.js` - License and organization management
+- `emailService.js` - Email sending via Resend
+- `usageService.js` - Usage tracking and quota management
+
+## Technical Debt
+
+### High Priority
+1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches)
+   - Action needed: Add comprehensive test coverage
+
+2. **src/stripe/checkout.js** - Low test coverage (33.76% statements)
+   - Action needed: Add tests for untested code paths
+
+3. **services/emailService.js** - Some untested code paths (lines 803-984)
+   - Action needed: Add tests for email template generation
+
+### Medium Priority
+1. **Adopt new utilities** - Gradually migrate to:
+   - `src/utils/logger.js` for standardized logging (replace console.log/error/warn)
+   - `src/utils/http.js` for standardized HTTP responses
+   - `config/loadEnv.js` for environment variable management
+
+2. **Validation layer** - Route-specific validators created and ready for adoption:
+   - `src/validation/auth.js` - Ready to use in `auth/routes.js`
+   - `src/validation/license.js` - Ready to use in `routes/license.js` and `routes/licenses.js`
+   - `src/validation/billing.js` - Ready to use in `routes/billing.js`
+   - `src/validation/generate.js` - Ready to use in `server-v2.js` generate endpoint
+
+### Low Priority
+1. **migrations/** - Consider documenting migration process or adding automated migration runner
+2. **Performance optimizations** - Consider caching, batching, and memoization opportunities
+
+## Security
+
+- OpenAI API key stored server-side only
+- Domains are hashed for privacy
+- Rate limiting enabled
+- CORS configured
+- Helmet security headers
+- JWT tokens with expiration
+- Input validation and sanitization
+
+## Backward Compatibility
+
+All public APIs remain unchanged:
+- Service methods maintain identical signatures
+- Route endpoints unchanged
+- Response formats unchanged
+- Authentication mechanisms unchanged
+
+
+```
+
+---
+
+## docs/backend-structure.md
+
+```
+# Backend Structure
+
+## Directory Organization
+
+The backend follows a clean, scalable structure with `/src` as the single source of truth:
+
+```
+/
+├── src/                      # Main application code
+│   ├── auth/                 # Authentication logic
+│   │   ├── jwt.js           # JWT token generation/verification
+│   │   ├── routes.js        # Auth routes (register, login, etc.)
+│   │   └── email.js         # Auth-related emails
+│   ├── routes/               # API route handlers
+│   │   ├── billing.js       # Stripe billing routes
+│   │   ├── license.js       # License management routes
+│   │   ├── licenses.js      # Organization license routes
+│   │   ├── organization.js  # Organization management
+│   │   └── usage.js         # Usage tracking routes
+│   ├── services/             # Business logic services
+│   │   ├── emailService.js  # Email sending service
+│   │   └── licenseService.js # License management service
+│   ├── utils/                # Utilities
+│   │   ├── apiKey.js        # OpenAI API key selection
+│   │   ├── http.js          # HTTP response utilities
+│   │   └── logger.js        # Standardized logging
+│   ├── validation/           # Input validation layer
+│   │   ├── index.js         # Validation exports
+│   │   ├── validators.js    # Core validation functions
+│   │   ├── auth.js          # Auth route validation
+│   │   ├── billing.js       # Billing route validation
+│   │   ├── generate.js      # Generate route validation
+│   │   └── license.js       # License route validation
+│   ├── middleware/           # Express middleware
+│   │   └── dual-auth.js     # Dual authentication (JWT/License)
+│   ├── stripe/               # Stripe integration
+│   │   ├── checkout.js       # Checkout session creation
+│   │   └── webhooks.js      # Webhook handling
+│   ├── db/                   # Database client
+│   │   └── supabase-client.js
+│   └── config/               # Configuration
+│       ├── env.example      # Environment template
+│       ├── env.test          # Test environment
+│       └── loadEnv.js        # Environment loading utility
+├── tests/                     # Test files
+│   ├── unit/                 # Unit tests
+│   ├── integration/          # Integration tests
+│   ├── mocks/                # Mock implementations
+│   └── helpers/              # Test utilities
+├── migrations/                # Database migrations
+│   └── add_licenses_table.sql
+├── docs/                      # Documentation
+├── server-v2.js              # Main entry point
+├── package.json
+├── jest.config.js
+└── README.md
+```
+
+## File Organization Principles
+
+### Separation of Concerns
+- **Routes** (`/src/routes`) - Handle HTTP requests/responses only
+- **Services** (`/src/services`) - Business logic, no HTTP concerns
+- **Validation** (`/src/validation`) - Input validation and sanitization
+- **Middleware** (`/src/middleware`) - Request processing (auth, logging, etc.)
+
+### Single Source of Truth
+All application code lives under `/src`:
+- `/src/auth` - Authentication
+- `/src/routes` - API endpoints
+- `/src/services` - Business logic
+- `/src/utils` - Shared utilities
+- `/src/validation` - Input validation
+- `/src/middleware` - Express middleware
+- `/src/stripe` - Stripe integration
+- `/src/db` - Database client
+- `/src/config` - Configuration
+
+### Test Organization
+Tests mirror the source structure:
+- `tests/unit/` - Unit tests for individual modules
+- `tests/integration/` - Integration tests for API endpoints
+- `tests/mocks/` - Mock implementations
+- `tests/helpers/` - Test utilities
+
+## Import Paths
+
+### Standard Import Patterns
+
+```javascript
+// From routes to services
+const licenseService = require('../services/licenseService');
+
+// From routes to middleware
+const { combinedAuth } = require('../src/middleware/dual-auth');
+
+// From routes to validation
+const { validateRegistrationInput } = require('../src/validation/auth');
+
+// From services to database
+const { supabase } = require('../db/supabase-client');
+
+// From services to utils
+const { getServiceApiKey } = require('../src/utils/apiKey');
+```
+
+## Key Files
+
+### Entry Point
+- `server-v2.js` - Main Express application, route registration, middleware setup
+
+### Core Services
+- `src/services/licenseService.js` - License and organization management
+- `src/services/emailService.js` - Email sending via Resend
+
+### Authentication
+- `src/auth/jwt.js` - JWT token generation and verification
+- `src/auth/routes.js` - Authentication endpoints (register, login, etc.)
+- `src/middleware/dual-auth.js` - Dual authentication middleware (JWT/License/Site Hash)
+
+### Validation
+- `src/validation/validators.js` - Core validation functions (email, password, domain)
+- `src/validation/index.js` - Validation layer with standardized errors
+- `src/validation/*.js` - Route-specific validators
+
+## Migration History
+
+### Recent Changes
+- Moved `/validation` → `/src/validation`
+- Moved `/middleware` → `/src/middleware`
+- Moved `/stripe` → `/src/stripe`
+- Moved `/utils` → `/src/utils`
+- Created `/config` for environment files
+- Created `/docs` for documentation
+
+All import paths have been updated to reflect the new structure.
+
+
+```
+
+---
+
+## docs/billing-engine.md
+
+```
+# Billing Engine Documentation
+
+## Overview
+
+The Optti billing engine provides a unified subscription system that works across all Optti plugins and the website. It integrates with Stripe for payment processing, manages subscriptions, tracks invoices, and enforces usage quotas.
+
+## Architecture
+
+### Core Components
+
+1. **Database Layer** (`db/migrations/`)
+   - `subscriptions` table: Tracks user subscriptions per plugin
+   - `invoices` table: Stores payment invoices and receipts
+
+2. **Service Layer** (`src/services/`)
+   - `billingService.js`: Core billing logic (customer creation, subscriptions, syncing)
+   - `userAccountService.js`: Aggregates account data including billing
+
+3. **Client Abstraction** (`src/utils/`)
+   - `stripeClient.js`: Single gateway for all Stripe API calls
+
+4. **Configuration** (`src/config/`)
+   - `plans.js`: Defines token quotas and Stripe price IDs for each plugin/plan tier
+
+5. **Routes** (`src/routes/`)
+   - `billing.js`: Public billing endpoints
+   - `account.js`: Account overview including billing data
+
+6. **Webhooks** (`src/stripe/`)
+   - `webhooks.js`: Handles Stripe webhook events
+
+## Subscription Lifecycle
+
+### 1. Customer Creation
+
+When a user initiates checkout:
+- `billingService.createOrGetCustomer()` checks for existing Stripe customer
+- If not found, creates new customer in Stripe
+- Customer ID is stored in subscription records
+
+### 2. Subscription Creation
+
+When user completes checkout:
+- Stripe creates subscription via checkout session
+- Webhook `customer.subscription.created` triggers
+- `billingService.syncSubscriptionFromWebhook()` stores subscription in database
+- Subscription email sent via `emailService.sendLicenseActivated()`
+
+### 3. Subscription Updates
+
+When subscription changes:
+- Webhook `customer.subscription.updated` triggers
+- `billingService.syncSubscriptionFromWebhook()` updates database
+- Status, renewal date, and plan changes are synced
+
+### 4. Subscription Cancellation
+
+When user cancels:
+- Webhook `customer.subscription.deleted` triggers
+- Subscription status set to 'canceled' in database
+- Cancellation email sent (if implemented)
+
+## Webhook Flows
+
+### Supported Events
+
+- `customer.created`: Logged for auditing
+- `customer.subscription.created`: Sync subscription, send activation email
+- `customer.subscription.updated`: Sync subscription changes
+- `customer.subscription.deleted`: Mark as canceled, send cancellation email
+- `invoice.paid`: Store invoice, send receipt email
+- `invoice.payment_failed`: Send payment failed email
+
+### Webhook Endpoint
+
+**POST** `/stripe/webhook`
+
+- Requires Stripe signature verification
+- Uses raw body parser (before express.json())
+- Returns `{ received: true }` on success
+
+## Plan Configuration
+
+Plans are defined in `src/config/plans.js`:
+
+```javascript
+{
+  'alttext-ai': {
+    free: { tokens: 50 },
+    pro: { tokens: 1000, priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO },
+    agency: { tokens: 10000, priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY },
+  }
+}
+```
+
+### Plan Tiers
+
+- **Free**: Limited token quota (no payment)
+- **Pro**: Higher quota, monthly subscription
+- **Agency**: Highest quota, monthly subscription
+
+## API Endpoints
+
+### POST /billing/create-checkout
+
+Creates a Stripe Checkout Session.
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "plugin": "alttext-ai",
+  "priceId": "price_123"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "url": "https://checkout.stripe.com/..."
+}
+```
+
+### POST /billing/create-portal
+
+Creates a Stripe Customer Portal session for managing subscriptions.
+
+**Request:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "url": "https://billing.stripe.com/..."
+}
+```
+
+### POST /billing/subscriptions
+
+Gets all subscriptions for a user.
+
+**Request:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "ok": true,
+  "subscriptions": [
+    {
+      "id": "uuid",
+      "user_email": "user@example.com",
+      "plugin_slug": "alttext-ai",
+      "plan": "pro",
+      "status": "active",
+      "renews_at": "2025-03-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+## Quota Enforcement
+
+Quota enforcement is integrated into the `/api/generate` endpoint:
+
+1. **Find Subscription**: Look up active subscription for user + plugin
+2. **Get Plan**: Determine plan tier (free/pro/agency)
+3. **Get Allowed Quota**: From `plans.js` config
+4. **Get Used Quota**: Count from `usage_logs` table
+5. **Check**: If `used >= allowed`, return `{ ok: false, error: "quota_exceeded" }`
+
+This enables upsell modals in plugins when quota is exceeded.
+
+## How Plugins Integrate
+
+1. **Checkout Flow**:
+   - Plugin calls `POST /billing/create-checkout` with user email, plugin slug, and price ID
+   - User redirected to Stripe Checkout
+   - On success, webhook creates subscription
+
+2. **Quota Checking**:
+   - Plugin calls `/api/generate` for each generation
+   - Backend checks subscription quota
+   - If exceeded, returns `quota_exceeded` error
+   - Plugin shows upgrade modal
+
+3. **Account Management**:
+   - Plugin can call `POST /billing/create-portal` to let users manage subscriptions
+   - Users can upgrade, downgrade, or cancel
+
+## How Website Dashboard Connects
+
+The website dashboard uses:
+
+1. **Account Overview**: `POST /account/overview`
+   - Returns installations, plugins, sites, subscriptions, usage, invoices
+   - Single source of truth for user account
+
+2. **Subscription Management**:
+   - Display active subscriptions
+   - Show usage vs. quota
+   - Link to Stripe Customer Portal
+
+3. **Invoice History**:
+   - Display past invoices
+   - Link to hosted invoice URLs
+
+## Database Schema
+
+### subscriptions
+
+- `id` (uuid): Primary key
+- `user_email` (text): User email (lowercased)
+- `plugin_slug` (text): Plugin identifier
+- `stripe_customer_id` (text): Stripe customer ID
+- `stripe_subscription_id` (text): Stripe subscription ID
+- `stripe_price_id` (text): Stripe price ID
+- `plan` (text): Plan tier (free/pro/agency)
+- `status` (text): Subscription status (active/canceled)
+- `quantity` (int): Subscription quantity
+- `renews_at` (timestamptz): Next renewal date
+- `canceled_at` (timestamptz): Cancellation date
+- `metadata` (jsonb): Additional data
+- Unique constraint on `(user_email, plugin_slug)`
+
+### invoices
+
+- `id` (uuid): Primary key
+- `invoice_id` (text): Stripe invoice ID (unique)
+- `user_email` (text): User email
+- `plugin_slug` (text): Plugin identifier
+- `amount` (integer): Amount in cents
+- `currency` (text): Currency code (usd, gbp, etc.)
+- `hosted_invoice_url` (text): Stripe hosted invoice URL
+- `pdf_url` (text): Invoice PDF URL
+- `paid_at` (timestamptz): Payment timestamp
+- `receipt_email_sent` (boolean): Whether receipt email was sent
+
+## Error Handling
+
+All billing service methods return:
+```javascript
+{ success: true, data: {...} }  // Success
+{ success: false, error: "..." } // Failure
+```
+
+Never throws exceptions - always returns error objects.
+
+## Testing
+
+- **Unit Tests**: `tests/unit/billingService.test.js`, `tests/unit/stripeClient.test.js`, `tests/unit/plans.test.js`
+- **Integration Tests**: `tests/integration/billingRoutes.test.js`
+
+Coverage target: ≥85% for billing subsystem.
+
+## Environment Variables
+
+Required:
+- `STRIPE_SECRET_KEY`: Stripe secret API key
+- `STRIPE_WEBHOOK_SECRET`: Webhook signature secret
+- `ALTTEXT_AI_STRIPE_PRICE_PRO`: Pro plan price ID
+- `ALTTEXT_AI_STRIPE_PRICE_AGENCY`: Agency plan price ID
+- `SEO_AI_META_STRIPE_PRICE_PRO`: SEO plugin Pro price ID
+- `SEO_AI_META_STRIPE_PRICE_AGENCY`: SEO plugin Agency price ID
+- `BEEPBEEP_AI_STRIPE_PRICE_PRO`: BeepBeep plugin Pro price ID
+- `BEEPBEEP_AI_STRIPE_PRICE_AGENCY`: BeepBeep plugin Agency price ID
+
+## Future Enhancements
+
+- [ ] Subscription upgrade/downgrade flows
+- [ ] Prorated billing calculations
+- [ ] Usage-based billing (pay-per-use)
+- [ ] Multi-currency support
+- [ ] Tax calculation integration
+- [ ] Subscription analytics dashboard
+
+
+```
+
+---
+
+## docs/deployment.md
+
+```
+# Deployment Guide
+
+## Overview
+
+This document describes the deployment process for the AltText AI backend API.
+
+## Current Deployment Setup
+
+The backend is deployed to **Render.com** and automatically deploys on every push to the `main` branch.
+
+## ⚠️ IMPORTANT: Deployment Protection
+
+**Currently, Render is configured to auto-deploy on every push, regardless of GitHub Actions test status.**
+
+### Problem
+If GitHub Actions tests fail, Render will still deploy the broken code to production. This is a **critical security and quality issue**.
+
+### Solution: Require GitHub Actions Status Checks
+
+To prevent deployments when tests fail, you need to configure Render to require GitHub Actions status checks:
+
+#### Option 1: Configure Render Dashboard (Recommended)
+
+1. Go to your Render dashboard: https://dashboard.render.com
+2. Navigate to your service: `alttext-ai-phase2`
+3. Go to **Settings** → **Build & Deploy**
+4. Under **Deploy Hooks** or **Auto-Deploy**, look for **"Required Status Checks"** or **"Branch Protection"**
+5. Add the required status check: `Backend Tests / test (18.x)` and `Backend Tests / test (20.x)`
+6. Save changes
+
+#### Option 2: Use Render API (Advanced)
+
+If the dashboard doesn't have this option, you can use the Render API to configure deployment protection.
+
+#### Option 3: Manual Deployment Only
+
+As a temporary measure, you can:
+1. Disable auto-deploy in Render
+2. Manually trigger deployments only after verifying GitHub Actions passes
+
+## GitHub Actions Workflow
+
+The `.github/workflows/tests.yml` workflow runs on every push to `main` and:
+- Tests on Node.js 18.x and 20.x
+- Runs unit tests
+- Runs integration tests
+- Uploads coverage reports
+
+**The workflow must pass before deployment should be allowed.**
+
+## Manual Deployment
+
+If auto-deploy is disabled:
+
+1. Verify GitHub Actions workflow passes: https://github.com/TheLaughingGod1986/optiap-backend/actions
+2. Go to Render dashboard
+3. Click **"Manual Deploy"** → **"Deploy latest commit"**
+
+## Environment Variables
+
+All required environment variables must be set in Render dashboard under **Environment**:
+
+### Required Variables
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `ALTTEXT_OPENAI_API_KEY`
+- `SEO_META_OPENAI_API_KEY`
+- `JWT_SECRET`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+
+### Email Service (Resend)
+- `RESEND_API_KEY` - Resend API key (required)
+- `EMAIL_FROM` - Default from email address
+- `TRANSACTIONAL_FROM_EMAIL` - From email for general emails (defaults to `EMAIL_FROM`)
+- `BILLING_FROM_EMAIL` - From email for receipts (defaults to `EMAIL_FROM`)
+- `RESEND_AUDIENCE_ID` - Optional: Resend audience ID for subscriber management
+
+### Branding Configuration
+- `BRAND_NAME` - Brand name (defaults to "AltText AI")
+- `BRAND_DOMAIN` - Brand domain (defaults to "optti.dev")
+- `SUPPORT_EMAIL` - Support email (defaults to `support@${BRAND_DOMAIN}`)
+- `FRONTEND_DASHBOARD_URL` - Dashboard URL (defaults to `https://app.${BRAND_DOMAIN}`)
+- `PUBLIC_API_DOMAIN` - Public API domain (defaults to `api.${BRAND_DOMAIN}`)
+
+See `config/env.example` for the complete list.
+
+## Health Check
+
+The service exposes a health check endpoint at `/health` which Render uses to verify the service is running.
+
+## Rollback
+
+If a deployment fails or causes issues:
+
+1. Go to Render dashboard
+2. Navigate to **Deploys** tab
+3. Find the previous successful deployment
+4. Click **"Rollback to this deploy"**
+
+## Monitoring
+
+- **Render Dashboard**: https://dashboard.render.com
+- **GitHub Actions**: https://github.com/TheLaughingGod1986/optiap-backend/actions
+- **Application Logs**: Available in Render dashboard under **Logs** tab
+
+```
+
+---
+
+## docs/email-system-implementation-summary.md
+
+```
+# Email System Implementation Summary
+
+## Implementation Date
+January 2025
+
+## Overview
+Successfully centralized all email logic in the backend, providing a single source of truth for all email functionality across Optti plugins and the website.
+
+## Files Created
+
+### Configuration
+- `src/emails/emailConfig.js` - Centralized email configuration (moved from `src/config/emailConfig.js`)
+
+### Services
+- `src/services/emailEventService.js` - Email event logging and de-duplication service
+
+### Templates
+- `src/emails/templates/index.js` - Updated with `passwordResetEmail` and `usageSummaryEmail` templates
+
+### Database
+- `db/migrations/20250125_email_events.sql` - Migration for email events table
+
+### Documentation
+- `docs/email-system.md` - Complete email system documentation
+- `docs/email-system-notes.md` - Current state mapping (for reference)
+- `docs/email-system-implementation-summary.md` - This file
+
+## Files Modified
+
+### Core Email System
+- `src/utils/resendClient.js` - Updated to use `transactionalFromEmail` from config
+- `src/services/emailService.js` - Added `sendPasswordReset` and `sendUsageSummary`, integrated event logging
+- `src/emails/templates/index.js` - Added `passwordResetEmail` and `usageSummaryEmail`
+- `src/emails/renderHelper.js` - Updated to use `emailConfig` for brand name
+
+### Routes
+- `src/routes/email.js` - Already existed, verified all routes are correct
+- `auth/routes.js` - Migrated from `auth/email.js` to use `emailService`
+
+### Configuration
+- `config/env.example` - Added `TRANSACTIONAL_FROM_EMAIL` and `BILLING_FROM_EMAIL`
+- `tests/unit/emailConfig.test.js` - Updated to test new config fields
+- `tests/unit/resendClient.test.js` - Updated to use new config path
+- `tests/unit/emailTemplates.test.js` - Added tests for new templates
+- `tests/integration/auth.test.js` - Updated to mock `emailService` instead of `auth/email`
+
+### Documentation
+- `docs/deployment.md` - Added email-related environment variables
+
+## Files Deleted
+- `src/config/emailConfig.js` - Moved to `src/emails/emailConfig.js`
+
+## Endpoints Ready for Use
+
+All endpoints are available at `https://api.optti.dev/email/*` (or configured `PUBLIC_API_DOMAIN`):
+
+- `POST /email/waitlist` - Waitlist signup
+- `POST /email/dashboard-welcome` - Dashboard welcome
+- `POST /email/plugin-signup` - Plugin installation
+- `POST /email/license-activated` - License activation (authenticated)
+- `POST /email/low-credit-warning` - Low credit warning
+- `POST /email/receipt` - Payment receipt (authenticated)
+
+## Integration Points
+
+### Migrated to emailService
+- ✅ Password reset emails (`auth/routes.js` → `emailService.sendPasswordReset`)
+- ✅ Welcome emails (`auth/routes.js` → `emailService.sendDashboardWelcome`)
+
+### Not Yet Integrated (Future Work)
+- ⚠️ Receipt emails from Stripe webhooks (`src/stripe/checkout.js` → `handleInvoicePaid` could call `emailService.sendReceipt`)
+- ⚠️ Low credit warnings from usage tracking (could call `emailService.sendLowCreditWarning` when credits < 30%)
+- ⚠️ License activation emails from license routes (could call `emailService.sendLicenseActivated`)
+
+## Test Coverage
+
+- **Total Tests**: 377 passed
+- **Coverage**: 57.48% (maintained from before)
+- **Email System Coverage**:
+  - `emailConfig`: 100%
+  - `resendClient`: 67.74%
+  - `emailTemplates`: 32.72%
+  - `emailService`: 15.72% (needs improvement)
+  - `emailEventService`: 70%
+
+## Known Limitations
+
+1. **Legacy Code Still Exists**:
+   - `auth/email.js` - Still exists but is deprecated (password reset and welcome now use `emailService`)
+   - `services/emailService.js` - Legacy service (different from `src/services/emailService.js`)
+   - `routes/email.js` - Legacy routes (different from `src/routes/email.js`)
+
+2. **React Email Templates**:
+   - React Email templates (`.tsx` files) exist but are not currently used by the new system
+   - The new system uses HTML template functions in `src/emails/templates/index.js`
+
+3. **Missing Integrations**:
+   - Receipt emails not automatically sent from Stripe webhooks
+   - Low credit warnings not automatically triggered from usage tracking
+   - License activation emails not automatically sent from license routes
+
+4. **Database Migration**:
+   - `email_events` table migration must be applied to production database before using event logging
+
+## Environment Variables Added
+
+- `TRANSACTIONAL_FROM_EMAIL` - For general transactional emails
+- `BILLING_FROM_EMAIL` - For receipts and payment emails
+- All existing email variables remain supported for backward compatibility
+
+## Next Steps (Future Enhancements)
+
+1. Apply `email_events` migration to production database
+2. Integrate receipt emails into Stripe webhook handler
+3. Integrate low credit warnings into usage tracking
+4. Integrate license activation emails into license routes
+5. Consider migrating React Email templates to be used by the new system
+6. Add unit tests for `emailEventService` with mocked Supabase
+7. Improve test coverage for `emailService` methods
+
+## Backward Compatibility
+
+- All existing environment variables are still supported
+- Legacy email routes still exist for backward compatibility
+- New system coexists with old system during transition
+
+
+```
+
+---
+
+## docs/email-system-notes.md
+
+```
+# Email System Current State Documentation
+
+This document maps all current email-related code and flows in the backend before centralization.
+
+## Email-Related Files
+
+### Core Email Infrastructure
+- **`src/utils/resendClient.js`** - Resend client wrapper (new, centralized)
+- **`src/services/emailService.js`** - New email service with methods for waitlist, dashboard welcome, license activated, low credit warning, receipt, plugin signup, and subscribe
+- **`src/config/emailConfig.js`** - Email configuration helper (needs to move to `src/emails/emailConfig.js` per plan)
+- **`src/emails/templates/index.js`** - HTML email template functions
+- **`src/emails/`** - React Email templates (.tsx files) and renderHelper.js
+- **`src/routes/email.js`** - New email API routes (waitlist, dashboard-welcome, plugin-signup, license-activated, low-credit-warning, receipt)
+- **`src/routes/waitlist.js`** - Waitlist signup endpoint (calls emailService.sendWaitlistWelcome and subscribe)
+
+### Legacy Email Code
+- **`auth/email.js`** - Legacy email service with direct Resend calls:
+  - `sendPasswordResetEmail()` - Direct Resend call with inline HTML
+  - `sendWelcomeEmail()` - Direct Resend call with inline HTML
+  - Both have hardcoded "AltText AI" branding
+  - Both have fallback to SendGrid and console logging
+- **`routes/email.js`** - Legacy email routes (different from `src/routes/email.js`)
+- **`services/emailService.js`** - Legacy email service (different from `src/services/emailService.js`)
+
+## Current Email Flows
+
+### 1. Password Reset Email
+**Location:** `auth/email.js` → `sendPasswordResetEmail()`
+**Triggered from:** `auth/routes.js` → `POST /auth/forgot-password`
+**Current Implementation:**
+- Direct Resend API call (bypasses `resendClient`)
+- Inline HTML template with hardcoded "AltText AI" branding
+- Uses `RESEND_FROM_EMAIL` env var or hardcoded fallback
+- Has SendGrid fallback and console logging fallback
+- **Needs Migration:** Should use `emailService.sendPasswordReset()` with template from `src/emails/templates/`
+
+### 2. Welcome Email (User Registration)
+**Location:** `auth/email.js` → `sendWelcomeEmail()`
+**Triggered from:** `auth/routes.js` → `POST /auth/register`
+**Current Implementation:**
+- Direct Resend API call (bypasses `resendClient`)
+- Inline HTML template with hardcoded "SEO AI Alt Text Generator" branding
+- Uses `RESEND_FROM_EMAIL` env var or hardcoded fallback
+- Has SendGrid fallback and console logging fallback
+- **Needs Migration:** Should use `emailService.sendDashboardWelcome()` or new welcome email method
+
+### 3. Waitlist Welcome Email
+**Location:** `src/services/emailService.js` → `sendWaitlistWelcome()`
+**Triggered from:** `src/routes/waitlist.js` → `POST /waitlist/submit`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `welcomeWaitlistEmail()`
+- Also calls `emailService.subscribe()` to add to Resend audience
+- **Status:** Already centralized ✓
+
+### 4. Dashboard Welcome Email
+**Location:** `src/services/emailService.js` → `sendDashboardWelcome()`
+**Triggered from:** `src/routes/email.js` → `POST /email/dashboard-welcome`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `welcomeDashboardEmail()`
+- **Status:** Already centralized ✓
+
+### 5. License Activated Email
+**Location:** `src/services/emailService.js` → `sendLicenseActivated()`
+**Triggered from:** `src/routes/email.js` → `POST /email/license-activated`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `licenseActivatedEmail()`
+- **Status:** Already centralized ✓
+- **Note:** Legacy `routes/email.js` has `/license/activated` route that calls `emailService.sendLicenseIssuedEmail()` - need to check if this is different
+
+### 6. Low Credit Warning Email
+**Location:** `src/services/emailService.js` → `sendLowCreditWarning()`
+**Triggered from:** `src/routes/email.js` → `POST /email/low-credit-warning`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `lowCreditWarningEmail()`
+- **Status:** Already centralized ✓
+- **Note:** Need to check if usage routes actually call this when credits are low
+
+### 7. Receipt Email
+**Location:** `src/services/emailService.js` → `sendReceipt()`
+**Triggered from:** `src/routes/email.js` → `POST /email/receipt`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `receiptEmail()`
+- **Status:** Already centralized ✓
+- **Note:** Need to check if Stripe webhook handlers call this
+
+### 8. Plugin Signup Email
+**Location:** `src/services/emailService.js` → `sendPluginSignup()`
+**Triggered from:** `src/routes/email.js` → `POST /email/plugin-signup`
+**Current Implementation:**
+- Uses `resendClient.sendEmail()` (correct)
+- Uses template from `src/emails/templates/index.js` → `pluginSignupEmail()`
+- **Status:** Already centralized ✓
+
+## Direct Resend Calls (Need Migration)
+
+1. **`auth/email.js`**:
+   - `sendPasswordResetEmail()` - Line 23: `const resend = new Resend(process.env.RESEND_API_KEY)`
+   - `sendWelcomeEmail()` - Line 176: `const resend = new Resend(process.env.RESEND_API_KEY)`
+   - Both need to be migrated to use `resendClient` and `emailService`
+
+## Hardcoded Values Found
+
+1. **`auth/email.js`**:
+   - "AltText AI" (multiple places)
+   - "SEO AI Alt Text Generator" (welcome email)
+   - `'AltText AI <noreply@alttextai.com>'` (from email fallback)
+   - `'noreply@alttextai.com'` (SendGrid fallback)
+
+2. **`src/config/emailConfig.js`**:
+   - Default fallbacks: `'AltText AI'`, `'optti.dev'`, `'support@optti.dev'`, etc.
+   - These are acceptable as fallbacks but should use env vars when available
+
+## Email Tests
+
+### Unit Tests
+- `tests/unit/emailConfig.test.js` - Tests email configuration
+- `tests/unit/resendClient.test.js` - Tests Resend client wrapper
+- `tests/unit/emailTemplates.test.js` - Tests email templates
+- `tests/unit/emailService.test.js` - Tests email service methods
+
+### Integration Tests
+- `tests/integration/emailRoutes.test.js` - Tests email API routes
+- `tests/integration/email.test.js` - Legacy email route tests
+- `tests/integration/waitlistRoutes.test.js` - Tests waitlist endpoint
+
+## Migration Priorities
+
+1. **High Priority:**
+   - Migrate `auth/email.js` password reset to use `emailService.sendPasswordReset()`
+   - Migrate `auth/email.js` welcome email to use `emailService.sendDashboardWelcome()`
+   - Move `src/config/emailConfig.js` to `src/emails/emailConfig.js`
+   - Add `transactionalFromEmail` and `billingFromEmail` to config
+
+2. **Medium Priority:**
+   - Verify billing routes call `emailService.sendReceipt()` after Stripe payments
+   - Verify usage routes call `emailService.sendLowCreditWarning()` when credits low
+   - Verify license routes call `emailService.sendLicenseActivated()` when license created
+   - Add email event logging and de-duplication
+
+3. **Low Priority:**
+   - Add `usageSummaryEmail` template (future feature)
+   - Consolidate legacy `routes/email.js` and `services/emailService.js` if still in use
+
+## Notes
+
+- There are two `emailService.js` files: one in `services/` (legacy) and one in `src/services/` (new)
+- There are two `routes/email.js` files: one in `routes/` (legacy) and one in `src/routes/` (new)
+- The new system is already partially implemented and working for waitlist, dashboard welcome, license activated, low credit warning, receipt, and plugin signup
+- The main migration work is moving password reset and welcome email from `auth/email.js` to the centralized system
+
+
+```
+
+---
+
+## docs/email-system.md
+
+```
+# Email System Documentation
+
+## Overview
+
+The backend email system is centralized and provides a single source of truth for all email functionality across Optti plugins and the website. All emails are sent via Resend and use configurable branding.
+
+## Architecture
+
+The email system consists of the following layers:
+
+1. **Configuration** (`src/emails/emailConfig.js`) - Centralizes all email-related environment variables
+2. **Templates** (`src/emails/templates/index.js`) - HTML email template functions
+3. **Resend Client** (`src/utils/resendClient.js`) - Single gateway to Resend API
+4. **Email Service** (`src/services/emailService.js`) - High-level semantic API for sending emails
+5. **Email Event Service** (`src/services/emailEventService.js`) - Logging and de-duplication
+6. **Routes** (`src/routes/email.js`) - Public API endpoints for plugins and website
+
+## Configuration
+
+All email configuration is centralized in `src/emails/emailConfig.js` and pulled from environment variables:
+
+- `BRAND_NAME` - Brand name (defaults to "AltText AI")
+- `BRAND_DOMAIN` - Brand domain (defaults to "optti.dev")
+- `SUPPORT_EMAIL` - Support email address (defaults to `support@${BRAND_DOMAIN}`)
+- `FRONTEND_DASHBOARD_URL` - Dashboard URL (defaults to `https://app.${BRAND_DOMAIN}`)
+- `PUBLIC_API_DOMAIN` - Public API domain (defaults to `api.${BRAND_DOMAIN}`)
+- `TRANSACTIONAL_FROM_EMAIL` - From email for general emails (defaults to `EMAIL_FROM`)
+- `BILLING_FROM_EMAIL` - From email for receipts (defaults to `EMAIL_FROM`)
+
+## Email Service Methods
+
+The `emailService` provides the following methods:
+
+### `sendWaitlistWelcome({ email, plugin, source })`
+Sends welcome email to waitlist signups. Includes de-duplication (60-minute window).
+
+### `sendDashboardWelcome({ email })`
+Sends welcome email to new dashboard users. Includes de-duplication (60-minute window).
+
+### `sendLicenseActivated({ email, planName, siteUrl })`
+Sends email when a license is activated.
+
+### `sendLowCreditWarning({ email, remainingCredits, pluginName, siteUrl })`
+Sends warning when credits are running low.
+
+### `sendReceipt({ email, amount, planName, invoiceUrl })`
+Sends payment receipt email. Uses `billingFromEmail` as the from address.
+
+### `sendPluginSignup({ email, pluginName, siteUrl })`
+Sends email when a plugin is installed.
+
+### `sendPasswordReset({ email, resetUrl })`
+Sends password reset email with reset link.
+
+### `sendUsageSummary({ email, pluginName, stats })`
+Placeholder for future usage summary emails.
+
+### `subscribe({ email, name, metadata })`
+Subscribes user to Resend audience (for marketing emails).
+
+## Public API Endpoints
+
+All endpoints are under `/email` and require rate limiting (10 requests per 15 minutes per IP).
+
+### `POST /email/waitlist`
+Body: `{ email, plugin?, source? }`
+- Sends waitlist welcome email
+- No authentication required
+
+### `POST /email/dashboard-welcome`
+Body: `{ email }`
+- Sends dashboard welcome email
+- No authentication required
+
+### `POST /email/plugin-signup`
+Body: `{ email, pluginName, siteUrl? }`
+- Sends plugin signup email
+- No authentication required
+
+### `POST /email/license-activated`
+Body: `{ email, planName, siteUrl? }`
+- Sends license activated email
+- **Requires authentication** (JWT token)
+
+### `POST /email/low-credit-warning`
+Body: `{ email, remainingCredits, pluginName?, siteUrl? }`
+- Sends low credit warning
+- No authentication required (but should be called internally)
+
+### `POST /email/receipt`
+Body: `{ email, amount, planName, invoiceUrl?, pluginName? }`
+- Sends payment receipt
+- **Requires authentication** (JWT token)
+
+## Email Event Logging
+
+All email sends are logged to the `email_events` table in Supabase for:
+- Audit trail
+- De-duplication (prevents duplicate emails within time windows)
+- Analytics
+
+The `emailEventService` provides:
+- `hasRecentEvent({ email, eventType, windowMinutes })` - Check for recent events
+- `logEvent({ userId, email, pluginSlug, eventType, context, success, emailId, errorMessage })` - Log an event
+
+## De-duplication
+
+The following email types are de-duplicated (60-minute window):
+- `waitlist_welcome`
+- `dashboard_welcome`
+
+If a recent event exists, the email is not sent and `{ success: true, deduped: true }` is returned.
+
+## Internal Usage
+
+For internal backend code, import and use `emailService` directly:
+
+```javascript
+const emailService = require('./src/services/emailService');
+
+// Send welcome email
+await emailService.sendDashboardWelcome({ email: 'user@example.com' });
+
+// Send receipt
+await emailService.sendReceipt({
+  email: 'user@example.com',
+  amount: 29.99,
+  planName: 'Pro',
+  invoiceUrl: 'https://stripe.com/invoice/123',
+});
+```
+
+## External Usage (Plugins/Website)
+
+For external clients (WordPress plugins, website), use the public API endpoints:
+
+```javascript
+// Waitlist signup
+await fetch('https://api.optti.dev/email/waitlist', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    email: 'user@example.com',
+    plugin: 'AltText AI',
+    source: 'website',
+  }),
+});
+```
+
+## Adding a New Email Type
+
+To add a new email type:
+
+1. **Add template function** in `src/emails/templates/index.js`:
+   ```javascript
+   function myNewEmail({ email, customField }) {
+     const config = getEmailConfig();
+     // ... build HTML and text
+     return { subject, html, text };
+   }
+   ```
+
+2. **Export from templates**:
+   ```javascript
+   module.exports = {
+     // ... existing exports
+     myNewEmail,
+   };
+   ```
+
+3. **Add service method** in `src/services/emailService.js`:
+   ```javascript
+   async function sendMyNewEmail({ email, customField }) {
+     const eventType = 'my_new_email';
+     try {
+       const template = myNewEmail({ email, customField });
+       const result = await sendEmail({ ... });
+       await logEvent({ email, eventType, ... });
+       return { success: true, emailId: result.id };
+     } catch (error) {
+       // ... error handling
+     }
+   }
+   ```
+
+4. **Add route** (if needed) in `src/routes/email.js`:
+   ```javascript
+   router.post('/my-new-email', async (req, res) => {
+     // ... validation
+     const result = await emailService.sendMyNewEmail({ ... });
+     // ... response
+   });
+   ```
+
+5. **Add tests**:
+   - Unit test for template in `tests/unit/emailTemplates.test.js`
+   - Unit test for service method in `tests/unit/emailService.test.js`
+   - Integration test for route in `tests/integration/emailRoutes.test.js`
+
+## Database Migration
+
+The `email_events` table must be created before using the email system:
+
+```sql
+-- Run: db/migrations/20250125_email_events.sql
+```
+
+This creates the table and indexes for efficient querying and de-duplication.
+
+## Environment Variables
+
+Required environment variables (see `config/env.example`):
+
+```
+RESEND_API_KEY=re_xxx
+EMAIL_FROM=OpttiAI <hello@optti.dev>
+TRANSACTIONAL_FROM_EMAIL=OpttiAI <hello@optti.dev>
+BILLING_FROM_EMAIL=OpttiAI <billing@optti.dev>
+BRAND_NAME=OpttiAI
+BRAND_DOMAIN=optti.dev
+SUPPORT_EMAIL=support@optti.dev
+FRONTEND_DASHBOARD_URL=https://app.optti.dev
+PUBLIC_API_DOMAIN=api.optti.dev
+RESEND_AUDIENCE_ID=aud_xxx  # Optional
+```
+
+## Known Limitations
+
+- React Email templates (`.tsx` files) exist but are not currently used by the new system
+- Legacy `auth/email.js` still exists but is deprecated (password reset and welcome email now use `emailService`)
+- Legacy `services/emailService.js` and `routes/email.js` exist but are separate from the new system
+- Receipt emails are not automatically sent from Stripe webhooks (can be added to `handleInvoicePaid`)
+
+## Future Enhancements
+
+- Migrate React Email templates to be used by the new system
+- Add automatic receipt emails from Stripe webhooks
+- Add usage summary email automation
+- Add user-managed email preferences
+- Add unsubscribe functionality
+
+
+```
+
+---
+
+## docs/migrations.md
+
+```
+# Database Migrations
+
+## Migration Process
+
+Database migrations are managed manually through SQL files in the `/migrations` directory.
+
+### Running Migrations
+
+1. Connect to your Supabase database
+2. Open the Supabase SQL Editor
+3. Copy the contents of the migration file
+4. Execute the SQL
+5. Verify the changes
+
+## Migration Files
+
+### add_licenses_table.sql
+
+**Date:** 2025-01-24  
+**Purpose:** Create licenses table and add WordPress user tracking to usage_logs
+
+**Changes:**
+- Creates `licenses` table with:
+  - License key (unique)
+  - Plan, service, token limits
+  - Site URL, site hash, install ID
+  - Auto-attach status
+  - User and organization references
+  - Stripe customer/subscription IDs
+  - Email status tracking
+- Adds indexes for fast lookups
+- Adds `wp_user_id` and `wp_user_name` columns to `usage_logs` table
+- Creates index on `wp_user_id` for auditing
+
+**SQL:**
+```sql
+-- Create licenses table
+CREATE TABLE IF NOT EXISTS licenses (
+  id SERIAL PRIMARY KEY,
+  "licenseKey" VARCHAR(255) UNIQUE NOT NULL,
+  plan VARCHAR(50) NOT NULL DEFAULT 'free',
+  service VARCHAR(50) NOT NULL DEFAULT 'alttext-ai',
+  "tokenLimit" INTEGER NOT NULL DEFAULT 50,
+  "tokensRemaining" INTEGER NOT NULL DEFAULT 50,
+  "siteUrl" TEXT,
+  "siteHash" VARCHAR(255),
+  "installId" VARCHAR(255),
+  "autoAttachStatus" VARCHAR(50) DEFAULT 'manual',
+  "userId" INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  "organizationId" INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
+  "stripeCustomerId" VARCHAR(255),
+  "stripeSubscriptionId" VARCHAR(255),
+  "licenseEmailSentAt" TIMESTAMP,
+  "emailStatus" VARCHAR(50) DEFAULT 'pending',
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses("licenseKey");
+CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses("userId");
+CREATE INDEX IF NOT EXISTS idx_licenses_organization_id ON licenses("organizationId");
+CREATE INDEX IF NOT EXISTS idx_licenses_site_hash ON licenses("siteHash");
+
+-- Add WordPress user tracking to usage_logs
+ALTER TABLE usage_logs 
+  ADD COLUMN IF NOT EXISTS "wp_user_id" INTEGER,
+  ADD COLUMN IF NOT EXISTS "wp_user_name" VARCHAR(255);
+
+-- Create index on wp_user_id
+CREATE INDEX IF NOT EXISTS idx_usage_logs_wp_user_id ON usage_logs("wp_user_id");
+```
+
+## Future Migrations
+
+When creating new migrations:
+
+1. Create a new SQL file in `/migrations/`
+2. Name it descriptively: `YYYY-MM-DD_description.sql`
+3. Use `IF NOT EXISTS` and `IF EXISTS` clauses for idempotency
+4. Document the purpose and changes in this file
+5. Test on a development database first
+6. Backup production database before running
+
+## Rollback
+
+Currently, migrations do not include rollback scripts. To rollback:
+
+1. Create a new migration file with reverse changes
+2. Test thoroughly on development
+3. Backup production before applying
+
+## Migration Best Practices
+
+- Always use `IF NOT EXISTS` / `IF EXISTS` for idempotency
+- Test migrations on development database first
+- Backup production database before running migrations
+- Document all changes in this file
+- Use transactions where possible
+- Add indexes for frequently queried columns
+- Consider performance impact of large migrations
+
+
+```
+
+---
+
+## docs/testing.md
+
+```
+# Testing
+
+## Test Structure
+
+The test suite is organized into:
+- `/tests/unit` - Unit tests for individual modules
+- `/tests/integration` - Integration tests for API endpoints
+- `/tests/mocks` - Mock implementations for external dependencies
+- `/tests/helpers` - Test utilities and helpers
+
+## Test Coverage
+
+### Current Status
+- **Tests:** 287 passing, 14 test suites
+- **Coverage:** 63.91% statements, 54.13% branches, 62.67% functions, 65.16% lines
+- **Coverage threshold:** Maintained above 60% requirement
+
+### Coverage by Module
+
+**High Coverage:**
+- `auth/jwt.js` - 96.55% statements
+- `routes/license.js` - 96.2% statements
+- `routes/usage.js` - 95.73% statements
+
+**Low Coverage (Needs Improvement):**
+- `routes/organization.js` - 6.99% statements, 0% branches
+- `src/stripe/checkout.js` - 33.76% statements
+- `services/emailService.js` - 65.13% statements (some untested paths)
+
+## Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm test -- --coverage
+
+# Run specific test file
+npm test -- tests/unit/validation.test.js
+
+# Run in watch mode
+npm test -- --watch
+```
+
+## Test Mocks
+
+### Supabase Mock
+Located in `tests/mocks/supabase.mock.js`
+- Mocks database queries (select, insert, update, delete)
+- Supports queued responses for complex test scenarios
+- Handles authentication methods
+
+### Stripe Mock
+Located in `tests/mocks/stripe.mock.js`
+- Mocks checkout sessions, billing portal, subscriptions
+- Supports subscription state transitions
+- Handles webhook events
+
+### Resend Mock
+Located in `tests/mocks/resend.mock.js`
+- Mocks email sending
+- Supports success/failure scenarios
+- Handles rate limiting
+
+## Test Helpers
+
+### createTestServer.js
+Creates a fresh Express app instance for each test, ensuring isolation.
+
+### testHelpers.js
+Provides utilities for:
+- Creating test users
+- Generating JWT tokens
+- Creating test licenses
+- Waiting for async operations
+
+## Writing Tests
+
+### Unit Test Example
+```javascript
+const { validateEmail } = require('../../src/validation/validators');
+
+describe('validateEmail', () => {
+  test('validates correct email formats', () => {
+    expect(validateEmail('user@example.com')).toBe(true);
+  });
+});
+```
+
+### Integration Test Example
+```javascript
+const request = require('supertest');
+const { createTestServer } = require('../helpers/createTestServer');
+
+describe('POST /auth/register', () => {
+  test('registers a new user', async () => {
+    const app = createTestServer();
+    const res = await request(app)
+      .post('/auth/register')
+      .send({ email: 'test@example.com', password: 'Password123!' });
+    
+    expect(res.status).toBe(201);
+    expect(res.body.user.email).toBe('test@example.com');
+  });
+});
+```
+
+## CI/CD
+
+Tests run automatically on:
+- Pull requests
+- Pushes to main branch
+- Via GitHub Actions workflow (`.github/workflows/tests.yml`)
+
+The CI pipeline:
+1. Installs dependencies
+2. Runs linter
+3. Runs full test suite
+4. Generates coverage report
+5. Fails if coverage drops below 60%
+
+
+```
+
+---
+
+## jest.config.js
+
+```
+const path = require('path');
+const os = require('os');
+
+module.exports = {
+  rootDir: path.resolve(__dirname),
+  roots: [path.join(__dirname, 'tests')],
+  testEnvironment: 'node',
+  setupFilesAfterEnv: [path.join(__dirname, 'tests', 'mocks', 'setupMocks.js')],
+  testMatch: [
+    '<rootDir>/tests/unit/**/*.test.js',
+    '<rootDir>/tests/integration/**/*.test.js'
+  ],
+  collectCoverage: false,
+  maxWorkers: 1,
+  coverageProvider: 'v8',
+  collectCoverageFrom: [
+    'auth/**/*.js',
+    'routes/**/*.js',
+    'src/**/*.js',
+    'services/**/*.js',
+    'utils/**/*.js',
+    'stripe/**/*.js',
+    'server-v2.js'
+  ],
+  coverageDirectory: '<rootDir>/coverage',
+  clearMocks: true,
+  resetMocks: true,
+  restoreMocks: true,
+  moduleDirectories: ['node_modules', '<rootDir>'],
+  setupFiles: ['dotenv/config'],
+  testPathIgnorePatterns: ['/node_modules/', '/tests/mocks/', '<rootDir>/coverage'],
+  testTimeout: 10000, // 10 second timeout for tests
+  // Performance optimizations for cloud-synced filesystem
+  cache: false, // Disable caching to avoid I/O overhead on cloud drive
+  watchman: false, // Disable watchman file watching
+  cacheDirectory: path.join(os.tmpdir(), 'jest-cache-alttext')
+};
+
+```
+
+---
+
+## migrations/add_licenses_table.sql
+
+```
+-- Migration: Add licenses table and usage_logs columns
+-- Phase 1 Backend Enhancements
+
+-- Create licenses table
+CREATE TABLE IF NOT EXISTS licenses (
+  id SERIAL PRIMARY KEY,
+  "licenseKey" VARCHAR(255) UNIQUE NOT NULL,
+  plan VARCHAR(50) NOT NULL DEFAULT 'free',
+  service VARCHAR(50) NOT NULL DEFAULT 'alttext-ai',
+  "tokenLimit" INTEGER NOT NULL DEFAULT 50,
+  "tokensRemaining" INTEGER NOT NULL DEFAULT 50,
+  "siteUrl" TEXT,
+  "siteHash" VARCHAR(255),
+  "installId" VARCHAR(255),
+  "autoAttachStatus" VARCHAR(50) DEFAULT 'manual',
+  "userId" INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  "organizationId" INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
+  "stripeCustomerId" VARCHAR(255),
+  "stripeSubscriptionId" VARCHAR(255),
+  "licenseEmailSentAt" TIMESTAMP,
+  "emailStatus" VARCHAR(50) DEFAULT 'pending',
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Create index on licenseKey for fast lookups
+CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses("licenseKey");
+CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses("userId");
+CREATE INDEX IF NOT EXISTS idx_licenses_organization_id ON licenses("organizationId");
+CREATE INDEX IF NOT EXISTS idx_licenses_site_hash ON licenses("siteHash");
+
+-- Add WordPress user tracking columns to usage_logs
+ALTER TABLE usage_logs 
+  ADD COLUMN IF NOT EXISTS "wp_user_id" INTEGER,
+  ADD COLUMN IF NOT EXISTS "wp_user_name" VARCHAR(255);
+
+-- Create index on wp_user_id for auditing
+CREATE INDEX IF NOT EXISTS idx_usage_logs_wp_user_id ON usage_logs("wp_user_id");
+
 
 ```
 
@@ -6674,75 +11605,66 @@ Generated on: 2025-11-29T14:10:44.799Z
 
 ---
 
-## jest.config.js
-
-```
-const path = require('path');
-const os = require('os');
-
-module.exports = {
-  rootDir: path.resolve(__dirname),
-  roots: [path.join(__dirname, 'tests')],
-  testEnvironment: 'node',
-  setupFilesAfterEnv: [path.join(__dirname, 'tests', 'mocks', 'setupMocks.js')],
-  testMatch: [
-    '<rootDir>/tests/unit/**/*.test.js',
-    '<rootDir>/tests/integration/**/*.test.js'
-  ],
-  collectCoverage: false,
-  maxWorkers: 1,
-  coverageProvider: 'v8',
-  collectCoverageFrom: [
-    'auth/**/*.js',
-    'routes/**/*.js',
-    'src/**/*.js',
-    'services/**/*.js',
-    'utils/**/*.js',
-    'stripe/**/*.js',
-    'server-v2.js'
-  ],
-  coverageDirectory: '<rootDir>/coverage',
-  clearMocks: true,
-  resetMocks: true,
-  restoreMocks: true,
-  moduleDirectories: ['node_modules', '<rootDir>'],
-  setupFiles: ['dotenv/config'],
-  testPathIgnorePatterns: ['/node_modules/', '/tests/mocks/', '<rootDir>/coverage'],
-  testTimeout: 10000, // 10 second timeout for tests
-  // Performance optimizations for cloud-synced filesystem
-  cache: false, // Disable caching to avoid I/O overhead on cloud drive
-  watchman: false, // Disable watchman file watching
-  cacheDirectory: path.join(os.tmpdir(), 'jest-cache-alttext')
-};
-
-```
-
----
-
-## tsconfig.json
+## package.json
 
 ```
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "lib": ["ES2020"],
-    "jsx": "react",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "moduleResolution": "node",
-    "allowSyntheticDefaultImports": true,
-    "declaration": false,
-    "outDir": "./dist",
-    "rootDir": "./src"
+  "name": "alttext-ai-api",
+  "version": "1.0.0",
+  "description": "Proxy API for AltText AI WordPress plugin",
+  "main": "server-v2.js",
+  "scripts": {
+    "start": "node server-v2.js",
+    "dev": "nodemon server-v2.js",
+    "test": "jest --runInBand --forceExit",
+    "test:unit": "jest tests/unit --runInBand --forceExit",
+    "test:integration": "jest tests/integration --runInBand --forceExit",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --runInBand --coverage --ci"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "keywords": [
+    "alttext",
+    "api",
+    "openai",
+    "wordpress"
+  ],
+  "author": "AltText AI",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.0.55",
+    "@react-email/components": "^1.0.1",
+    "@react-email/render": "^2.0.0",
+    "@supabase/supabase-js": "^2.84.0",
+    "axios": "^1.6.2",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.13",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "resend": "^6.3.0",
+    "stripe": "^19.1.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
-
 
 ```
 
@@ -6810,4051 +11732,6 @@ services:
       # Optional
       - key: WEBHOOK_SECRET
         generateValue: true
-
-```
-
----
-
-## server-v2.js
-
-```
-/**
- * AltText AI - Phase 2 API Server
- * Full SaaS backend with user accounts, JWT auth, and Stripe billing
- */
-
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios');
-const { supabase } = require('./db/supabase-client');
-const { authenticateToken, optionalAuth } = require('./auth/jwt');
-const { combinedAuth } = require('./src/middleware/dual-auth');
-const checkSubscription = require('./src/middleware/checkSubscription');
-const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
-const authRoutes = require('./auth/routes');
-const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
-const siteService = require('./src/services/siteService');
-const billingRoutes = require('./src/routes/billing'); // New billing routes using billingService
-const legacyBillingRoutes = require('./routes/billing'); // Legacy routes for backward compatibility
-const licensesRoutes = require('./routes/licenses');
-const licenseRoutes = require('./routes/license');
-const organizationRoutes = require('./routes/organization');
-const emailRoutes = require('./routes/email'); // Legacy routes
-const newEmailRoutes = require('./src/routes/email'); // New email routes
-const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
-const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
-const accountRoutes = require('./src/routes/account'); // Account routes
-const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
-const dashboardChartsRoutes = require('./src/routes/dashboardCharts'); // Dashboard charts routes
-const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
-const identityRoutes = require('./src/routes/identity'); // Identity routes
-const analyticsRoutes = require('./src/routes/analytics'); // Analytics routes
-const billingService = require('./src/services/billingService'); // Billing service for quota enforcement
-const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
-const plansConfig = require('./src/config/plans'); // Plan configuration
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
-app.use(helmet());
-
-// CORS configuration
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_DASHBOARD_URL,
-  'https://oppti.dev',
-  'https://app.optti.dev',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:5173', // Vite default
-  'http://localhost:5174', // Vite alternate
-].filter(Boolean); // Remove undefined values
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      // In development, allow all origins for easier testing
-      if (process.env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-}));
-
-// Stripe webhook needs raw body - must come before express.json()
-app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route
-app.use('/credits/webhook', express.raw({ type: 'application/json' })); // Credits webhook route
-
-// JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
-app.use(express.json({ limit: '2mb' }));
-
-// Request ID middleware (add early for tracing)
-const { requestIdMiddleware } = require('./src/middleware/requestId');
-app.use(requestIdMiddleware);
-
-// Initialize Sentry if available
-let Sentry = null;
-try {
-  if (process.env.SENTRY_DSN) {
-    Sentry = require('@sentry/node');
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV || 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-    });
-    console.log('✅ Sentry initialized for error tracking');
-  }
-} catch (error) {
-  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
-}
-
-// Health check - MUST be before rate limiting to avoid 429 errors on health checks
-app.get('/health', async (req, res) => {
-  const health = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '2.0.0',
-    phase: 'monetization',
-  };
-
-  // Check database connectivity
-  try {
-    const { error: dbError } = await supabase.from('identities').select('id').limit(1);
-    health.database = dbError ? { status: 'error', error: dbError.message } : { status: 'ok' };
-  } catch (error) {
-    health.database = { status: 'error', error: error.message };
-  }
-
-  // Check Stripe connectivity (if configured)
-  const { getStripe } = require('./src/utils/stripeClient');
-  const stripe = getStripe();
-  if (stripe) {
-    try {
-      await stripe.customers.list({ limit: 1 });
-      health.stripe = { status: 'ok' };
-    } catch (error) {
-      health.stripe = { status: 'error', error: error.message };
-    }
-  } else {
-    health.stripe = { status: 'not_configured' };
-  }
-
-  const overallStatus = health.database?.status === 'ok' ? 'ok' : 'degraded';
-  res.status(overallStatus === 'ok' ? 200 : 503).json(health);
-});
-
-// Metrics endpoint
-app.get('/metrics', async (req, res) => {
-  try {
-    const os = require('os');
-    const metrics = {
-      timestamp: new Date().toISOString(),
-      memory: {
-        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
-        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024), // MB
-        system: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024), // MB
-      },
-      uptime: Math.round(process.uptime()), // seconds
-      nodeVersion: process.version,
-      platform: process.platform,
-    };
-
-    res.json(metrics);
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to collect metrics',
-      message: error.message,
-    });
-  }
-});
-
-// Rate limiting - use enhanced rate limiter factory
-const { rateLimitByIp, strictRateLimit } = require('./src/middleware/rateLimiter');
-
-// General API rate limiting
-app.use('/api/', rateLimitByIp(15 * 60 * 1000, 100));
-
-// Routes
-// Backward compatibility routes (registered first at root level)
-app.use('/', emailCompatibilityRoutes);
-app.use('/auth', authRoutes);
-app.use('/usage', usageRoutes);
-app.use('/billing', billingRoutes); // New billing routes (create-checkout, create-portal, subscriptions)
-app.use('/billing', legacyBillingRoutes); // Legacy billing routes (for backward compatibility)
-// Stripe webhook route
-const { webhookMiddleware, webhookHandler } = require('./src/stripe/webhooks');
-app.post('/stripe/webhook', webhookMiddleware, webhookHandler);
-app.use('/api/licenses', licensesRoutes);
-app.use('/api/license', licenseRoutes);
-app.use('/api/organization', authenticateToken, organizationRoutes);
-app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
-app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
-app.use('/waitlist', waitlistRoutes); // Waitlist routes
-app.use('/account', accountRoutes); // Account routes
-app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
-app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usage/daily, /dashboard/usage/monthly, etc.)
-app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
-app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
-app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
-app.use('/events', require('./src/routes/events')); // Unified events routes (/events/log)
-app.use('/partner', require('./src/routes/partner')); // Partner API routes
-// Credits webhook route (no auth required - called by Stripe)
-app.use('/credits', require('./src/routes/credits')); // Credits routes (includes webhook without auth, other routes use authenticateToken)
-
-// Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
-app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
-  const requestStartTime = Date.now();
-  console.log(`[Generate] Request received at ${new Date().toISOString()}`);
-  
-  try {
-    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
-    console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
-
-    // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
-    // X-WP-User-ID is only for analytics, not for quota tracking
-    const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
-    
-    if (!siteHash) {
-      return res.status(400).json({
-        error: 'X-Site-Hash header is required for quota tracking',
-        code: 'MISSING_SITE_HASH'
-      });
-    }
-
-    // Extract WordPress user info from headers (for analytics only, NOT for quota)
-    const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
-    const wpUserName = req.headers['x-wp-user-name'] || null;
-
-    // Determine userId based on auth method (for analytics/logging only)
-    const userId = req.user?.id || null;
-
-    // Log for debugging
-    console.log(`[Generate] Site Hash: ${siteHash}, User ID: ${userId}, Auth Method: ${req.authMethod}`);
-    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, WP User ID: ${wpUserId || 'N/A'}`);
-
-    // Select API key based on service
-    const apiKey = getServiceApiKey(service);
-
-    console.log(`[Generate] API Key check - ${service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'}: ${process.env[service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'] ? 'SET' : 'NOT SET'}`);
-    console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
-
-    // Validate API key is configured
-    if (!apiKey) {
-      console.error(`Missing OpenAI API key for service: ${service}`);
-      return res.status(500).json({
-        error: 'Failed to generate content',
-        code: 'GENERATION_ERROR',
-        message: `Missing OpenAI API key for service: ${service}`
-      });
-    }
-    
-    // Check if user should use credits for this request
-    // Note: Subscription/credits check is handled by checkSubscription middleware
-    // The middleware sets req.useCredit = true and req.creditIdentityId if credits should be used
-    const usingCredits = req.useCredit === true;
-    let creditsBalance = 0;
-    
-    // Get current credit balance if using credits (for response)
-    if (usingCredits && req.creditIdentityId) {
-      const balanceResult = await creditsService.getBalance(req.creditIdentityId);
-      if (balanceResult.success) {
-        creditsBalance = balanceResult.balance;
-      }
-    }
-    
-    // Check quota by site_hash (CRITICAL: Track by site, not by user)
-    // This is a secondary check for site-based quota (for non-authenticated requests)
-    const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
-    
-    // Get or create site
-    await siteService.getOrCreateSite(siteHash, siteUrl);
-    
-    // Check site quota (only if user is not authenticated, or as a fallback)
-    const quotaCheck = await siteService.checkSiteQuota(siteHash);
-    
-    if (!quotaCheck.hasQuota) {
-      console.log(`[Generate] Quota exceeded for site ${siteHash}: ${quotaCheck.used}/${quotaCheck.limit}`);
-      return res.status(429).json({
-        ok: false,
-        error: 'quota_exceeded',
-        usage: {
-          used: quotaCheck.used,
-          limit: quotaCheck.limit,
-          plan: quotaCheck.plan,
-          resetDate: quotaCheck.resetDate || getNextResetDate(),
-        },
-      });
-    }
-    
-    // Get site usage for response
-    const siteUsage = await siteService.getSiteUsage(siteHash);
-    
-    // Prepare limits object for compatibility with existing code
-    const limits = {
-      hasAccess: true,
-      hasTokens: true,
-      hasCredits: false,
-      plan: siteUsage.plan,
-      credits: siteUsage.remaining,
-      tokensRemaining: siteUsage.remaining
-    };
-    
-    // Handle meta generation differently from alt text
-    if (type === 'meta' || (service === 'seo-ai-meta' && !image_data)) {
-      // Meta tag generation - use the context directly as the prompt
-      const systemMessage = {
-        role: 'system',
-        content: 'You are an expert SEO copywriter specializing in meta tag optimization. Always respond with valid JSON only.'
-      };
-
-      const userMessage = {
-        role: 'user',
-        content: context || ''
-      };
-
-      let openaiResponse;
-      try {
-        openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
-          apiKey,
-          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          max_tokens: 300,
-          temperature: 0.7
-        });
-      } catch (error) {
-        console.error('Meta generation error:', error.response?.data || error.message);
-        throw error;
-      }
-
-      // Validate OpenAI response structure for meta generation
-      if (!openaiResponse?.choices?.[0]?.message?.content) {
-        console.error('[Generate] Invalid OpenAI response structure for meta generation:', {
-          hasResponse: !!openaiResponse,
-          hasChoices: !!openaiResponse?.choices,
-          choicesLength: openaiResponse?.choices?.length,
-          hasMessage: !!openaiResponse?.choices?.[0]?.message,
-          hasContent: !!openaiResponse?.choices?.[0]?.message?.content
-        });
-        return res.status(500).json({
-          error: 'Invalid response from AI service',
-          code: 'INVALID_AI_RESPONSE',
-          message: 'The AI service returned an unexpected response format'
-        });
-      }
-
-      const content = openaiResponse.choices[0].message.content.trim();
-
-      // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
-      let remainingCredits = creditsBalance;
-      if (req.useCredit === true && req.creditIdentityId) {
-        const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
-          service,
-          type: 'meta',
-          site_hash: siteHash,
-        });
-        
-        if (spendResult.success) {
-          remainingCredits = spendResult.remainingBalance;
-          console.log(`[Generate] Deducted 1 credit for meta generation. Remaining: ${remainingCredits}`);
-        } else {
-          console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
-          // Continue anyway - generation succeeded, just log the error
-        }
-      } else {
-        // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
-        // Do NOT deduct per user - all users on the same site share the quota
-        await siteService.deductSiteQuota(siteHash, 1);
-      }
-      
-      // Get updated usage after deduction (only if not using credits)
-      const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
-      
-      const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
-      const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 10) : null;
-      const remaining = updatedUsage ? updatedUsage.remaining : null;
-      const used = updatedUsage ? updatedUsage.used : 0;
-
-      // Return the raw content (JSON string) for meta generation
-      return res.json({
-        success: true,
-        alt_text: content, // Reusing alt_text field for backward compatibility
-        content: content,  // Also include as content
-        usage: {
-          used: used || 0,
-          limit: limit || Infinity,
-          remaining: usingCredits ? null : remaining,
-          plan: limits.plan,
-          credits: remainingCredits,
-          usingCredits: usingCredits,
-          resetDate: getNextResetDate()
-        },
-        tokens: openaiResponse.usage
-      });
-    }
-
-    // Original alt text generation logic
-    // Build OpenAI prompt and multimodal payload
-    const prompt = buildPrompt(image_data, context, regenerate);
-    const userMessage = buildUserMessage(prompt, image_data);
-    
-    // Call OpenAI API
-    const systemMessage = {
-      role: 'system',
-      content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
-    };
-
-    let openaiResponse;
-    try {
-      console.log(`[Generate] Calling OpenAI API for image_id: ${image_data?.image_id || 'unknown'}`);
-      const startTime = Date.now();
-      openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
-        apiKey
-      });
-      const duration = Date.now() - startTime;
-      console.log(`[Generate] OpenAI API call completed in ${duration}ms`);
-    } catch (error) {
-      console.error(`[Generate] OpenAI API call failed:`, {
-        message: error.message,
-        code: error.code,
-        status: error.response?.status
-      });
-      
-      if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-        console.warn('Image fetch failed, retrying without image input...');
-        const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-        try {
-          openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
-            apiKey
-          });
-        } catch (fallbackError) {
-          console.error('[Generate] Fallback request also failed:', fallbackError.message);
-          throw fallbackError;
-        }
-      } else {
-        throw error;
-      }
-    }
-    
-    // Validate OpenAI response structure
-    if (!openaiResponse?.choices?.[0]?.message?.content) {
-      console.error('[Generate] Invalid OpenAI response structure:', {
-        hasResponse: !!openaiResponse,
-        hasChoices: !!openaiResponse?.choices,
-        choicesLength: openaiResponse?.choices?.length,
-        hasMessage: !!openaiResponse?.choices?.[0]?.message,
-        hasContent: !!openaiResponse?.choices?.[0]?.message?.content,
-        response: JSON.stringify(openaiResponse, null, 2)
-      });
-      return res.status(500).json({
-        error: 'Invalid response from AI service',
-        code: 'INVALID_AI_RESPONSE',
-        message: 'The AI service returned an unexpected response format'
-      });
-    }
-    
-    const altText = openaiResponse.choices[0].message.content.trim();
-
-    // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
-    let remainingCredits = creditsBalance;
-    if (req.useCredit === true && req.creditIdentityId) {
-      const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
-        image_id: image_data?.image_id || null,
-        service,
-        site_hash: siteHash,
-        type: 'alt-text',
-      });
-      
-      if (spendResult.success) {
-        remainingCredits = spendResult.remainingBalance;
-        console.log(`[Generate] Deducted 1 credit. Remaining: ${remainingCredits}`);
-      } else {
-        console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
-        // Continue anyway - generation succeeded, just log the error
-      }
-    } else {
-      // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
-      // Do NOT deduct per user - all users on the same site share the quota
-      await siteService.deductSiteQuota(siteHash, 1);
-    }
-    
-    // Get updated usage after deduction (only if not using credits)
-    const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
-    
-    const planLimits = { free: 50, pro: 1000, agency: 10000 };
-    const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 50) : null;
-    const remaining = updatedUsage ? updatedUsage.remaining : null;
-    const used = updatedUsage ? updatedUsage.used : null;
-    
-    // Return response with usage data
-    res.json({
-      success: true,
-      alt_text: altText,
-      usage: {
-        used: used || 0,
-        limit: limit || Infinity,
-        remaining: usingCredits ? null : remaining,
-        plan: limits.plan,
-        credits: remainingCredits,
-        usingCredits: usingCredits,
-        resetDate: getNextResetDate()
-      },
-      tokens: openaiResponse.usage
-    });
-    
-  } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body || {};
-    
-    console.error(`[Generate] Request failed after ${requestDuration}ms:`, {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      service: service,
-      stack: error.stack?.split('\n').slice(0, 5).join('\n')
-    });
-    
-    // Handle rate limiting
-    if (error.response?.status === 429) {
-      return res.status(429).json({
-        error: 'OpenAI rate limit reached. Please try again later.',
-        code: 'OPENAI_RATE_LIMIT'
-      });
-    }
-    
-    // Handle timeout errors
-    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.error('[Generate] Request timed out - OpenAI API took too long to respond');
-      return res.status(504).json({
-        error: 'Request timeout',
-        code: 'TIMEOUT',
-        message: 'The image generation is taking longer than expected. Please try again.'
-      });
-    }
-
-    // Extract error message from OpenAI response
-    const openaiError = error.response?.data?.error;
-    const openaiMessage = openaiError?.message || '';
-    const openaiType = openaiError?.type || '';
-    const openaiCode = openaiError?.code || '';
-    
-    // Check for API key errors specifically
-    const isApiKeyError = openaiMessage?.toLowerCase().includes('incorrect api key') ||
-                         openaiMessage?.toLowerCase().includes('invalid api key') ||
-                         openaiMessage?.toLowerCase().includes('api key provided') ||
-                         openaiType === 'invalid_request_error' && openaiCode === 'invalid_api_key';
-    
-    // Determine error message
-    let errorMessage;
-    let errorCode = 'GENERATION_ERROR';
-    
-    if (isApiKeyError) {
-      // API key is invalid - this is a backend configuration issue
-      errorMessage = 'The backend service has an invalid or expired OpenAI API key configured. Please contact support to update the API key.';
-      errorCode = 'INVALID_API_KEY';
-      // Get API key from closure or environment for logging
-      const currentApiKey = (() => {
-        try {
-          // Try to get from the service-specific logic
-          if (service === 'seo-ai-meta') {
-            return process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-          }
-          return process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-        } catch {
-          return null;
-        }
-      })();
-      
-      console.error('OpenAI API key error - backend configuration issue:', {
-        hasKey: !!currentApiKey,
-        keyPrefix: currentApiKey ? currentApiKey.substring(0, 7) + '...' : 'missing',
-        envVars: {
-          ALTTEXT_OPENAI_API_KEY: !!process.env.ALTTEXT_OPENAI_API_KEY,
-          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
-          SEO_META_OPENAI_API_KEY: !!process.env.SEO_META_OPENAI_API_KEY
-        },
-        service: service || 'unknown'
-      });
-    } else if (openaiMessage) {
-      // Use OpenAI's error message
-      errorMessage = openaiMessage;
-    } else {
-      // Fallback to generic message
-      errorMessage = error.response?.data?.error || error.message || 'Failed to generate alt text';
-    }
-
-    res.status(500).json({
-      error: 'Failed to generate alt text',
-      code: errorCode,
-      message: errorMessage
-    });
-  }
-});
-
-// Review existing alt text for accuracy
-app.post('/api/review', authenticateToken, async (req, res) => {
-  try {
-    const { alt_text, image_data, context, service = 'alttext-ai' } = req.body;
-
-    if (!alt_text || typeof alt_text !== 'string') {
-      return res.status(400).json({
-        error: 'Alt text is required',
-        code: 'MISSING_ALT_TEXT'
-      });
-    }
-
-    // Select API key based on service
-    const apiKey = getReviewApiKey(service);
-
-    const review = await reviewAltText(alt_text, image_data, context, apiKey);
-
-    res.json({
-      success: true,
-      review,
-      tokens: review?.usage
-    });
-  } catch (error) {
-    console.error('Review error:', error.response?.data || error.message);
-    res.status(500).json({
-      error: 'Failed to review alt text',
-      code: 'REVIEW_ERROR',
-      message: error.response?.data?.error?.message || error.message
-    });
-  }
-});
-
-// Backward compatibility endpoint for Phase 1 domains (temporary)
-app.post('/api/generate-legacy', optionalAuth, async (req, res) => {
-  try {
-    const { domain, image_data, context, regenerate = false } = req.body;
-    
-    if (!domain) {
-      return res.status(400).json({ 
-        error: 'Domain is required for legacy endpoint',
-        code: 'MISSING_DOMAIN'
-      });
-    }
-    
-    // For now, redirect to new auth-required endpoint
-    return res.status(410).json({
-      error: 'Legacy domain-based authentication is deprecated. Please create an account.',
-      code: 'LEGACY_DEPRECATED',
-      upgradeUrl: '/auth/register'
-    });
-    
-  } catch (error) {
-    console.error('Legacy generate error:', error);
-    res.status(500).json({
-      error: 'Legacy endpoint error',
-      code: 'LEGACY_ERROR'
-    });
-  }
-});
-
-// Monthly reset webhook (protected by secret)
-app.post('/api/webhook/reset', async (req, res) => {
-  try {
-    const { secret } = req.body;
-    
-    if (secret !== process.env.WEBHOOK_SECRET) {
-      return res.status(403).json({ error: 'Invalid secret' });
-    }
-    
-    const resetCount = await resetMonthlyTokens();
-    
-    res.json({
-      success: true,
-      message: 'Monthly tokens reset completed',
-      usersReset: resetCount
-    });
-  } catch (error) {
-    console.error('Reset error:', error);
-    res.status(500).json({ error: 'Reset failed' });
-  }
-});
-
-// Helper functions (reused from Phase 1)
-function buildPrompt(imageData, context, regenerate = false) {
-  const lines = [
-    'Write accurate alternative text for the provided image.',
-    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
-    'If the image is a logo or icon, state the text or shape that appears.'
-  ];
-
-  if (regenerate) {
-    lines.push('This is a regeneration request - provide a fresh, alternative description using different wording while maintaining accuracy.');
-    lines.push('Use varied vocabulary and sentence structure to create a new but equally descriptive alt text.');
-  }
-
-  const contextLines = [];
-
-  if (imageData?.title) {
-    contextLines.push(`Media library title: ${imageData.title}`);
-  }
-  if (imageData?.caption) {
-    contextLines.push(`Attachment caption: ${imageData.caption}`);
-  }
-  if (context?.post_title) {
-    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
-  }
-  if (context?.filename || imageData?.filename) {
-    const filename = context?.filename || imageData?.filename;
-    contextLines.push(`Filename: ${filename}`);
-  }
-  if (imageData?.width && imageData?.height) {
-    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
-  }
-
-  if (contextLines.length > 0) {
-    lines.push('\nAdditional context:');
-    lines.push(...contextLines);
-  }
-
-  lines.push('\nReturn just the alt text.');
-  return lines.join('\n');
-}
-
-function buildUserMessage(prompt, imageData, options = {}) {
-  const allowImage = !options.forceTextOnly;
-  
-  // Use detail: high for better AI analysis and more accurate descriptions
-  // This uses more tokens (~170 vs 85) but provides much better quality
-  const imageUrlConfig = { detail: 'high' };
-
-  // Check for base64-encoded image (from frontend for localhost URLs)
-  // Support both 'base64' and 'image_base64' field names for compatibility
-  const base64Data = imageData?.base64 || imageData?.image_base64;
-  if (allowImage && base64Data && imageData?.mime_type) {
-    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: dataUrl, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  // Check for inline data URL
-  if (allowImage && imageData?.inline?.data_url) {
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.inline.data_url, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  // Check for public URL
-  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
-  if (hasUsableUrl) {
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.url, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  return {
-    role: 'user',
-    content: prompt
-  };
-}
-
-function getNextResetDate() {
-  const now = new Date();
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return nextMonth.toISOString().split('T')[0];
-}
-
-function isLikelyPublicUrl(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl);
-    const protocol = parsed.protocol.toLowerCase();
-    if (protocol !== 'https:' && protocol !== 'http:') {
-      return false;
-    }
-    const hostname = parsed.hostname.toLowerCase();
-
-    const privatePatterns = [
-      /^localhost$/,
-      /^127\./,
-      /^10\./,
-      /^172\.(1[6-9]|2\d|3[0-1])\./,
-      /^192\.168\./,
-      /\.local$/,
-      /\.test$/,
-      /\.internal$/
-    ];
-
-    if (privatePatterns.some(pattern => pattern.test(hostname))) {
-      return false;
-    }
-
-    if (protocol === 'http:') {
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-async function requestChatCompletion(messages, overrides = {}) {
-  const {
-    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    max_tokens = 100,
-    temperature = 0.2,
-    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
-  } = overrides;
-
-  if (!apiKey) {
-    throw new Error('Missing OpenAI API key');
-  }
-
-  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
-  console.log(`[OpenAI] Messages count: ${messages.length}`);
-  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
-
-  try {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model,
-        messages,
-        max_tokens,
-        temperature
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 75000 // 75 second timeout for OpenAI API calls (frontend waits 90s)
-      }
-    );
-    
-    console.log(`[OpenAI] Request successful, received response`);
-    const payload = response && response.data ? response.data : response || {};
-    return {
-      choices: payload?.choices || [],
-      usage: payload?.usage || null
-    };
-  } catch (error) {
-    console.error('[OpenAI] Request failed:', {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data
-    });
-    throw error;
-  }
-}
-
-function shouldDisableImageInput(error) {
-  const status = error?.response?.status;
-  if (!status || status >= 500) {
-    return false;
-  }
-
-  const message = error?.response?.data?.error?.message || '';
-  return (
-    status === 400 ||
-    status === 422 ||
-    /image_url/i.test(message) ||
-    /fetch/i.test(message) ||
-    /unable to load image/i.test(message)
-  );
-}
-
-function messageHasImage(message) {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-  if (Array.isArray(message.content)) {
-    return message.content.some(part => part?.type === 'image_url');
-  }
-  return false;
-}
-
-async function reviewAltText(altText, imageData, context, apiKey = null) {
-  if (!altText || typeof altText !== 'string') {
-    return null;
-  }
-
-  const hasInline = Boolean(imageData?.inline?.data_url);
-  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
-
-  if (!hasInline && !hasPublicUrl) {
-    return null;
-  }
-
-    // Use provided API key or get review API key for the service
-    const service = imageData?.service || 'alttext-ai';
-    const effectiveApiKey = apiKey || getReviewApiKey(service);
-
-  const systemMessage = {
-    role: 'system',
-    content: 'You are an accessibility QA reviewer. When given an image and a candidate alternative text, you evaluate how well the text represents the image content. Respond strictly with a JSON object containing the fields: score (integer 0-100), status (one of: great, good, review, critical), grade (short human-readable label), summary (<=120 characters), and issues (array of short issue strings). Penalize hallucinations, missing key subjects, incorrect genders, colors, text, or context. Score 0 for placeholder or irrelevant descriptions.'
-  };
-
-  const prompt = buildReviewPrompt(altText, imageData, context);
-  const userMessage = buildUserMessage(prompt, imageData);
-
-  let response;
-  try {
-    response = await requestChatCompletion([
-      systemMessage,
-      userMessage
-    ], {
-      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      max_tokens: 220,
-      temperature: 0,
-      apiKey: effectiveApiKey
-    });
-  } catch (error) {
-    if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-      response = await requestChatCompletion([
-        systemMessage,
-        fallbackMessage
-      ], {
-        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        max_tokens: 220,
-        temperature: 0,
-        apiKey: effectiveApiKey
-      });
-    } else {
-      throw error;
-    }
-  }
-
-  const content = response.choices[0].message.content.trim();
-  const parsed = parseReviewResponse(content);
-
-  if (!parsed) {
-    return null;
-  }
-
-  const score = clampScore(parsed.score);
-  const status = normalizeStatus(parsed.status, score);
-  const grade = parsed.grade || gradeFromStatus(status);
-  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
-  const issues = Array.isArray(parsed.issues)
-    ? parsed.issues
-        .filter(item => typeof item === 'string' && item.trim() !== '')
-        .map(item => item.trim())
-        .slice(0, 6)
-    : [];
-
-  return {
-    score,
-    status,
-    grade,
-    summary,
-    issues,
-    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    usage: response.usage
-  };
-}
-
-function buildReviewPrompt(altText, imageData, context) {
-  const lines = [
-    'Evaluate whether the provided alternative text accurately describes the attached image.',
-    'Respond ONLY with a JSON object containing these keys: score, status, grade, summary, issues.',
-    'Score rules: 100 is a precise, specific match including essential context and any visible text. 0 is completely wrong, irrelevant, or placeholder text.',
-    `Alt text candidate: "${altText}".`
-  ];
-
-  if (imageData?.title) {
-    lines.push(`Media library title: ${imageData.title}`);
-  }
-  if (imageData?.caption) {
-    lines.push(`Caption: ${imageData.caption}`);
-  }
-  if (context?.post_title) {
-    lines.push(`Appears on page: ${context.post_title}`);
-  }
-  if (imageData?.filename) {
-    lines.push(`Filename: ${imageData.filename}`);
-  }
-  if (imageData?.width && imageData?.height) {
-    lines.push(`Dimensions: ${imageData.width}x${imageData.height}px`);
-  }
-
-  lines.push('Remember: return valid JSON only, without markdown fencing.');
-  return lines.join('\n');
-}
-
-function parseReviewResponse(content) {
-  if (!content) {
-    return null;
-  }
-
-  const trimmed = content.trim();
-  const directParse = tryParseJson(trimmed);
-  if (directParse) {
-    return directParse;
-  }
-
-  const match = trimmed.match(/\{[\s\S]*\}/);
-  if (match) {
-    return tryParseJson(match[0]);
-  }
-  return null;
-}
-
-function tryParseJson(payload) {
-  try {
-    return JSON.parse(payload);
-  } catch (error) {
-    return null;
-  }
-}
-
-function clampScore(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-  return Math.min(100, Math.max(0, Math.round(numeric)));
-}
-
-function normalizeStatus(status, score) {
-  const lookup = {
-    great: 'great',
-    excellent: 'great',
-    good: 'good',
-    ok: 'review',
-    needs_review: 'review',
-    review: 'review',
-    poor: 'critical',
-    critical: 'critical',
-    fail: 'critical'
-  };
-
-  if (typeof status === 'string') {
-    const key = status.toLowerCase().replace(/[^a-z]/g, '_');
-    if (lookup[key]) {
-      return lookup[key];
-    }
-  }
-
-  if (typeof score === 'number' && Number.isFinite(score)) {
-    if (score >= 90) return 'great';
-    if (score >= 75) return 'good';
-    if (score >= 55) return 'review';
-    return 'critical';
-  }
-
-  return 'review';
-}
-
-function gradeFromStatus(status) {
-  switch (status) {
-    case 'great':
-      return 'Excellent';
-    case 'good':
-      return 'Strong';
-    case 'review':
-      return 'Needs review';
-    default:
-      return 'Critical';
-  }
-}
-
-// Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  console.error('Stack:', error.stack);
-  // Don't exit - let the server continue running
-  // Render will restart if needed
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise);
-  console.error('Reason:', reason);
-  
-  // Send to Sentry if available
-  if (Sentry) {
-    Sentry.captureException(reason);
-  }
-  
-  // Don't exit - let the server continue running
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  
-  // Send to Sentry if available
-  if (Sentry) {
-    Sentry.captureException(error);
-  }
-  
-  // Exit process for uncaught exceptions (they're usually fatal)
-  process.exit(1);
-});
-
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
-    console.log(`📅 Version: 2.0.0 (Monetization)`);
-    console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-    console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-  });
-
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully...');
-    process.exit(0);
-  });
-}
-
-// Global error handler (must be last middleware)
-const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
-app.use(notFoundHandler); // 404 handler
-app.use(errorHandler); // Error handler
-
-// Capture unhandled errors with Sentry if available
-if (Sentry) {
-  app.use(Sentry.Handlers.errorHandler());
-}
-
-// Export utility functions for partner API
-// Export app and utility functions
-module.exports = Object.assign(app, {
-  requestChatCompletion,
-  buildPrompt,
-  buildUserMessage,
-});
-
-```
-
----
-
-## README.md
-
-```
-# Oppti Backend
-
-Production-ready Node.js backend API for Oppti services.
-
-## Quick Start
-
-```bash
-npm install
-cp config/env.example .env
-# Edit .env and add your API keys
-npm start
-```
-
-## Tech Stack
-
-- **Runtime:** Node.js 18+
-- **Framework:** Express.js
-- **Database:** Supabase (PostgreSQL)
-- **Authentication:** JWT
-- **Payment:** Stripe
-- **Email:** Resend
-
-## Environment Variables
-
-See `config/env.example` for all required variables. Key variables:
-
-```env
-# Supabase (Required)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# OpenAI (Required)
-ALTTEXT_OPENAI_API_KEY=sk-...
-SEO_META_OPENAI_API_KEY=sk-...
-
-# JWT (Required)
-JWT_SECRET=your-secret-key
-
-# Stripe (Required)
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-# Email (Required)
-RESEND_API_KEY=re_...
-EMAIL_FROM=OpttiAI <hello@optti.dev>
-EMAIL_BRAND_NAME=OpttiAI
-RESEND_FROM_EMAIL=noreply@yourdomain.com  # Legacy support, use EMAIL_FROM
-RESEND_AUDIENCE_ID=aud_xxx  # Optional: For subscriber management
-```
-
-## Documentation
-
-For detailed documentation, see the `/docs` directory:
-
-- **[Architecture](docs/architecture.md)** - System design, tech stack, technical debt
-- **[Testing](docs/testing.md)** - Test structure, coverage, running tests
-- **[Deployment](docs/deployment.md)** - Deployment instructions, environment setup
-- **[Backend Structure](docs/backend-structure.md)** - Directory organization, file structure
-- **[Migrations](docs/migrations.md)** - Database migration process and history
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Run tests
-npm test
-
-# Run tests with coverage
-npm test -- --coverage
-
-# Start development server
-npm start
-```
-
-## License
-
-Proprietary - Oppti
-
-```
-
----
-
-## BRANCH_PROTECTION_SETUP.md
-
-```
-# 🔒 Branch Protection Setup Guide
-
-## Why This Matters
-
-Currently, **Render auto-deploys on every push to `main`, even when GitHub Actions tests fail**. This means broken code can reach production.
-
-**Branch protection prevents broken code from being pushed to `main` in the first place.**
-
-## Quick Setup (5 minutes)
-
-### Step 1: Navigate to Branch Settings
-
-1. Go to: https://github.com/TheLaughingGod1986/optiap-backend/settings/branches
-2. Click **"Add rule"** or **"Add branch protection rule"**
-
-### Step 2: Configure the Rule
-
-**Branch name pattern:** `main`
-
-**Enable these settings:**
-
-✅ **Require status checks to pass before merging**
-   - Check: `Backend Tests / test (18.x)`
-   - Check: `Backend Tests / test (20.x)`
-   - ✅ **Require branches to be up to date before merging**
-
-✅ **Require pull request reviews before merging**
-   - Set: `Required approving reviews: 0` (or 1 if you want reviews)
-   - ✅ Dismiss stale pull request approvals when new commits are pushed
-
-✅ **Restrict pushes that create files**
-   - (Optional, but recommended)
-
-✅ **Do not allow bypassing the above settings**
-   - ✅ **Include administrators**
-
-❌ **Allow force pushes** - **UNCHECKED** (important!)
-❌ **Allow deletions** - **UNCHECKED** (important!)
-
-### Step 3: Save
-
-Click **"Create"** or **"Save changes"**
-
-## What This Does
-
-✅ **Prevents direct pushes to `main` that fail tests**
-   - You'll need to create a pull request
-   - Tests must pass before the PR can be merged
-
-✅ **Blocks force pushes and branch deletion**
-   - Prevents accidental or malicious changes
-
-✅ **Applies to admins too**
-   - Even you can't bypass these rules
-
-## Important Notes
-
-⚠️ **After enabling this:**
-- You can still push to `main` directly, but only if tests pass
-- If tests fail, you'll need to fix them before pushing
-- For major changes, consider using feature branches and pull requests
-
-⚠️ **Render will still auto-deploy**, but now:
-- Only code that passes tests can reach `main`
-- This provides the protection we need
-
-## Alternative: Disable Auto-Deploy in Render
-
-If you prefer manual control:
-
-1. Go to Render dashboard: https://dashboard.render.com
-2. Navigate to service: `alttext-ai-phase2`
-3. **Settings** → **Build & Deploy**
-4. **Disable "Auto-Deploy"**
-5. Manually deploy only after verifying GitHub Actions passes
-
-## Verification
-
-After setting up branch protection:
-
-1. Try pushing code that fails tests → Should be blocked
-2. Fix tests and push again → Should succeed
-3. Check that Render only deploys when tests pass
-
-## Need Help?
-
-- GitHub Docs: https://docs.github.com/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches
-- Render Docs: https://render.com/docs/deploys
-
-
-```
-
----
-
-## CLEANUP_SUMMARY.md
-
-```
-# Backend Cleanup Summary
-
-**Date:** 2025-01-24  
-**Status:** ✅ Complete - All tests passing, coverage maintained
-
-## Summary
-
-Successfully completed a safe, test-backed cleanup of the backend following the refactoring. All changes were verified with tests after each step, ensuring no functionality was broken.
-
-## Files Deleted
-
-### Dead Code (from dead-code-analysis.json)
-1. ✅ `test-backend.js` - Test script file never imported
-2. ✅ `test-license-flows.js` - Test script file never imported
-3. ✅ `check-supabase-schema.js` - Utility script for schema checking
-4. ✅ `scripts/init-free-user-credits.js` - One-time migration script
-
-### Root Legacy Files
-5. ✅ `test-results.json` - Output artifact
-6. ✅ `PHASE1_IMPLEMENTATION_SUMMARY.md` - Implementation notes
-7. ✅ `VERIFICATION_CHECKLIST.md` - One-off checklist
-8. ✅ `RENDER_SUPABASE_MIGRATION.md` - Legacy migration notes
-9. ✅ `ORGANIZATION_LICENSING_IMPLEMENTATION.md` - Legacy documentation
-10. ✅ `AUTOMATED_LICENSE_DELIVERY.md` - Legacy documentation
-11. ✅ `fetch-render-env.sh` - Not referenced in CI or deployment
-
-### Duplicate Files
-12. ✅ `auth/dual-auth.js` - Duplicate (moved to `middleware/dual-auth.js`)
-
-**Total files deleted:** 12
-
-## Directories Consolidated
-
-### Removed
-- ✅ `/utils` - Consolidated into `/src/utils`
-- ✅ `/scripts` - Empty after cleanup, removed
-
-### Created/Updated
-- ✅ `/config` - Created with environment files and `loadEnv.js`
-- ✅ `/src/utils` - Consolidated utilities location
-
-## Files Moved
-
-### Environment Files
-- ✅ `env.example` → `config/env.example`
-- ✅ `.env.test` → `config/env.test`
-
-### Utilities
-- ✅ `utils/apiKey.js` → `src/utils/apiKey.js`
-- ✅ `utils/logger.js` → `src/utils/logger.js`
-
-## Import Path Updates
-
-All imports were updated to reflect new file locations:
-- ✅ `server-v2.js`: Updated `./utils/apiKey` → `./src/utils/apiKey`
-- ✅ `tests/unit/apiKey.test.js`: Updated `../../utils/apiKey` → `../../src/utils/apiKey`
-
-## Directories Evaluated and Kept
-
-### `/stripe/` - ✅ KEPT
-- **Reason:** Actively used by `routes/billing.js`
-- **Files:** `checkout.js`, `webhooks.js`
-- **Status:** Required for production functionality
-
-### `/migrations/` - ✅ KEPT
-- **Reason:** Contains important database schema (`add_licenses_table.sql`)
-- **Status:** May be needed for reference or manual migration runs
-
-### `/auth/` - ✅ KEPT (partially cleaned)
-- **Remaining files:** `jwt.js`, `routes.js`, `email.js`
-- **Status:** All files are actively used
-- **Action taken:** Removed duplicate `dual-auth.js` (moved to middleware/)
-
-## New Files Created
-
-1. ✅ `config/loadEnv.js` - Centralized environment loading utility
-   - Provides: `getEnv()`, `requireEnv()`, `isProduction()`, `isDevelopment()`, `isTest()`
-
-2. ✅ `validation/auth.js` - Authentication route validation
-   - `validateRegistrationInput()` - Validates registration data
-   - `validateLoginInput()` - Validates login data
-
-3. ✅ `validation/license.js` - License route validation
-   - `validateLicenseActivationInput()` - Validates license activation
-   - `validateAutoAttachInput()` - Validates auto-attach input
-
-4. ✅ `validation/billing.js` - Billing route validation
-   - `validateCheckoutInput()` - Validates checkout session input
-   - `validatePriceId()` - Validates price ID against service
-
-5. ✅ `validation/generate.js` - Generate route validation
-   - `validateGenerateInput()` - Validates generate request input
-
-## Test Results
-
-### Before Cleanup
-- **Tests:** 287 passing
-- **Coverage:** 60.82% statements, 51.57% branches, 59.35% functions, 61.88% lines
-
-### After Cleanup
-- **Tests:** 287 passing ✅
-- **Coverage:** 63.91% statements, 54.13% branches, 62.67% functions, 65.16% lines ✅
-- **Coverage improvement:** +3.09% statements, +2.56% branches, +3.32% functions, +3.28% lines
-
-**Coverage maintained above 60% threshold:** ✅ Yes (63.91%)
-
-## Remaining Technical Debt
-
-### High Priority
-1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches)
-   - **Action needed:** Add comprehensive test coverage
-
-2. **stripe/checkout.js** - Low test coverage (33.76% statements)
-   - **Action needed:** Add tests for untested code paths
-
-3. **services/emailService.js** - Some untested code paths (lines 803-984)
-   - **Action needed:** Add tests for email template generation
-
-### Medium Priority
-1. **Adopt new utilities** - Gradually migrate to:
-   - `src/utils/logger.js` for standardized logging (replace console.log/error/warn)
-   - `src/utils/http.js` for standardized HTTP responses
-   - `config/loadEnv.js` for environment variable management
-
-2. **Validation layer** - Route-specific validators created and ready for adoption:
-   - `validation/auth.js` - Ready to use in `auth/routes.js`
-   - `validation/license.js` - Ready to use in `routes/license.js` and `routes/licenses.js`
-   - `validation/billing.js` - Ready to use in `routes/billing.js`
-   - `validation/generate.js` - Ready to use in `server-v2.js` generate endpoint
-
-### Low Priority
-1. **migrations/** - Consider documenting migration process or adding automated migration runner
-2. **Documentation** - Update README.md to reflect new directory structure
-
-## Directory Structure (Final)
-
-```
-/
-├── auth/                    # Authentication logic (jwt, routes, email)
-├── config/                  # Configuration files
-│   ├── env.example
-│   ├── env.test
-│   └── loadEnv.js          # NEW: Centralized env loading
-├── db/                      # Database client
-│   └── supabase-client.js
-├── middleware/              # Express middleware
-│   └── dual-auth.js
-├── migrations/              # Database migrations (kept)
-│   └── add_licenses_table.sql
-├── routes/                  # API route handlers
-├── services/                # Business logic services
-├── src/                     # Main application code
-│   └── utils/              # Utilities (consolidated)
-│       ├── apiKey.js       # Moved from utils/
-│       ├── http.js
-│       └── logger.js      # Moved from utils/
-├── stripe/                  # Stripe integration (kept - actively used)
-│   ├── checkout.js
-│   └── webhooks.js
-├── validation/              # Validation layer
-│   ├── index.js
-│   ├── validators.js
-│   ├── auth.js              # NEW: Auth route validation
-│   ├── license.js            # NEW: License route validation
-│   ├── billing.js            # NEW: Billing route validation
-│   └── generate.js           # NEW: Generate route validation
-├── tests/                   # Test files
-├── server-v2.js            # Main entry point (KEPT - required)
-├── package.json
-├── jest.config.js
-└── README.md
-```
-
-## Warnings and Notes
-
-1. ⚠️ **server-v2.js** - This is the main entry point (package.json `main` and `start` script). It was NOT deleted as it's required for the application to run.
-
-2. ✅ **No broken imports** - All import paths were updated and verified with tests.
-
-3. ✅ **Backward compatibility** - All public APIs remain unchanged.
-
-4. ✅ **Test stability** - All 287 tests continue to pass after cleanup.
-
-## Next Steps
-
-1. **Review and approve** this cleanup summary
-2. **Gradually adopt** new utilities (logger, HTTP helpers, loadEnv)
-3. **Increase test coverage** for low-coverage files (organization.js, checkout.js)
-4. **Update documentation** to reflect new structure
-5. **Consider** adding automated migration runner for migrations/
-
-## Conclusion
-
-The cleanup was completed successfully with:
-- ✅ 12 files deleted
-- ✅ 2 directories consolidated
-- ✅ 4 files moved to new locations
-- ✅ All 287 tests passing
-- ✅ Coverage improved to 63.91% (above 60% threshold)
-- ✅ No broken functionality
-- ✅ Cleaner, more organized codebase
-
-The backend is now better organized with a clear directory structure and all dead code removed.
-
-
-```
-
----
-
-## DEPLOYMENT_PROTECTION.md
-
-```
-# ⚠️ CRITICAL: Deployment Protection Setup
-
-## Problem
-
-**Render is currently auto-deploying on every push to `main`, even when GitHub Actions tests fail.**
-
-This means broken code can be deployed to production, which is a critical security and quality risk.
-
-## Immediate Action Required
-
-### Step 1: Disable Auto-Deploy in Render (Temporary Fix)
-
-1. Go to https://dashboard.render.com
-2. Navigate to your service: `alttext-ai-phase2`
-3. Go to **Settings** → **Build & Deploy**
-4. **Disable "Auto-Deploy"**
-5. Save changes
-
-### Step 2: Manual Deployment Process
-
-Until proper CI/CD gates are set up, follow this process:
-
-1. **Push code to GitHub**
-2. **Wait for GitHub Actions to complete**
-   - Check: https://github.com/TheLaughingGod1986/optiap-backend/actions
-   - ✅ All tests must pass (green checkmark)
-3. **Only if tests pass**, manually deploy in Render:
-   - Go to Render dashboard
-   - Click **"Manual Deploy"** → **"Deploy latest commit"**
-
-## Long-Term Solution
-
-Render doesn't natively support GitHub Actions status checks as deployment gates. Options:
-
-### Option A: GitHub Branch Protection (Recommended)
-
-1. Go to GitHub repo: https://github.com/TheLaughingGod1986/optiap-backend
-2. **Settings** → **Branches**
-3. Add branch protection rule for `main`:
-   - ✅ Require status checks to pass before merging
-   - ✅ Require branches to be up to date before merging
-   - Add required status check: `Backend Tests / test (18.x)`
-   - Add required status check: `Backend Tests / test (20.x)`
-4. This prevents broken code from being pushed to `main` in the first place
-
-### Option B: Deployment Script with Status Check
-
-Create a deployment script that:
-1. Checks GitHub Actions status via API
-2. Only triggers Render deployment if status is "success"
-3. Can be run manually or via webhook
-
-### Option C: Use GitHub Actions to Deploy
-
-Instead of Render auto-deploy, use GitHub Actions to:
-1. Run tests
-2. If tests pass, trigger Render deployment via API
-3. This ensures tests always pass before deployment
-
-## Current Status
-
-- ✅ GitHub Actions workflow configured (`.github/workflows/tests.yml`)
-- ❌ Render auto-deploy is NOT gated by test status
-- ⚠️ **Action needed**: Disable auto-deploy or implement one of the solutions above
-
-## Verification
-
-After implementing protection, verify:
-1. Push a commit that fails tests
-2. Confirm Render does NOT deploy
-3. Fix tests and push again
-4. Confirm Render deploys only after tests pass
-
-
-```
-
----
-
-## cleanup-report.md
-
-```
-# Backend Refactoring Cleanup Report
-
-## Summary
-
-This report documents the comprehensive refactoring of the AltText AI backend codebase, completed on 2025-01-24. All phases were completed successfully with tests passing and coverage maintained above 60%.
-
-## Files Removed
-
-The following files were identified as safe to delete (dead code analysis):
-
-1. **test-backend.js** - Test script file never imported anywhere
-2. **test-license-flows.js** - Test script file never imported anywhere  
-3. **check-supabase-schema.js** - Utility script for schema checking, never imported
-4. **scripts/init-free-user-credits.js** - One-time migration script, never imported
-
-**Note:** These files were identified but not automatically deleted per the plan's instruction to only mark them as safe to delete. They can be manually removed when ready.
-
-## Services Refactored
-
-### licenseService.js
-- **Status:** ✅ Refactored
-- **Changes:**
-  - Extracted helper functions: `findLicenseByIdOrKey()`, `getOrCreateUserOrganization()`, `findExistingSite()`, `canAddSite()`, `createOrUpdateSite()`
-  - Simplified deeply nested conditionals in `autoAttachLicense()`
-  - Improved code organization and readability
-  - Maintained 100% backward compatibility with existing API
-- **Coverage:** 63.93% statements, 58.13% branches, 90% functions, 66.1% lines
-
-### emailService.js
-- **Status:** ✅ Already well-structured
-- **Note:** Service was already well-organized as a class with clear separation of concerns. No refactoring needed.
-
-## New Directory Structure
-
-The following normalized directory structure was created:
-
-```
-/
-├── src/
-│   └── utils/
-│       └── http.js          # HTTP response utilities
-├── db/
-│   └── supabase-client.js   # Database client (moved from root)
-├── middleware/
-│   └── dual-auth.js         # Dual authentication middleware (moved from auth/)
-├── validation/
-│   ├── validators.js        # Core validation functions (moved from utils/)
-│   └── index.js             # Validation layer with standardized errors
-├── utils/
-│   ├── apiKey.js            # API key utilities
-│   └── logger.js            # Standardized logger (new)
-├── routes/                   # API route handlers (unchanged)
-├── services/                 # Business logic services (unchanged)
-├── stripe/                   # Stripe integration (unchanged)
-└── tests/                    # Test files (unchanged)
-```
-
-## Test Improvements and Coverage Changes
-
-### Test Status
-- **All tests passing:** ✅ 287 tests, 14 test suites
-- **Coverage maintained:** 64.08% statements, 55.07% branches, 63.51% functions, 65.25% lines
-- **Coverage above floor:** ✅ Exceeds 60% requirement
-
-### Test Files Updated
-- Updated import paths for moved files (supabase-client, dual-auth, validation)
-- All existing tests continue to pass after refactoring
-
-## New Utilities Created
-
-### src/utils/http.js
-Standardized HTTP response formatting:
-- `sendSuccess()` - Success responses
-- `sendError()` - Error responses
-- `sendValidationError()` - Validation errors
-- `sendNotFound()` - Not found errors
-- `sendUnauthorized()` - Unauthorized errors
-
-### utils/logger.js
-Standardized logging API:
-- `logger.error(message, meta)`
-- `logger.warn(message, meta)`
-- `logger.info(message, meta)`
-- `logger.debug(message, meta)`
-- Supports LOG_LEVEL environment variable
-
-### validation/index.js
-Validation layer with consistent error objects:
-- `validateEmailInput()` - Email validation with standardized errors
-- `validatePasswordInput()` - Password validation with standardized errors
-- `validateDomainInput()` - Domain validation with standardized errors
-- `createValidationError()` - Creates standardized error objects
-
-## Remaining Technical Debt
-
-### High Priority
-1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches). Needs comprehensive test coverage.
-2. **stripe/checkout.js** - Low test coverage (33.76% statements). Many code paths untested.
-3. **services/emailService.js** - Some untested code paths (lines 803-984 uncovered).
-
-### Medium Priority
-1. **Adopt new logger** - Replace `console.log`/`console.error` with `utils/logger.js` throughout codebase (gradual migration).
-2. **Adopt HTTP utilities** - Use `src/utils/http.js` for standardized responses in routes (gradual migration).
-3. **Adopt validation layer** - Use `validation/index.js` helpers in routes for consistent error handling.
-
-### Low Priority
-1. **Dead code removal** - Remove identified dead code files when ready.
-2. **Performance optimizations** - Consider caching, batching, and memoization opportunities identified in PHASE 9.
-
-## Migration Notes
-
-### Import Path Changes
-The following import paths have changed and need to be updated in any external code:
-
-- `./supabase-client` → `./db/supabase-client`
-- `./auth/dual-auth` → `./middleware/dual-auth`
-- `./utils/validation` → `./validation/validators`
-
-All internal imports have been updated. External code using these modules will need updates.
-
-## Backward Compatibility
-
-✅ **All public APIs remain unchanged:**
-- Service methods maintain identical signatures
-- Route endpoints unchanged
-- Response formats unchanged
-- Authentication mechanisms unchanged
-
-## Next Steps
-
-1. **Review and approve** dead code removal
-2. **Gradually adopt** new utilities (logger, HTTP helpers, validation layer)
-3. **Increase test coverage** for low-coverage files (organization.js, checkout.js)
-4. **Monitor** for any issues in production after deployment
-
-## Conclusion
-
-The refactoring successfully improved code organization, maintainability, and structure while maintaining 100% backward compatibility and test coverage above the 60% floor. The codebase is now better organized with clear separation of concerns and standardized utilities ready for adoption.
-
-
-```
-
----
-
-## dead-code-analysis.json
-
-```
-[
-  {
-    "file": "test-backend.js",
-    "lines": "1-386",
-    "reason": "Test script file never imported anywhere in codebase",
-    "safeToDelete": true
-  },
-  {
-    "file": "test-license-flows.js",
-    "lines": "1-87",
-    "reason": "Test script file never imported anywhere in codebase",
-    "safeToDelete": true
-  },
-  {
-    "file": "check-supabase-schema.js",
-    "lines": "1-77",
-    "reason": "Utility script for schema checking, never imported anywhere",
-    "safeToDelete": true
-  },
-  {
-    "file": "scripts/init-free-user-credits.js",
-    "lines": "1-95",
-    "reason": "One-time migration script, never imported anywhere",
-    "safeToDelete": true
-  },
-  {
-    "file": "server-v2.js",
-    "lines": "406-431",
-    "reason": "Legacy endpoint /api/generate-legacy returns 410 deprecated response, never actually processes requests",
-    "safeToDelete": false
-  },
-  {
-    "file": "routes/organization.js",
-    "lines": "1-498",
-    "reason": "File has very low test coverage (6.99% statements, 0% branches, 0% functions, 8.13% lines). Most code paths are untested.",
-    "safeToDelete": false
-  },
-  {
-    "file": "stripe/checkout.js",
-    "lines": "16-169,200,202,204,208,210,244-246,249,271-348,385-424,446-468",
-    "reason": "Low test coverage (33.76% statements, 28.31% branches, 60% functions, 35.61% lines). Many code paths are untested.",
-    "safeToDelete": false
-  },
-  {
-    "file": "services/emailService.js",
-    "lines": "803-984",
-    "reason": "Untested code paths in email service (coverage shows lines 803-984 uncovered)",
-    "safeToDelete": false
-  },
-  {
-    "file": "services/licenseService.js",
-    "lines": "100-101,108-111,152,166,183,225,230,241,260-270,290-344,363,369-375,391-405,425",
-    "reason": "Untested code paths in license service",
-    "safeToDelete": false
-  },
-  {
-    "file": "auth/dual-auth.js",
-    "lines": "77,88-233,258",
-    "reason": "Low test coverage (43.75% statements, 41.17% branches, 50% functions). Many authentication paths untested.",
-    "safeToDelete": false
-  },
-  {
-    "file": "auth/email.js",
-    "lines": "75-90,97-98,105-128,256-257,263",
-    "reason": "Untested code paths in email sending logic",
-    "safeToDelete": false
-  },
-  {
-    "file": "routes/licenses.js",
-    "lines": "73-74,102-129,195,247,290,325-336,355,407-459,477-484,494",
-    "reason": "Untested code paths in license routes",
-    "safeToDelete": false
-  },
-  {
-    "file": "server-v2.js",
-    "lines": "655-846,852-853,859-860,865-876",
-    "reason": "Untested helper functions (reviewAltText, buildReviewPrompt, parseReviewResponse, etc.)",
-    "safeToDelete": false
-  }
-]
-
-
-```
-
----
-
-## auth/email.js
-
-```
-/**
- * Email service for password reset
- * Supports multiple email providers via environment variables
- */
-
-/**
- * Send password reset email
- * @param {string} email - User's email address
- * @param {string} resetUrl - Password reset URL with token
- * @returns {Promise<boolean>}
- */
-async function sendPasswordResetEmail(email, resetUrl) {
-  // Debug: Log if API key is missing
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('⚠️  RESEND_API_KEY environment variable not found');
-    console.warn('   Checking process.env keys:', Object.keys(process.env).filter(k => k.includes('RESEND')));
-  }
-  
-  // Try Resend first (modern, simple, recommended)
-  if (process.env.RESEND_API_KEY) {
-    console.log('✅ RESEND_API_KEY found, attempting to send email via Resend...');
-    try {
-      const { Resend } = require('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      
-      const { data, error } = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>',
-        to: email,
-        subject: 'Reset Your AltText AI Password',
-        html: `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="color: white; margin: 0; font-size: 24px;">Reset Your Password</h1>
-              </div>
-              <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-                <p>You requested to reset your password for AltText AI.</p>
-                <p>Click the button below to reset your password:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 600;">Reset Password</a>
-                </div>
-                <p style="font-size: 14px; color: #6b7280;">Or copy and paste this link into your browser:</p>
-                <p style="font-size: 12px; word-break: break-all; color: #9ca3af; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetUrl}</p>
-                <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">This link will expire in 1 hour.</p>
-                <p style="font-size: 14px; color: #6b7280;">If you didn't request this, please ignore this email.</p>
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                <p style="font-size: 12px; color: #9ca3af; text-align: center;">Best regards,<br>The AltText AI Team</p>
-              </div>
-            </body>
-          </html>
-        `,
-        text: `
-Password Reset Request
-
-You requested to reset your password for AltText AI.
-
-Click the link below to reset your password:
-${resetUrl}
-
-This link will expire in 1 hour.
-
-If you didn't request this, please ignore this email.
-
-Best regards,
-AltText AI Team
-        `.trim()
-      });
-
-      if (error) {
-        console.error('❌ Resend email error:', JSON.stringify(error, null, 2));
-        console.error('   Error details:', error);
-        console.error('   Error code:', error?.message || error);
-        
-        // Common Resend errors
-        if (error?.message?.includes('domain') || error?.message?.includes('verified')) {
-          console.error('   ⚠️  Domain verification issue!');
-          console.error('   💡 Try using: onboarding@resend.dev (test domain)');
-          console.error('   💡 Or verify your domain in Resend dashboard');
-        }
-        if (error?.message?.includes('from') || error?.message?.includes('sender')) {
-          console.error('   ⚠️  From email address issue!');
-          console.error('   💡 Email address must be verified in Resend');
-        }
-        
-        throw error;
-      }
-
-      console.log(`✅ Password reset email sent via Resend to ${email}`);
-      console.log(`   Email ID: ${data?.id || 'unknown'}`);
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to send email via Resend:', error.message || error);
-      console.error('   Full error:', JSON.stringify(error, null, 2));
-      // Fall through to try other services or fallback
-    }
-  }
-
-  // Try SendGrid
-  if (process.env.SENDGRID_API_KEY) {
-    try {
-      const sgMail = require('@sendgrid/mail');
-      sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
-      await sgMail.send({
-        to: email,
-        from: process.env.SENDGRID_FROM_EMAIL || 'noreply@alttextai.com',
-        subject: 'Reset Your AltText AI Password',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #667eea;">Reset Your Password</h2>
-            <p>You requested to reset your password for AltText AI.</p>
-            <p><a href="${resetUrl}" style="background: #667eea; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">Reset Password</a></p>
-            <p style="font-size: 12px; color: #666;">Or copy this link: ${resetUrl}</p>
-            <p style="font-size: 12px; color: #666;">This link expires in 1 hour.</p>
-          </div>
-        `,
-        text: `Reset Your Password\n\nClick this link: ${resetUrl}\n\nThis link expires in 1 hour.`
-      });
-
-      console.log(`✅ Password reset email sent via SendGrid to ${email}`);
-      return true;
-    } catch (error) {
-      console.error('Failed to send email via SendGrid:', error);
-      // Fall through to fallback
-    }
-  }
-
-  // Fallback: Log to console (development/testing)
-  const emailBody = `
-Password Reset Request
-
-You requested to reset your password for AltText AI.
-
-Click the link below to reset your password:
-${resetUrl}
-
-This link will expire in 1 hour.
-
-If you didn't request this, please ignore this email.
-
-Best regards,
-AltText AI Team
-  `.trim();
-
-  console.log('\n===========================================');
-  console.log('📧 PASSWORD RESET EMAIL (MOCKED - NO EMAIL SERVICE CONFIGURED)');
-  console.log('===========================================');
-  console.log(`To: ${email}`);
-  console.log(`Subject: Reset Your AltText AI Password`);
-  console.log('-------------------------------------------');
-  console.log(emailBody);
-  console.log('===========================================');
-  console.log('\n⚠️  Email service not configured. To enable email sending:');
-  console.log('   1. Set RESEND_API_KEY in environment variables (recommended)');
-  console.log('   2. Or set SENDGRID_API_KEY in environment variables');
-  console.log('   3. See backend/env.example for details\n');
-
-  return true;
-}
-
-/**
- * Send welcome email to new users
- * @param {string} email - User's email address
- * @param {string} username - User's email (used as username)
- * @returns {Promise<boolean>}
- */
-async function sendWelcomeEmail(email, username) {
-  // Try Resend first
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const { Resend } = require('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      
-      const { data, error } = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || 'AltText AI <noreply@alttextai.com>',
-        to: email,
-        subject: 'Welcome to SEO AI Alt Text Generator! 🎉',
-        html: `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            </head>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-                <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to SEO AI Alt Text Generator! 🎉</h1>
-              </div>
-              <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-                <p style="font-size: 16px;">Hi there!</p>
-                <p>Thank you for signing up for <strong>SEO AI Alt Text Generator</strong>! We're excited to help you improve your website's SEO and accessibility.</p>
-                
-                <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                  <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Get Started:</p>
-                  <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-                    <li>Upload images to WordPress</li>
-                    <li>Alt text generates automatically</li>
-                    <li>Boost Google image search rankings</li>
-                    <li>Improve accessibility (WCAG compliant)</li>
-                  </ul>
-                </div>
-                
-                <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 4px;">
-                  <p style="margin: 0; font-weight: 600; color: #10b981;">✨ Your Free Plan Includes:</p>
-                  <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-                    <li><strong>50 AI generations per month</strong></li>
-                    <li>GPT-4o-mini AI model</li>
-                    <li>Automatic generation on upload</li>
-                    <li>Bulk processing</li>
-                    <li>Dashboard and analytics</li>
-                  </ul>
-                </div>
-                
-                <p>Ready to get started? Head to your WordPress dashboard and start optimizing your images!</p>
-                
-                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-                <p style="font-size: 14px; color: #6b7280;">Need help? Check out our <a href="https://alttextai.com/docs" style="color: #667eea;">documentation</a> or reach out to our support team.</p>
-                <p style="font-size: 12px; color: #9ca3af; text-align: center; margin-top: 30px;">Best regards,<br>The SEO AI Alt Text Generator Team</p>
-              </div>
-            </body>
-          </html>
-        `,
-        text: `
-Welcome to SEO AI Alt Text Generator!
-
-Thank you for signing up! We're excited to help you improve your website's SEO and accessibility.
-
-Get Started:
-- Upload images to WordPress
-- Alt text generates automatically
-- Boost Google image search rankings
-- Improve accessibility (WCAG compliant)
-
-Your Free Plan Includes:
-- 50 AI generations per month
-- GPT-4o-mini AI model
-- Automatic generation on upload
-- Bulk processing
-- Dashboard and analytics
-
-Ready to get started? Head to your WordPress dashboard and start optimizing your images!
-
-Need help? Check out our documentation at https://alttextai.com/docs
-
-Best regards,
-The SEO AI Alt Text Generator Team
-        `.trim()
-      });
-
-      if (error) {
-        console.error('Resend welcome email error:', error);
-        throw error;
-      }
-
-      console.log(`✅ Welcome email sent via Resend to ${email}`);
-      return true;
-    } catch (error) {
-      console.error('Failed to send welcome email via Resend:', error);
-      // Fall through to fallback
-    }
-  }
-
-  // Fallback: Log to console
-  console.log('\n===========================================');
-  console.log('📧 WELCOME EMAIL (MOCKED - NO EMAIL SERVICE CONFIGURED)');
-  console.log('===========================================');
-  console.log(`To: ${email}`);
-  console.log(`Subject: Welcome to SEO AI Alt Text Generator! 🎉`);
-  console.log('-------------------------------------------');
-  console.log(`Welcome! Thank you for signing up.`);
-  console.log('===========================================\n');
-
-  return true;
-}
-
-module.exports = {
-  sendPasswordResetEmail,
-  sendWelcomeEmail
-};
-
-```
-
----
-
-## auth/jwt.js
-
-```
-/**
- * JWT Authentication utilities
- */
-
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
-const crypto = require('crypto');
-
-/**
- * Generate JWT token for user
- * Supports both legacy user objects and identity-based objects
- */
-function generateToken(user) {
-  const payload = {
-    id: user.id || user.identityId,
-    identityId: user.identityId || user.id,
-    email: user.email,
-    plan: user.plan || 'free',
-    iat: Math.floor(Date.now() / 1000)
-  };
-  
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-}
-
-/**
- * Generate refresh token
- * Returns a cryptographically secure random token
- */
-function generateRefreshToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Verify refresh token (checks if token exists and is not expired)
- * @param {string} token - Refresh token
- * @param {Date} expiresAt} expiresAt - Expiration date
- * @returns {boolean} True if token is valid
- */
-function verifyRefreshToken(token, expiresAt) {
-  if (!token || !expiresAt) {
-    return false;
-  }
-  
-  const now = new Date();
-  const expiration = new Date(expiresAt);
-  
-  return now < expiration;
-}
-
-/**
- * Verify JWT token
- */
-function verifyToken(token) {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    throw new Error('Invalid token');
-  }
-}
-
-/**
- * Hash password using bcrypt
- */
-async function hashPassword(password) {
-  const saltRounds = 12;
-  return await bcrypt.hash(password, saltRounds);
-}
-
-/**
- * Compare password with hash
- */
-async function comparePassword(password, hash) {
-  return await bcrypt.compare(password, hash);
-}
-
-/**
- * JWT middleware for protecting routes
- */
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (!token) {
-    return res.status(401).json({ 
-      error: 'Access token required',
-      code: 'MISSING_TOKEN'
-    });
-  }
-
-  try {
-    const decoded = verifyToken(token);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(403).json({ 
-      error: 'Invalid or expired token',
-      code: 'INVALID_TOKEN'
-    });
-  }
-}
-
-/**
- * Optional authentication middleware (doesn't fail if no token)
- */
-function optionalAuth(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (token) {
-    try {
-      const decoded = verifyToken(token);
-      req.user = decoded;
-    } catch (error) {
-      // Ignore invalid tokens in optional auth
-    }
-  }
-  
-  next();
-}
-
-module.exports = {
-  generateToken,
-  verifyToken,
-  hashPassword,
-  comparePassword,
-  authenticateToken,
-  optionalAuth,
-  generateRefreshToken,
-  verifyRefreshToken,
-  REFRESH_TOKEN_EXPIRES_IN,
-};
-
-```
-
----
-
-## auth/routes.js
-
-```
-/**
- * Authentication routes
- */
-
-const express = require('express');
-const crypto = require('crypto');
-const { supabase } = require('../db/supabase-client');
-const { generateToken, hashPassword, comparePassword, authenticateToken, generateRefreshToken, verifyRefreshToken, REFRESH_TOKEN_EXPIRES_IN } = require('./jwt');
-const emailService = require('../src/services/emailService');
-const licenseService = require('../services/licenseService');
-const { getOrCreateIdentity } = require('../src/services/identityService');
-const billingService = require('../src/services/billingService');
-
-const router = express.Router();
-
-/**
- * Generate a secure random token for password reset
- */
-function generateResetToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-/**
- * Register new user
- */
-router.post('/register', async (req, res) => {
-  try {
-    const { email, password, service = 'alttext-ai', siteUrl, siteHash, installId } = req.body;
-
-    // Validate input
-    if (!email || !password) {
-      return res.status(400).json({
-        error: 'Email and password are required',
-        code: 'MISSING_FIELDS'
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        error: 'Password must be at least 8 characters',
-        code: 'WEAK_PASSWORD'
-      });
-    }
-
-    // Validate service
-    const validServices = ['alttext-ai', 'seo-ai-meta'];
-    const userService = validServices.includes(service) ? service : 'alttext-ai';
-
-    // Service-specific initial limits
-    const initialLimits = {
-      'alttext-ai': 50,
-      'seo-ai-meta': 10
-    };
-
-    // Check if user already exists
-    const { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email.toLowerCase())
-      .single();
-
-    if (existingUser) {
-      return res.status(409).json({
-        error: 'User already exists with this email',
-        code: 'USER_EXISTS'
-      });
-    }
-
-    // Hash password and create user
-    const passwordHash = await hashPassword(password);
-    
-    // Build insert object - only include columns that exist in Supabase
-    // Supabase schema may not have all columns from Prisma schema
-    const userData = {
-      email: email.toLowerCase(),
-      password_hash: passwordHash,
-      plan: 'free'
-    };
-    
-    // Note: service and tokens_remaining columns don't exist in Supabase
-    // They may need to be added via migration or are handled differently
-    
-    const { data: user, error: createError } = await supabase
-      .from('users')
-      .insert(userData)
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Registration error details:', {
-        code: createError.code,
-        message: createError.message,
-        details: createError.details,
-        hint: createError.hint
-      });
-      throw createError;
-    }
-    
-    if (!user) {
-      throw new Error('User creation returned no data');
-    }
-
-    // Generate JWT token
-    const token = generateToken(user);
-
-    // Create free-tier license
-    let license = null;
-    let licenseSnapshot = null;
-    try {
-      console.log(`📋 Creating free license for user ${user.id}`);
-
-      license = await licenseService.createLicense({
-        plan: 'free',
-        service: userService,
-        userId: user.id,
-        siteUrl: siteUrl || null,
-        siteHash: siteHash || null,
-        installId: installId || null,
-        email: user.email,
-        name: user.email.split('@')[0]
-      });
-
-      // Get license snapshot
-      licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
-
-      console.log(`✅ Free license created: ${license.licenseKey}`);
-    } catch (licenseError) {
-      console.error('Error creating free license (non-critical):', licenseError);
-      // Don't fail registration if license creation fails
-      // User can still use the system
-    }
-
-    // Send welcome email (non-blocking)
-    emailService.sendDashboardWelcome({ email: user.email }).catch(err => {
-      console.error('Failed to send welcome email (non-critical):', err);
-      // Don't fail registration if email fails
-    });
-
-    // Build response with license info if available
-    const response = {
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        plan: user.plan,
-        tokensRemaining: licenseSnapshot?.tokensRemaining || initialLimits[userService] || 50,
-        credits: user.credits || 0,
-        resetDate: user.reset_date || user.resetDate,
-        service: user.service || userService
-      }
-    };
-
-    // Include license in response if created
-    if (licenseSnapshot) {
-      response.license = licenseSnapshot;
-    }
-
-    res.status(201).json(response);
-
-  } catch (error) {
-    console.error('Registration error:', error);
-    console.error('Error details:', {
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      hint: error.hint
-    });
-    res.status(500).json({
-      error: 'Failed to create account',
-      code: 'REGISTRATION_ERROR',
-      message: error.message || 'Unknown error',
-      details: error.details || null
-    });
-  }
-});
-
-/**
- * Login user
- * Supports both password and magic link flows
- * - If password is provided: traditional password login
- * - If only email is provided: send magic link email
- */
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password, redirectUrl } = req.body;
-
-    // Validate input
-    if (!email) {
-      return res.status(400).json({
-        error: 'Email is required',
-        code: 'MISSING_EMAIL'
-      });
-    }
-
-    const emailLower = email.toLowerCase();
-
-    // Magic link flow (no password provided)
-    if (!password) {
-      // Generate magic link token
-      const token = generateResetToken(); // Reuse reset token generator
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-      // Store token in password_reset_tokens table (reuse for magic links)
-      // We'll use a special type or just reuse the table
-      // For now, store it and we'll check in verify endpoint
-      const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', emailLower)
-        .single();
-
-      // Always return success to prevent email enumeration
-      if (user) {
-        // Invalidate any existing unused tokens
-        await supabase
-          .from('password_reset_tokens')
-          .update({ used: true })
-          .eq('userId', user.id)
-          .eq('used', false);
-
-        // Store new token
-        await supabase
-          .from('password_reset_tokens')
-          .insert({
-            userId: user.id,
-            token,
-            expiresAt: expiresAt.toISOString(),
-            used: false
-          });
-
-        // Send magic link email
-        emailService.sendMagicLink({
-          email: emailLower,
-          token,
-          redirectUrl
-        }).catch(err => {
-          console.error('Failed to send magic link email:', err);
-        });
-      }
-
-      return res.json({
-        success: true,
-        message: 'If an account exists with this email, a magic link has been sent.',
-        method: 'magic_link'
-      });
-    }
-
-    // Password login flow
-    // Find user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('email', emailLower)
-      .single();
-
-    if (userError || !user) {
-      return res.status(401).json({
-        error: 'Invalid email or password',
-        code: 'INVALID_CREDENTIALS'
-      });
-    }
-
-    // Verify password
-    const isValidPassword = await comparePassword(password, user.password_hash);
-    if (!isValidPassword) {
-      return res.status(401).json({
-        error: 'Invalid email or password',
-        code: 'INVALID_CREDENTIALS'
-      });
-    }
-
-    // Get or create identity
-    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
-    
-    // Get subscription plan
-    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
-    const plan = subscriptionCheck.plan || 'free';
-
-    // Generate JWT token with identityId
-    const tokenPayload = {
-      id: user.id,
-      identityId: identity?.id || user.id,
-      email: user.email,
-      plan: plan
-    };
-    const token = generateToken(tokenPayload);
-
-    // Generate and store refresh token
-    const refreshToken = generateRefreshToken();
-    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
-
-    if (identity) {
-      await supabase
-        .from('identities')
-        .update({
-          refresh_token: refreshToken,
-          refresh_token_expires_at: refreshExpiresAt.toISOString(),
-          last_seen_at: new Date().toISOString()
-        })
-        .eq('id', identity.id);
-    }
-
-    // Service-specific default limits
-    const defaultLimits = {
-      'alttext-ai': 50,
-      'seo-ai-meta': 10
-    };
-    const userService = user.service || 'alttext-ai';
-
-    res.json({
-      success: true,
-      token,
-      refreshToken,
-      user: {
-        id: user.id,
-        identityId: identity?.id || user.id,
-        email: user.email,
-        plan: plan,
-        tokensRemaining: user.tokens_remaining || user.tokensRemaining || defaultLimits[userService] || 50,
-        credits: user.credits || 0,
-        resetDate: user.reset_date || user.resetDate,
-        service: userService
-      }
-    });
-
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      error: 'Failed to login',
-      code: 'LOGIN_ERROR'
-    });
-  }
-});
-
-/**
- * Verify magic link token
- * POST /auth/verify
- */
-router.post('/verify', async (req, res) => {
-  try {
-    const { email, token, redirectUrl } = req.body;
-
-    // Validate input
-    if (!email || !token) {
-      return res.status(400).json({
-        error: 'Email and token are required',
-        code: 'MISSING_FIELDS'
-      });
-    }
-
-    const emailLower = email.toLowerCase();
-
-    // Find user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', emailLower)
-      .single();
-
-    if (userError || !user) {
-      return res.status(404).json({
-        error: 'Invalid verification token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-
-    // Find valid token
-    const { data: resetToken, error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .select('*')
-      .eq('userId', user.id)
-      .eq('token', token)
-      .eq('used', false)
-      .gt('expiresAt', new Date().toISOString())
-      .single();
-
-    if (tokenError || !resetToken) {
-      return res.status(400).json({
-        error: 'Invalid or expired verification token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-
-    // Mark token as used
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('id', resetToken.id);
-
-    // Get or create identity
-    const identity = await getOrCreateIdentity(emailLower, 'alttext-ai', null);
-    
-    // Get subscription plan
-    const subscriptionCheck = await billingService.checkSubscription(emailLower, 'alttext-ai');
-    const plan = subscriptionCheck.plan || 'free';
-
-    // Generate JWT token with identityId
-    const tokenPayload = {
-      id: user.id,
-      identityId: identity?.id || user.id,
-      email: emailLower,
-      plan: plan
-    };
-    const jwtToken = generateToken(tokenPayload);
-
-    // Generate and store refresh token
-    const refreshToken = generateRefreshToken();
-    const refreshExpiresAt = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)); // 30 days
-
-    if (identity) {
-      await supabase
-        .from('identities')
-        .update({
-          refresh_token: refreshToken,
-          refresh_token_expires_at: refreshExpiresAt.toISOString(),
-          last_seen_at: new Date().toISOString()
-        })
-        .eq('id', identity.id);
-    }
-
-    res.json({
-      success: true,
-      token: jwtToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        identityId: identity?.id || user.id,
-        email: emailLower,
-        plan: plan
-      },
-      redirectUrl: redirectUrl || null
-    });
-
-  } catch (error) {
-    console.error('Verify error:', error);
-    res.status(500).json({
-      error: 'Failed to verify token',
-      code: 'VERIFY_ERROR'
-    });
-  }
-});
-
-/**
- * Get current user info
- * Returns full profile from identities table with subscription and installations
- */
-router.get('/me', authenticateToken, async (req, res) => {
-  try {
-    const email = req.user.email;
-    if (!email) {
-      return res.status(400).json({
-        error: 'Email not found in token',
-        code: 'MISSING_EMAIL'
-      });
-    }
-
-    const emailLower = email.toLowerCase();
-    const identityId = req.user.identityId || req.user.id;
-
-    // Fetch all data in parallel
-    const [identityResult, userResult, subscriptionResult, installationsResult] = await Promise.all([
-      // Get identity
-      supabase
-        .from('identities')
-        .select('*')
-        .eq('id', identityId)
-        .single(),
-      
-      // Get user (legacy support)
-      supabase
-        .from('users')
-        .select('id, email, plan, created_at')
-        .eq('email', emailLower)
-        .single(),
-      
-      // Get subscription
-      billingService.checkSubscription(emailLower, 'alttext-ai'),
-      
-      // Get installations
-      supabase
-        .from('plugin_installations')
-        .select('*')
-        .eq('email', emailLower)
-        .order('last_seen_at', { ascending: false }),
-    ]);
-
-    const identity = identityResult.data;
-    const user = userResult.data;
-    const subscription = subscriptionResult.subscription;
-    const installations = installationsResult.data || [];
-
-    // Build response
-    const response = {
-      success: true,
-      user: {
-        id: user?.id || identityId,
-        identityId: identity?.id || identityId,
-        email: emailLower,
-        plan: subscriptionResult.plan || user?.plan || 'free',
-        subscription: subscription || null,
-        installations: installations,
-        createdAt: identity?.created_at || user?.created_at,
-        lastSeenAt: identity?.last_seen_at,
-      }
-    };
-
-    res.json(response);
-
-  } catch (error) {
-    console.error('Get user error:', error);
-    res.status(500).json({
-      error: 'Failed to get user info',
-      code: 'USER_INFO_ERROR'
-    });
-  }
-});
-
-/**
- * Refresh token (if needed in future)
- */
-router.post('/refresh', authenticateToken, async (req, res) => {
-  try {
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', req.user.id)
-      .single();
-
-    if (userError || !user) {
-      return res.status(404).json({
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    const token = generateToken(user);
-
-    res.json({
-      success: true,
-      token
-    });
-
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    res.status(500).json({
-      error: 'Failed to refresh token',
-      code: 'REFRESH_ERROR'
-    });
-  }
-});
-
-/**
- * Request password reset (forgot password)
- * POST /auth/forgot-password
- */
-router.post('/forgot-password', async (req, res) => {
-  try {
-    const { email, siteUrl } = req.body;
-
-    // Validate input
-    if (!email) {
-      return res.status(400).json({
-        error: 'Email is required',
-        code: 'MISSING_EMAIL'
-      });
-    }
-
-    // Find user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email.toLowerCase())
-      .single();
-
-    // Always return success to prevent email enumeration
-    // We don't want attackers to know if an email exists
-    if (userError || !user) {
-      // Still return success, but don't send email
-      return res.json({
-        success: true,
-        message: 'If an account exists with this email, a password reset link has been sent.'
-      });
-    }
-
-    // Check for recent reset requests (rate limiting - max 3 per hour)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count: recentResets, error: countError } = await supabase
-      .from('password_reset_tokens')
-      .select('*', { count: 'exact', head: true })
-      .eq('userId', user.id)
-      .gte('createdAt', oneHourAgo)
-      .eq('used', false);
-
-    if (countError) {
-      throw countError;
-    }
-
-    if (recentResets >= 3) {
-      return res.status(429).json({
-        error: 'Too many password reset requests. Please wait 1 hour before requesting another reset.',
-        code: 'RATE_LIMIT_EXCEEDED'
-      });
-    }
-
-    // Invalidate any existing unused tokens for this user
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('userId', user.id)
-      .eq('used', false)
-      .gt('expiresAt', new Date().toISOString());
-
-    // Generate reset token
-    const token = generateResetToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
-
-    // Save token to database
-    const { error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .insert({
-        userId: user.id,
-        token,
-        expiresAt: expiresAt.toISOString()
-      });
-
-    if (tokenError) {
-      throw tokenError;
-    }
-
-    // Generate reset URL
-    // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
-    const frontendUrl = siteUrl || process.env.FRONTEND_URL || null;
-    
-    // Construct reset URL that points back to WordPress
-    // WordPress will detect the token/email params and show reset form
-    let resetUrl;
-    if (frontendUrl) {
-      // Ensure URL ends with /wp-admin/upload.php?page=ai-alt-gpt (or similar)
-      const baseUrl = frontendUrl.replace(/\/$/, ''); // Remove trailing slash
-      resetUrl = `${baseUrl}?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
-    } else {
-      // Fallback: just return the token in the response (WordPress can construct URL)
-      resetUrl = `?reset-token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
-    }
-
-    // Send password reset email (non-blocking)
-    try {
-      await emailService.sendPasswordReset({
-        email: email.toLowerCase(),
-        resetUrl,
-      });
-    } catch (emailError) {
-      console.error('Failed to send password reset email:', emailError);
-      // Don't fail the request if email fails - token is still created
-    }
-
-    // For testing/development: include reset link in response
-    // In production with real email, this would be omitted for security
-    const isDevelopment = process.env.NODE_ENV !== 'production' || process.env.DEBUG_EMAIL === 'true';
-    
-    res.json({
-      success: true,
-      message: 'If an account exists with this email, a password reset link has been sent.',
-      // Include reset link in development mode or when DEBUG_EMAIL is enabled
-      // This allows testing without email service configured
-      ...(isDevelopment && {
-        data: {
-          resetLink: resetUrl,
-          note: 'Email service is in development mode. Use this link to reset your password.'
-        }
-      })
-    });
-
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({
-      error: 'Failed to process password reset request',
-      code: 'RESET_REQUEST_ERROR'
-    });
-  }
-});
-
-/**
- * Reset password with token
- * POST /auth/reset-password
- */
-router.post('/reset-password', async (req, res) => {
-  try {
-    // Support both 'newPassword' and 'password' for compatibility
-    const { email, token, newPassword, password } = req.body;
-    const finalPassword = newPassword || password;
-
-    // Validate input
-    if (!email || !token || !finalPassword) {
-      return res.status(400).json({
-        error: 'Email, token, and new password are required',
-        code: 'MISSING_FIELDS'
-      });
-    }
-
-    if (finalPassword.length < 8) {
-      return res.status(400).json({
-        error: 'Password must be at least 8 characters',
-        code: 'WEAK_PASSWORD'
-      });
-    }
-
-    // Find user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email.toLowerCase())
-      .single();
-
-    if (userError || !user) {
-      return res.status(404).json({
-        error: 'Invalid reset token or email',
-        code: 'INVALID_RESET_TOKEN'
-      });
-    }
-
-    // Find valid reset token
-    const { data: resetToken, error: tokenError } = await supabase
-      .from('password_reset_tokens')
-      .select('*')
-      .eq('userId', user.id)
-      .eq('token', token)
-      .eq('used', false)
-      .gt('expiresAt', new Date().toISOString())
-      .single();
-
-    if (tokenError || !resetToken) {
-      return res.status(400).json({
-        error: 'Invalid or expired reset token. Please request a new password reset.',
-        code: 'INVALID_RESET_TOKEN'
-      });
-    }
-
-    // Hash new password
-    const passwordHash = await hashPassword(finalPassword);
-
-    // Update user password
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ password_hash: passwordHash })
-      .eq('id', user.id);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // Mark token as used
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('id', resetToken.id);
-
-    // Invalidate all other reset tokens for this user
-    await supabase
-      .from('password_reset_tokens')
-      .update({ used: true })
-      .eq('userId', user.id)
-      .eq('used', false);
-
-    res.json({
-      success: true,
-      message: 'Password has been reset successfully. You can now login with your new password.'
-    });
-
-  } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({
-      error: 'Failed to reset password',
-      code: 'RESET_PASSWORD_ERROR'
-    });
-  }
-});
-
-module.exports = router;
-
-```
-
----
-
-## config/loadEnv.js
-
-```
-/**
- * Centralized Environment Loading
- * Loads environment variables from .env files based on NODE_ENV
- */
-
-require('dotenv').config();
-
-/**
- * Get environment variable with optional default
- */
-function getEnv(key, defaultValue = null) {
-  return process.env[key] || defaultValue;
-}
-
-/**
- * Require environment variable (throws if missing)
- */
-function requireEnv(key) {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`Required environment variable ${key} is not set`);
-  }
-  return value;
-}
-
-/**
- * Check if running in production
- */
-function isProduction() {
-  return process.env.NODE_ENV === 'production';
-}
-
-/**
- * Check if running in development
- */
-function isDevelopment() {
-  return process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
-}
-
-/**
- * Check if running in test
- */
-function isTest() {
-  return process.env.NODE_ENV === 'test';
-}
-
-module.exports = {
-  getEnv,
-  requireEnv,
-  isProduction,
-  isDevelopment,
-  isTest
-};
-
-
-```
-
----
-
-## db/supabase-client.js
-
-```
-/**
- * Supabase Client Configuration
- * 
- * This file provides a configured Supabase client instance for database operations.
- * Replace all Prisma calls with Supabase client calls using this instance.
- * 
- * Environment Variables Required:
- * - SUPABASE_URL: Your Supabase project URL
- * - SUPABASE_ANON_KEY: Your Supabase anonymous/public key
- * - SUPABASE_SERVICE_ROLE_KEY: Your Supabase service role key (for server-side operations)
- */
-
-require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
-
-// In tests, use the Jest mock and expose the same helpers to keep imports consistent.
-if (process.env.NODE_ENV === 'test') {
-  const mock = require('../tests/mocks/supabase.mock');
-
-  function handleSupabaseError(error, context = '') {
-    if (error) {
-      throw new Error(error.message || `Supabase error ${context}`.trim());
-    }
-  }
-
-  function handleSupabaseResponse({ data, error }, context = '') {
-    if (error) {
-      handleSupabaseError(error, context);
-    }
-    return data;
-  }
-
-  module.exports = {
-    supabase: mock.supabase,
-    handleSupabaseError,
-    handleSupabaseResponse,
-    __queueResponse: mock.__queueResponse,
-    __reset: mock.__reset,
-    __getInsertedData: mock.__getInsertedData,
-    __clearInsertedData: mock.__clearInsertedData
-  };
-} else {
-  // Validate required environment variables
-  if (!process.env.SUPABASE_URL) {
-    throw new Error('SUPABASE_URL environment variable is required');
-  }
-
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
-  }
-
-  // Create Supabase client with service role key for server-side operations
-  // This bypasses Row Level Security (RLS) policies - use with caution
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  );
-
-// Supabase query examples:
-// Find user: supabase.from('users').select('*').eq('id', 1).single()
-// Insert: supabase.from('users').insert({...}).select().single()
-// Update: supabase.from('users').update({...}).eq('id', 1)
-
-  /**
-   * Helper function to handle Supabase errors consistently
-   */
-  function handleSupabaseError(error, context = '') {
-    if (error) {
-      console.error(`Supabase error ${context}:`, error);
-      throw new Error(error.message || 'Database operation failed');
-    }
-  }
-
-  /**
-   * Helper function to convert Supabase response to standard format
-   */
-  function handleSupabaseResponse({ data, error }, context = '') {
-    if (error) {
-      handleSupabaseError(error, context);
-    }
-    return data;
-  }
-
-  module.exports = {
-    supabase,
-    handleSupabaseError,
-    handleSupabaseResponse
-  };
-}
-
-```
-
----
-
-## db/migrations/20250125_email_events.sql
-
-```
--- Email Events Table
--- Tracks all email sends for logging and de-duplication
-
-create table if not exists email_events (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid null,
-  email text not null,
-  plugin_slug text null,
-  event_type text not null,
-  context jsonb default '{}'::jsonb,
-  sent_at timestamptz not null default now(),
-  email_id text null,
-  success boolean not null default true,
-  error_message text null
-);
-
--- Indexes for efficient queries
-create index if not exists email_events_email_event_type_idx
-  on email_events (email, event_type);
-
-create index if not exists email_events_user_event_idx
-  on email_events (user_id, event_type);
-
-create index if not exists email_events_sent_at_idx
-  on email_events (sent_at);
-
--- Index for de-duplication queries (email + event_type + time window)
-create index if not exists email_events_dedup_idx
-  on email_events (email, event_type, sent_at);
-
-
-```
-
----
-
-## db/migrations/20250205_create_plugin_installations.sql
-
-```
--- Plugin Installations Table
--- Tracks plugin installations across all Optti plugins
-
-create table if not exists plugin_installations (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  plugin_slug text not null,
-  site_url text,
-  version text,
-  wp_version text,
-  php_version text,
-  language text,
-  timezone text,
-  install_source text default 'plugin',
-  last_seen_at timestamptz default now(),
-  created_at timestamptz default now(),
-  constraint plugin_installations_email_ck check (email <> '')
-);
-
--- Indexes for efficient queries
-create index if not exists plugin_installations_email_idx
-  on plugin_installations (email);
-
-create index if not exists plugin_installations_plugin_slug_idx
-  on plugin_installations (plugin_slug);
-
-create index if not exists plugin_installations_email_plugin_idx
-  on plugin_installations (email, plugin_slug);
-
-create index if not exists plugin_installations_site_url_idx
-  on plugin_installations (site_url);
-
-create index if not exists plugin_installations_last_seen_at_idx
-  on plugin_installations (last_seen_at);
-
-
-```
-
----
-
-## db/migrations/20250206_create_invoices.sql
-
-```
--- Invoices Table
--- Tracks payment invoices and receipts
-
-create table if not exists invoices (
-  id uuid primary key default gen_random_uuid(),
-  invoice_id text not null,
-  user_email text not null,
-  plugin_slug text,
-  amount integer not null,
-  currency text not null default 'usd',
-  hosted_invoice_url text,
-  pdf_url text,
-  created_at timestamptz default now(),
-  paid_at timestamptz,
-  receipt_email_sent boolean default false
-);
-
--- Indexes for efficient queries
-create index if not exists invoices_invoice_id_idx on invoices (invoice_id);
-create index if not exists invoices_email_idx on invoices (user_email);
-
-
-```
-
----
-
-## db/migrations/20250206_create_subscriptions.sql
-
-```
--- Subscriptions Table
--- Tracks user subscriptions per plugin
-
-create table if not exists subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  user_email text not null,
-  plugin_slug text not null,
-  stripe_customer_id text,
-  stripe_subscription_id text,
-  stripe_price_id text,
-  plan text not null,
-  status text not null default 'active',
-  quantity int default 1,
-  renews_at timestamptz,
-  canceled_at timestamptz,
-  metadata jsonb default '{}'::jsonb,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  constraint subscriptions_email_plugin_unique unique (user_email, plugin_slug)
-);
-
--- Indexes for efficient queries
-create index if not exists subscriptions_email_idx on subscriptions (user_email);
-create index if not exists subscriptions_subscription_idx on subscriptions (stripe_subscription_id);
-create index if not exists subscriptions_plugin_idx on subscriptions (plugin_slug);
-
-
-```
-
----
-
-## db/migrations/20250206_create_views.sql
-
-```
--- Aggregation Views for User Account Dashboard
--- These views prevent constantly running expensive SQL from Node
-
--- View: All installations for a user (normalized email)
-create or replace view vw_user_installations as
-select
-  lower(email) as email,
-  plugin_slug,
-  site_url,
-  version,
-  wp_version,
-  php_version,
-  language,
-  timezone,
-  install_source,
-  last_seen_at,
-  created_at
-from plugin_installations;
-
--- View: Group installations by plugin (overview)
--- Shows: plugin_slug, install_count, last_active, first_seen, sites array
-create or replace view vw_user_plugins_overview as
-select
-  lower(email) as email,
-  plugin_slug,
-  count(*) as install_count,
-  max(last_seen_at) as last_active,
-  min(created_at) as first_seen,
-  array_agg(distinct site_url) filter (where site_url is not null) as sites
-from plugin_installations
-group by lower(email), plugin_slug;
-
--- View: Group installations by site
--- Shows: Which sites is this email active on, and with which plugins?
-create or replace view vw_user_sites_overview as
-select
-  lower(email) as email,
-  site_url,
-  array_agg(distinct plugin_slug) as plugins,
-  max(last_seen_at) as last_seen
-from plugin_installations
-where site_url is not null
-group by lower(email), site_url;
-
-
-```
-
----
-
-## db/migrations/20250207_create_sites_usage_tracking.sql
-
-```
--- Site-Based Usage Tracking Migration
--- Adds quota tracking fields to sites table and creates usage_tracking table
-
--- Ensure sites table exists (it may already exist from previous migrations)
--- Add quota tracking columns if they don't exist
-DO $$ 
-BEGIN
-  -- Add license_key column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'license_key') THEN
-    ALTER TABLE sites ADD COLUMN license_key VARCHAR(64);
-  END IF;
-
-  -- Add plan column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'plan') THEN
-    ALTER TABLE sites ADD COLUMN plan VARCHAR(20) DEFAULT 'free';
-  END IF;
-
-  -- Add token_limit column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'token_limit') THEN
-    ALTER TABLE sites ADD COLUMN token_limit INT DEFAULT 50;
-  END IF;
-
-  -- Add tokens_used column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'tokens_used') THEN
-    ALTER TABLE sites ADD COLUMN tokens_used INT DEFAULT 0;
-  END IF;
-
-  -- Add tokens_remaining column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'tokens_remaining') THEN
-    ALTER TABLE sites ADD COLUMN tokens_remaining INT DEFAULT 50;
-  END IF;
-
-  -- Add reset_date column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'reset_date') THEN
-    ALTER TABLE sites ADD COLUMN reset_date DATE;
-  END IF;
-
-  -- Add created_at column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'created_at') THEN
-    ALTER TABLE sites ADD COLUMN created_at TIMESTAMP DEFAULT NOW();
-  END IF;
-
-  -- Add updated_at column if it doesn't exist
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'sites' AND column_name = 'updated_at') THEN
-    ALTER TABLE sites ADD COLUMN updated_at TIMESTAMP DEFAULT NOW();
-  END IF;
-END $$;
-
--- Create index on site_hash if it doesn't exist (for fast lookups)
-CREATE INDEX IF NOT EXISTS idx_sites_site_hash ON sites(site_hash);
-
--- Create index on license_key if it doesn't exist
-CREATE INDEX IF NOT EXISTS idx_sites_license_key ON sites(license_key);
-
--- Create usage_tracking table for per-site usage logs
-CREATE TABLE IF NOT EXISTS usage_tracking (
-  id BIGSERIAL PRIMARY KEY,
-  site_hash VARCHAR(64) NOT NULL,
-  tokens_used INT DEFAULT 1,
-  generated_at TIMESTAMP DEFAULT NOW(),
-  CONSTRAINT fk_usage_tracking_site_hash 
-    FOREIGN KEY (site_hash) REFERENCES sites(site_hash) ON DELETE CASCADE
-);
-
--- Create indexes on usage_tracking table
-CREATE INDEX IF NOT EXISTS idx_usage_tracking_site_hash ON usage_tracking(site_hash);
-CREATE INDEX IF NOT EXISTS idx_usage_tracking_generated_at ON usage_tracking(generated_at);
-
--- Add comment to document the table
-COMMENT ON TABLE usage_tracking IS 'Tracks usage per site (via site_hash), not per user. All users on the same site share the same quota.';
-
-
-```
-
----
-
-## db/migrations/20250208_create_plugin_identities.sql
-
-```
--- Plugin Identities Table
--- Stores identities tied to installations + user emails
--- Enables JWT versioning, token invalidation, and plugin-based identity separation
-
-create table if not exists plugin_identities (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  plugin_slug text not null,
-  site_url text,
-  jwt_version int default 1,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  constraint plugin_identities_email_ck check (email <> '')
-);
-
--- Indexes for efficient queries
-create index if not exists plugin_identities_email_idx
-  on plugin_identities (email);
-
-create index if not exists plugin_identities_email_plugin_idx
-  on plugin_identities (email, plugin_slug);
-
-
-```
-
----
-
-## db/migrations/20250209_add_identity_id_columns.sql
-
-```
--- Add identity_id columns to all connected tables
--- These are foreign keys, not required but very helpful for linking records to identities
-
-alter table plugin_installations
-add column if not exists identity_id uuid references identities(id);
-
-alter table subscriptions
-add column if not exists identity_id uuid references identities(id);
-
-alter table usage_logs
-add column if not exists identity_id uuid references identities(id);
-
-alter table email_events
-add column if not exists identity_id uuid references identities(id);
-
--- Add indexes for efficient lookups
-create index if not exists plugin_installations_identity_id_idx on plugin_installations (identity_id);
-create index if not exists subscriptions_identity_id_idx on subscriptions (identity_id);
-create index if not exists usage_logs_identity_id_idx on usage_logs (identity_id);
-create index if not exists email_events_identity_id_idx on email_events (identity_id);
-
-
-```
-
----
-
-## db/migrations/20250209_create_identities.sql
-
-```
--- Unified Identities Table
--- Stores unified user identities based on email
--- Links all user data (installations, subscriptions, usage, email events) via identity_id
-
-create table if not exists identities (
-  id uuid primary key default gen_random_uuid(),
-  email text unique not null,
-  created_at timestamptz default now(),
-  last_seen_at timestamptz default now(),
-  constraint identities_email_ck check (email <> '')
-);
-
--- Indexes for efficient queries
-create index if not exists identities_email_idx on identities (email);
-create index if not exists identities_last_seen_idx on identities (last_seen_at);
-
-
-```
-
----
-
-## db/migrations/20250215_create_analytics_events.sql
-
-```
--- Analytics Events Table
--- Stores analytics events for tracking user behavior across the platform
--- Links to identities table via identity_id for unified user tracking
-
-create table if not exists analytics_events (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  identity_id uuid references identities(id),
-  plugin_slug text,
-  event_name text not null,
-  event_data jsonb default '{}'::jsonb,
-  source text default 'plugin',
-  created_at timestamptz default now(),
-  constraint analytics_events_email_ck check (email <> '')
-);
-
--- Indexes for efficient queries
-create index if not exists analytics_events_email_idx on analytics_events (email);
-create index if not exists analytics_events_event_name_idx on analytics_events (event_name);
-create index if not exists analytics_events_created_at_idx on analytics_events (created_at desc);
-create index if not exists analytics_events_plugin_slug_idx on analytics_events (plugin_slug);
-
--- Composite index for summary queries (email, event_name, created_at)
--- This optimizes queries that filter by email and event_name with date range
-create index if not exists analytics_events_email_event_created_idx on analytics_events (email, event_name, created_at desc);
-
-
-```
-
----
-
-## db/migrations/20250216_add_analytics_indexes.sql
-
-```
--- Additional Analytics Indexes
--- Performance optimization for dashboard chart queries
--- Adds composite indexes for time-series aggregation queries
-
--- Composite index for email + created_at queries (for time-series data)
--- Optimizes queries that filter by email and date range
-create index if not exists analytics_events_email_created_at_idx 
-  on analytics_events (email, created_at desc);
-
--- Composite index for plugin_slug + created_at queries (for plugin-specific analytics)
--- Optimizes queries that filter by plugin and date range
-create index if not exists analytics_events_plugin_created_at_idx 
-  on analytics_events (plugin_slug, created_at desc);
-
--- Composite index for email + plugin_slug + created_at (for per-plugin user analytics)
--- Optimizes queries that filter by email, plugin, and date range
-create index if not exists analytics_events_email_plugin_created_idx 
-  on analytics_events (email, plugin_slug, created_at desc);
-
-
-```
-
----
-
-## db/migrations/20250216_add_credits_to_identities.sql
-
-```
--- Add credits_balance column to identities table
--- Tracks current credit balance for each user identity
-
-alter table identities
-add column if not exists credits_balance integer not null default 0;
-
--- Index for efficient balance queries
-create index if not exists identities_credits_balance_idx on identities (credits_balance);
-
-
-```
-
----
-
-## db/migrations/20250216_create_credits_transactions.sql
-
-```
--- Credits Transactions Table
--- Tracks all credit transactions: purchases, spending, and refunds
--- Links to identities table via identity_id
-
-create table if not exists credits_transactions (
-  id uuid primary key default gen_random_uuid(),
-  identity_id uuid not null references identities(id) on delete cascade,
-  transaction_type text not null check (transaction_type in ('purchase', 'spend', 'refund')),
-  amount integer not null,
-  balance_after integer not null,
-  stripe_payment_intent_id text,
-  metadata jsonb default '{}'::jsonb,
-  created_at timestamptz default now(),
-  constraint credits_transactions_amount_ck check (amount > 0),
-  constraint credits_transactions_balance_ck check (balance_after >= 0)
-);
-
--- Indexes for efficient queries
-create index if not exists credits_transactions_identity_id_idx on credits_transactions (identity_id);
-create index if not exists credits_transactions_created_at_idx on credits_transactions (created_at);
-create index if not exists credits_transactions_stripe_payment_intent_id_idx on credits_transactions (stripe_payment_intent_id) where stripe_payment_intent_id is not null;
-create index if not exists credits_transactions_type_idx on credits_transactions (transaction_type);
-
-
-```
-
----
-
-## db/migrations/20250217_add_refresh_tokens.sql
-
-```
--- Add Refresh Token Support to Identities Table
--- Enables JWT refresh token storage for unified authentication
-
--- Add refresh_token column if it doesn't exist
-DO $$ 
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'identities' AND column_name = 'refresh_token') THEN
-    ALTER TABLE identities ADD COLUMN refresh_token TEXT;
-  END IF;
-END $$;
-
--- Add refresh_token_expires_at column if it doesn't exist
-DO $$ 
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                 WHERE table_name = 'identities' AND column_name = 'refresh_token_expires_at') THEN
-    ALTER TABLE identities ADD COLUMN refresh_token_expires_at TIMESTAMPTZ;
-  END IF;
-END $$;
-
--- Create index on refresh_token for fast lookups
-CREATE INDEX IF NOT EXISTS identities_refresh_token_idx ON identities (refresh_token)
-  WHERE refresh_token IS NOT NULL;
-
-
-```
-
----
-
-## db/migrations/20250217_create_partner_api_keys.sql
-
-```
--- Partner API Keys Table
--- Stores API keys for partner/white-label API access
--- Keys are hashed using bcrypt for security
-
-create table if not exists partner_api_keys (
-  id uuid primary key default gen_random_uuid(),
-  key_hash text unique not null,
-  identity_id uuid not null references identities(id) on delete cascade,
-  name text not null,
-  is_active boolean not null default true,
-  rate_limit_per_minute integer not null default 60,
-  created_at timestamptz default now(),
-  last_used_at timestamptz,
-  rotated_from uuid references partner_api_keys(id),
-  metadata jsonb default '{}'::jsonb,
-  constraint partner_api_keys_name_ck check (name <> ''),
-  constraint partner_api_keys_rate_limit_ck check (rate_limit_per_minute > 0)
-);
-
--- Indexes for efficient queries
-create index if not exists partner_api_keys_key_hash_idx on partner_api_keys (key_hash);
-create index if not exists partner_api_keys_identity_id_idx on partner_api_keys (identity_id);
-create index if not exists partner_api_keys_is_active_idx on partner_api_keys (is_active);
-create index if not exists partner_api_keys_last_used_idx on partner_api_keys (last_used_at);
-
-
-```
-
----
-
-## db/migrations/20250217_create_partner_api_usage_logs.sql
-
-```
--- Partner API Usage Logs Table
--- Tracks all API calls made with partner API keys
--- Used for analytics, rate limiting, and auditing
-
-create table if not exists partner_api_usage_logs (
-  id uuid primary key default gen_random_uuid(),
-  api_key_id uuid not null references partner_api_keys(id) on delete cascade,
-  endpoint text not null,
-  status_code integer not null,
-  response_time_ms integer,
-  ip_address text,
-  created_at timestamptz default now(),
-  constraint partner_api_usage_logs_status_code_ck check (status_code >= 100 and status_code < 600)
-);
-
--- Indexes for efficient queries
-create index if not exists partner_api_usage_logs_api_key_id_idx on partner_api_usage_logs (api_key_id);
-create index if not exists partner_api_usage_logs_created_at_idx on partner_api_usage_logs (created_at);
-create index if not exists partner_api_usage_logs_api_key_created_idx on partner_api_usage_logs (api_key_id, created_at);
-
--- Composite index for analytics queries
-create index if not exists partner_api_usage_logs_analytics_idx on partner_api_usage_logs (api_key_id, status_code, created_at);
-
-
-```
-
----
-
-## db/migrations/20250218_create_usage_snapshots.sql
-
-```
--- Usage Snapshots Table
--- Stores daily usage snapshots from plugins for cross-platform sync
--- Tracks plugin versions, usage counts, and settings
-
-create table if not exists usage_snapshots (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  plugin_slug text not null,
-  site_url text,
-  version text,
-  daily_count integer default 0,
-  recent_actions jsonb default '[]'::jsonb,
-  plan text default 'free',
-  settings jsonb default '{}'::jsonb,
-  created_at timestamptz default now(),
-  snapshot_date date default CURRENT_DATE,
-  constraint usage_snapshots_email_ck check (email <> ''),
-  constraint usage_snapshots_plugin_slug_ck check (plugin_slug <> '')
-);
-
--- Indexes for efficient queries
-create index if not exists usage_snapshots_email_idx on usage_snapshots (email);
-create index if not exists usage_snapshots_plugin_slug_idx on usage_snapshots (plugin_slug);
-create index if not exists usage_snapshots_snapshot_date_idx on usage_snapshots (snapshot_date desc);
-create index if not exists usage_snapshots_email_plugin_date_idx on usage_snapshots (email, plugin_slug, snapshot_date);
-
--- Unique constraint: one snapshot per email+plugin+date
-create unique index if not exists usage_snapshots_email_plugin_date_unique 
-  on usage_snapshots (email, plugin_slug, snapshot_date);
-
-
-```
-
----
-
-## db/migrations/20250220_create_daily_usage_summary.sql
-
-```
--- Daily Usage Summary Table
--- Pre-computed daily rollups for instant dashboard loads
--- Updated daily via cron job
-
-create table if not exists daily_usage_summary (
-  id uuid primary key default gen_random_uuid(),
-  identity_id uuid not null references identities(id) on delete cascade,
-  date date not null,
-  credits_purchased integer not null default 0,
-  credits_used integer not null default 0,
-  events_count integer not null default 0,
-  metadata jsonb default '{}'::jsonb,
-  created_at timestamptz default now() not null,
-  updated_at timestamptz default now() not null,
-  constraint daily_usage_summary_identity_date_unique unique (identity_id, date)
-);
-
--- Indexes for efficient queries
-create index if not exists idx_daily_usage_summary_identity_id on daily_usage_summary (identity_id);
-create index if not exists idx_daily_usage_summary_date on daily_usage_summary (date desc);
-create index if not exists idx_daily_usage_summary_identity_date on daily_usage_summary (identity_id, date desc);
-
--- Comments for documentation
-comment on table daily_usage_summary is 'Pre-computed daily rollups from events table for instant dashboard loads';
-comment on column daily_usage_summary.identity_id is 'Foreign key to identities table';
-comment on column daily_usage_summary.date is 'Date of the summary (YYYY-MM-DD)';
-comment on column daily_usage_summary.credits_purchased is 'Total credits purchased on this date';
-comment on column daily_usage_summary.credits_used is 'Total credits used on this date';
-comment on column daily_usage_summary.events_count is 'Total number of events on this date';
-
-
-```
-
----
-
-## db/migrations/20250220_create_unified_events.sql
-
-```
--- Unified Events Table
--- Replaces scattered analytics_events and credits_transactions tables
--- Single source of truth for all platform events: subscriptions, credits, usage analytics, dashboard charts, plugin tracking, etc.
-
-create table if not exists events (
-  id uuid primary key default gen_random_uuid(),
-  identity_id uuid not null references identities(id) on delete cascade,
-  event_type text not null,
-  credits_delta integer default 0,
-  metadata jsonb default '{}'::jsonb,
-  created_at timestamptz default now() not null
-);
-
--- Indexes for efficient queries
--- Identity-based queries (most common)
-create index if not exists idx_events_identity_id on events (identity_id);
-
--- Event type filtering (for analytics)
-create index if not exists idx_events_event_type on events (event_type);
-
--- Time-based queries (for dashboards and timelines)
-create index if not exists idx_events_created_at on events (created_at desc);
-
--- Composite index for ultra-fast dashboard queries
--- Optimizes: WHERE identity_id = X AND event_type = Y AND created_at >= Z
-create index if not exists idx_events_identity_type_created on events (identity_id, event_type, created_at desc);
-
--- Comments for documentation
-comment on table events is 'Unified event system - replaces analytics_events and credits_transactions';
-comment on column events.identity_id is 'Foreign key to identities table - unified user tracking';
-comment on column events.event_type is 'Event type: alttext_generated, credit_used, credit_purchase, signup_submitted, signup_deduped, dashboard_loaded, settings_changed, plugin_activated, etc.';
-comment on column events.credits_delta is 'Credit change: negative for usage, positive for purchases';
-comment on column events.metadata is 'Flexible JSON payload: image count, origin, plugin version, etc.';
-
-
-```
-
----
-
-## db/migrations/20250220_migrate_to_unified_events.sql
-
-```
--- Migrate existing data from credits_transactions and analytics_events to unified events table
--- Preserves historical data while consolidating into single table
--- Old tables remain for historical reference (deprecated)
-
--- Migrate credits_transactions to events
--- Map transaction_type to event_type:
---   'purchase' -> 'credit_purchase'
---   'spend' -> 'credit_used'
---   'refund' -> 'credit_refund'
-insert into events (identity_id, event_type, credits_delta, metadata, created_at)
-select 
-  identity_id,
-  case 
-    when transaction_type = 'purchase' then 'credit_purchase'
-    when transaction_type = 'spend' then 'credit_used'
-    when transaction_type = 'refund' then 'credit_refund'
-    else 'credit_transaction'
-  end as event_type,
-  case
-    when transaction_type = 'purchase' then amount
-    when transaction_type = 'spend' then -amount
-    when transaction_type = 'refund' then amount
-    else 0
-  end as credits_delta,
-  jsonb_build_object(
-    'transaction_type', transaction_type,
-    'balance_after', balance_after,
-    'stripe_payment_intent_id', stripe_payment_intent_id,
-    'original_table', 'credits_transactions',
-    'original_id', id
-  ) || coalesce(metadata, '{}'::jsonb) as metadata,
-  created_at
-from credits_transactions
-where identity_id is not null;
-
--- Migrate analytics_events to events
--- Map event_name to event_type (preserve most event names as-is)
--- Extract identity_id from email lookup or use null if not found
-insert into events (identity_id, event_type, credits_delta, metadata, created_at)
-select 
-  coalesce(
-    (select id from identities where email = analytics_events.email limit 1),
-    null
-  ) as identity_id,
-  event_name as event_type,
-  0 as credits_delta, -- Analytics events don't affect credits
-  jsonb_build_object(
-    'plugin_slug', plugin_slug,
-    'source', source,
-    'original_table', 'analytics_events',
-    'original_id', id,
-    'email', email
-  ) || coalesce(event_data, '{}'::jsonb) as metadata,
-  created_at
-from analytics_events
-where email is not null;
-
--- Add comment to old tables indicating they are deprecated
-comment on table credits_transactions is 'DEPRECATED: Use events table instead. Kept for historical reference.';
-comment on table analytics_events is 'DEPRECATED: Use events table instead. Kept for historical reference.';
-
-
-```
-
----
-
-## migrations/add_licenses_table.sql
-
-```
--- Migration: Add licenses table and usage_logs columns
--- Phase 1 Backend Enhancements
-
--- Create licenses table
-CREATE TABLE IF NOT EXISTS licenses (
-  id SERIAL PRIMARY KEY,
-  "licenseKey" VARCHAR(255) UNIQUE NOT NULL,
-  plan VARCHAR(50) NOT NULL DEFAULT 'free',
-  service VARCHAR(50) NOT NULL DEFAULT 'alttext-ai',
-  "tokenLimit" INTEGER NOT NULL DEFAULT 50,
-  "tokensRemaining" INTEGER NOT NULL DEFAULT 50,
-  "siteUrl" TEXT,
-  "siteHash" VARCHAR(255),
-  "installId" VARCHAR(255),
-  "autoAttachStatus" VARCHAR(50) DEFAULT 'manual',
-  "userId" INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  "organizationId" INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
-  "stripeCustomerId" VARCHAR(255),
-  "stripeSubscriptionId" VARCHAR(255),
-  "licenseEmailSentAt" TIMESTAMP,
-  "emailStatus" VARCHAR(50) DEFAULT 'pending',
-  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- Create index on licenseKey for fast lookups
-CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses("licenseKey");
-CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses("userId");
-CREATE INDEX IF NOT EXISTS idx_licenses_organization_id ON licenses("organizationId");
-CREATE INDEX IF NOT EXISTS idx_licenses_site_hash ON licenses("siteHash");
-
--- Add WordPress user tracking columns to usage_logs
-ALTER TABLE usage_logs 
-  ADD COLUMN IF NOT EXISTS "wp_user_id" INTEGER,
-  ADD COLUMN IF NOT EXISTS "wp_user_name" VARCHAR(255);
-
--- Create index on wp_user_id for auditing
-CREATE INDEX IF NOT EXISTS idx_usage_logs_wp_user_id ON usage_logs("wp_user_id");
-
 
 ```
 
@@ -13936,6 +14813,1551 @@ module.exports = {
 
 ---
 
+## scripts/check-credits.js
+
+```
+/**
+ * Check current credits state in database
+ */
+
+require('dotenv').config();
+const { supabase } = require('../db/supabase-client');
+
+async function checkCredits() {
+  try {
+    console.log('🔍 Checking credits in database...\n');
+
+    // Get all credits records
+    const { data: creditsRecords, error: fetchError } = await supabase
+      .from('credits')
+      .select('id, user_id, used_this_month, monthly_limit');
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch credits: ${fetchError.message}`);
+    }
+
+    if (!creditsRecords || creditsRecords.length === 0) {
+      console.log('ℹ️  No credits records found.');
+      return;
+    }
+
+    console.log(`📊 Found ${creditsRecords.length} credits records:\n`);
+    creditsRecords.forEach((record, index) => {
+      const remaining = (record.monthly_limit || 0) - (record.used_this_month || 0);
+      console.log(`Record ${index + 1}:`);
+      console.log(`   User ID: ${record.user_id}`);
+      console.log(`   Monthly Limit: ${record.monthly_limit || 0}`);
+      console.log(`   Used This Month: ${record.used_this_month || 0}`);
+      console.log(`   Remaining: ${remaining}`);
+      console.log('');
+    });
+
+    // Also check usage_logs count
+    console.log('📋 Checking usage_logs counts:\n');
+    for (const record of creditsRecords) {
+      const { count, error: countError } = await supabase
+        .from('usage_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', record.user_id);
+
+      if (!countError) {
+        console.log(`User ${record.user_id}: ${count || 0} usage log entries`);
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ Error checking credits:', error);
+    process.exit(1);
+  }
+}
+
+checkCredits()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
+
+
+```
+
+---
+
+## scripts/daily-rollup.js
+
+```
+#!/usr/bin/env node
+
+/**
+ * Daily Rollup Script
+ * Summarizes daily usage per identity from events table
+ * Caches output in daily_usage_summary table
+ * Updates credits_balance cache from events rollup
+ * 
+ * Run daily via cron job (e.g., Render cron or similar)
+ * Example cron: 0 2 * * * (runs at 2 AM daily)
+ */
+
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+const { supabase } = require('../db/supabase-client');
+const eventService = require('../src/services/eventService');
+
+/**
+ * Run daily rollup for all identities
+ */
+async function runDailyRollup() {
+  try {
+    console.log('[DailyRollup] Starting daily rollup process...');
+    const startTime = Date.now();
+
+    // Get yesterday's date (rollup for previous day)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const yesterdayEnd = new Date(yesterday);
+    yesterdayEnd.setHours(23, 59, 59, 999);
+
+    const dateStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    console.log(`[DailyRollup] Processing rollup for date: ${dateStr}`);
+
+    // Get all identities that have events
+    const { data: identities, error: identitiesError } = await supabase
+      .from('identities')
+      .select('id, email');
+
+    if (identitiesError) {
+      console.error('[DailyRollup] Error fetching identities:', identitiesError);
+      process.exit(1);
+    }
+
+    if (!identities || identities.length === 0) {
+      console.log('[DailyRollup] No identities found, skipping rollup');
+      process.exit(0);
+    }
+
+    console.log(`[DailyRollup] Processing ${identities.length} identities...`);
+
+    let processed = 0;
+    let errors = 0;
+
+    // Process each identity
+    for (const identity of identities) {
+      try {
+        // Get events for yesterday
+        const { data: events, error: eventsError } = await supabase
+          .from('events')
+          .select('event_type, credits_delta, created_at, metadata')
+          .eq('identity_id', identity.id)
+          .gte('created_at', yesterday.toISOString())
+          .lte('created_at', yesterdayEnd.toISOString());
+
+        if (eventsError) {
+          console.error(`[DailyRollup] Error fetching events for identity ${identity.id}:`, eventsError);
+          errors++;
+          continue;
+        }
+
+        // Aggregate events
+        let creditsPurchased = 0;
+        let creditsUsed = 0;
+        const eventsCount = events?.length || 0;
+
+        (events || []).forEach((event) => {
+          if (event.credits_delta > 0) {
+            creditsPurchased += event.credits_delta;
+          } else if (event.credits_delta < 0) {
+            creditsUsed += Math.abs(event.credits_delta);
+          }
+        });
+
+        // Upsert daily summary
+        const { error: upsertError } = await supabase
+          .from('daily_usage_summary')
+          .upsert({
+            identity_id: identity.id,
+            date: dateStr,
+            credits_purchased: creditsPurchased,
+            credits_used: creditsUsed,
+            events_count: eventsCount,
+            metadata: {
+              last_updated: new Date().toISOString(),
+            },
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'identity_id,date',
+          });
+
+        if (upsertError) {
+          console.error(`[DailyRollup] Error upserting summary for identity ${identity.id}:`, upsertError);
+          errors++;
+          continue;
+        }
+
+        // Update credits_balance cache from events rollup
+        await eventService.updateCreditsBalanceCache(identity.id);
+
+        processed++;
+        if (processed % 100 === 0) {
+          console.log(`[DailyRollup] Processed ${processed}/${identities.length} identities...`);
+        }
+      } catch (err) {
+        console.error(`[DailyRollup] Exception processing identity ${identity.id}:`, err);
+        errors++;
+      }
+    }
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[DailyRollup] Completed in ${duration}s. Processed: ${processed}, Errors: ${errors}`);
+
+    if (errors > 0) {
+      console.warn(`[DailyRollup] Completed with ${errors} errors`);
+      process.exit(1);
+    }
+
+    process.exit(0);
+  } catch (error) {
+    console.error('[DailyRollup] Fatal error:', error);
+    process.exit(1);
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  runDailyRollup();
+}
+
+module.exports = { runDailyRollup };
+
+
+```
+
+---
+
+## scripts/reset-all-credits.js
+
+```
+/**
+ * Reset all users' credits to 0
+ * This script sets used_this_month to 0 for all records in the credits table
+ */
+
+require('dotenv').config();
+const { supabase } = require('../db/supabase-client');
+
+async function resetAllCredits() {
+  try {
+    console.log('🔄 Starting credit reset for all users...');
+
+    // Get all credits records
+    const { data: creditsRecords, error: fetchError } = await supabase
+      .from('credits')
+      .select('id, user_id, used_this_month, monthly_limit');
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch credits: ${fetchError.message}`);
+    }
+
+    if (!creditsRecords || creditsRecords.length === 0) {
+      console.log('ℹ️  No credits records found. Nothing to reset.');
+      return;
+    }
+
+    console.log(`📊 Found ${creditsRecords.length} credits records`);
+
+    // Reset all used_this_month to 0
+    // Update all records by updating each one individually (Supabase doesn't support update all without a filter)
+    let updatedCount = 0;
+    for (const record of creditsRecords) {
+      const { error: updateError } = await supabase
+        .from('credits')
+        .update({ used_this_month: 0 })
+        .eq('id', record.id);
+
+      if (updateError) {
+        console.error(`Failed to update record ${record.id}:`, updateError.message);
+        continue;
+      }
+      updatedCount++;
+    }
+
+    console.log(`✅ Successfully reset credits for ${updatedCount} out of ${creditsRecords.length} users`);
+    console.log('📋 Summary:');
+    console.log(`   - Total records: ${creditsRecords.length}`);
+    console.log(`   - All used_this_month values set to 0`);
+
+    // Verify the update
+    const { data: verifyRecords, error: verifyError } = await supabase
+      .from('credits')
+      .select('id, user_id, used_this_month')
+      .limit(5);
+
+    if (!verifyError && verifyRecords) {
+      console.log('\n🔍 Verification (first 5 records):');
+      verifyRecords.forEach(record => {
+        console.log(`   - User ${record.user_id}: used_this_month = ${record.used_this_month}`);
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error resetting credits:', error);
+    process.exit(1);
+  }
+}
+
+// Run the script
+resetAllCredits()
+  .then(() => {
+    console.log('\n✨ Credit reset completed successfully!');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
+
+
+```
+
+---
+
+## scripts/reset-usage-logs.js
+
+```
+/**
+ * Reset usage_logs for current month
+ * This will clear all usage_logs entries to match the credit reset
+ */
+
+require('dotenv').config();
+const { supabase } = require('../db/supabase-client');
+
+async function resetUsageLogs() {
+  try {
+    console.log('🔄 Starting usage_logs reset...\n');
+
+    // Get current month start date
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    
+    console.log(`📅 Resetting usage_logs from ${monthStart} onwards\n`);
+
+    // Get count of entries to delete
+    const { count, error: countError } = await supabase
+      .from('usage_logs')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', monthStart);
+
+    if (countError) {
+      throw new Error(`Failed to count usage_logs: ${countError.message}`);
+    }
+
+    console.log(`📊 Found ${count || 0} usage_logs entries from this month`);
+
+    if (count === 0) {
+      console.log('ℹ️  No usage_logs entries to delete.');
+      return;
+    }
+
+    // Delete all usage_logs from this month
+    // Note: Supabase doesn't support delete without a filter, so we'll delete by date range
+    const { data: deletedData, error: deleteError } = await supabase
+      .from('usage_logs')
+      .delete()
+      .gte('created_at', monthStart);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete usage_logs: ${deleteError.message}`);
+    }
+
+    console.log(`✅ Successfully deleted ${count} usage_logs entries from this month`);
+
+    // Verify
+    const { count: verifyCount, error: verifyError } = await supabase
+      .from('usage_logs')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', monthStart);
+
+    if (!verifyError) {
+      console.log(`🔍 Verification: ${verifyCount || 0} entries remaining from this month`);
+    }
+
+  } catch (error) {
+    console.error('❌ Error resetting usage_logs:', error);
+    process.exit(1);
+  }
+}
+
+resetUsageLogs()
+  .then(() => {
+    console.log('\n✨ Usage logs reset completed successfully!');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
+  });
+
+
+```
+
+---
+
+## server-v2.js
+
+```
+/**
+ * AltText AI - Phase 2 API Server
+ * Full SaaS backend with user accounts, JWT auth, and Stripe billing
+ */
+
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const axios = require('axios');
+const { supabase } = require('./db/supabase-client');
+const { authenticateToken, optionalAuth } = require('./auth/jwt');
+const { combinedAuth } = require('./src/middleware/dual-auth');
+const checkSubscription = require('./src/middleware/checkSubscription');
+const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
+const authRoutes = require('./auth/routes');
+const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
+const siteService = require('./src/services/siteService');
+const billingRoutes = require('./src/routes/billing'); // New billing routes using billingService
+const legacyBillingRoutes = require('./routes/billing'); // Legacy routes for backward compatibility
+const licensesRoutes = require('./routes/licenses');
+const licenseRoutes = require('./routes/license');
+const organizationRoutes = require('./routes/organization');
+const emailRoutes = require('./routes/email'); // Legacy routes
+const newEmailRoutes = require('./src/routes/email'); // New email routes
+const emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
+const waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
+const accountRoutes = require('./src/routes/account'); // Account routes
+const dashboardRoutes = require('./src/routes/dashboard'); // Dashboard routes
+const dashboardChartsRoutes = require('./src/routes/dashboardCharts'); // Dashboard charts routes
+const pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
+const identityRoutes = require('./src/routes/identity'); // Identity routes
+const analyticsRoutes = require('./src/routes/analytics'); // Analytics routes
+const billingService = require('./src/services/billingService'); // Billing service for quota enforcement
+const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
+const plansConfig = require('./src/config/plans'); // Plan configuration
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
+app.use(helmet());
+
+// CORS configuration
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_DASHBOARD_URL,
+  'https://oppti.dev',
+  'https://app.optti.dev',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173', // Vite default
+  'http://localhost:5174', // Vite alternate
+].filter(Boolean); // Remove undefined values
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // In development, allow all origins for easier testing
+      if (process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+}));
+
+// Stripe webhook needs raw body - must come before express.json()
+app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route
+app.use('/credits/webhook', express.raw({ type: 'application/json' })); // Credits webhook route
+
+// JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
+app.use(express.json({ limit: '2mb' }));
+
+// Request ID middleware (add early for tracing)
+const { requestIdMiddleware } = require('./src/middleware/requestId');
+app.use(requestIdMiddleware);
+
+// Initialize Sentry if available
+let Sentry = null;
+try {
+  if (process.env.SENTRY_DSN) {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    });
+    console.log('✅ Sentry initialized for error tracking');
+  }
+} catch (error) {
+  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
+}
+
+// Health check - MUST be before rate limiting to avoid 429 errors on health checks
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    phase: 'monetization',
+  };
+
+  // Check database connectivity
+  try {
+    const { error: dbError } = await supabase.from('identities').select('id').limit(1);
+    health.database = dbError ? { status: 'error', error: dbError.message } : { status: 'ok' };
+  } catch (error) {
+    health.database = { status: 'error', error: error.message };
+  }
+
+  // Check Stripe connectivity (if configured)
+  const { getStripe } = require('./src/utils/stripeClient');
+  const stripe = getStripe();
+  if (stripe) {
+    try {
+      await stripe.customers.list({ limit: 1 });
+      health.stripe = { status: 'ok' };
+    } catch (error) {
+      health.stripe = { status: 'error', error: error.message };
+    }
+  } else {
+    health.stripe = { status: 'not_configured' };
+  }
+
+  const overallStatus = health.database?.status === 'ok' ? 'ok' : 'degraded';
+  res.status(overallStatus === 'ok' ? 200 : 503).json(health);
+});
+
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    const os = require('os');
+    const metrics = {
+      timestamp: new Date().toISOString(),
+      memory: {
+        used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024), // MB
+        total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024), // MB
+        system: Math.round((os.totalmem() - os.freemem()) / 1024 / 1024), // MB
+      },
+      uptime: Math.round(process.uptime()), // seconds
+      nodeVersion: process.version,
+      platform: process.platform,
+    };
+
+    res.json(metrics);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to collect metrics',
+      message: error.message,
+    });
+  }
+});
+
+// Rate limiting - use enhanced rate limiter factory
+const { rateLimitByIp, strictRateLimit } = require('./src/middleware/rateLimiter');
+
+// General API rate limiting
+app.use('/api/', rateLimitByIp(15 * 60 * 1000, 100));
+
+// Routes
+// Backward compatibility routes (registered first at root level)
+app.use('/', emailCompatibilityRoutes);
+app.use('/auth', authRoutes);
+app.use('/usage', usageRoutes);
+app.use('/billing', billingRoutes); // New billing routes (create-checkout, create-portal, subscriptions)
+app.use('/billing', legacyBillingRoutes); // Legacy billing routes (for backward compatibility)
+// Stripe webhook route
+const { webhookMiddleware, webhookHandler } = require('./src/stripe/webhooks');
+app.post('/stripe/webhook', webhookMiddleware, webhookHandler);
+app.use('/api/licenses', licensesRoutes);
+app.use('/api/license', licenseRoutes);
+app.use('/api/organization', authenticateToken, organizationRoutes);
+app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
+app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
+app.use('/waitlist', waitlistRoutes); // Waitlist routes
+app.use('/account', accountRoutes); // Account routes
+app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
+app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usage/daily, /dashboard/usage/monthly, etc.)
+app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
+app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
+app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
+app.use('/events', require('./src/routes/events')); // Unified events routes (/events/log)
+app.use('/partner', require('./src/routes/partner')); // Partner API routes
+// Credits webhook route (no auth required - called by Stripe)
+app.use('/credits', require('./src/routes/credits')); // Credits routes (includes webhook without auth, other routes use authenticateToken)
+
+// Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
+app.post('/api/generate', combinedAuth, checkSubscription, async (req, res) => {
+  const requestStartTime = Date.now();
+  console.log(`[Generate] Request received at ${new Date().toISOString()}`);
+  
+  try {
+    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body;
+    console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
+
+    // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
+    // X-WP-User-ID is only for analytics, not for quota tracking
+    const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+    
+    if (!siteHash) {
+      return res.status(400).json({
+        error: 'X-Site-Hash header is required for quota tracking',
+        code: 'MISSING_SITE_HASH'
+      });
+    }
+
+    // Extract WordPress user info from headers (for analytics only, NOT for quota)
+    const wpUserId = req.headers['x-wp-user-id'] ? parseInt(req.headers['x-wp-user-id']) : null;
+    const wpUserName = req.headers['x-wp-user-name'] || null;
+
+    // Determine userId based on auth method (for analytics/logging only)
+    const userId = req.user?.id || null;
+
+    // Log for debugging
+    console.log(`[Generate] Site Hash: ${siteHash}, User ID: ${userId}, Auth Method: ${req.authMethod}`);
+    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, WP User ID: ${wpUserId || 'N/A'}`);
+
+    // Select API key based on service
+    const apiKey = getServiceApiKey(service);
+
+    console.log(`[Generate] API Key check - ${service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'}: ${process.env[service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'] ? 'SET' : 'NOT SET'}`);
+    console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
+
+    // Validate API key is configured
+    if (!apiKey) {
+      console.error(`Missing OpenAI API key for service: ${service}`);
+      return res.status(500).json({
+        error: 'Failed to generate content',
+        code: 'GENERATION_ERROR',
+        message: `Missing OpenAI API key for service: ${service}`
+      });
+    }
+    
+    // Check if user should use credits for this request
+    // Note: Subscription/credits check is handled by checkSubscription middleware
+    // The middleware sets req.useCredit = true and req.creditIdentityId if credits should be used
+    const usingCredits = req.useCredit === true;
+    let creditsBalance = 0;
+    
+    // Get current credit balance if using credits (for response)
+    if (usingCredits && req.creditIdentityId) {
+      const balanceResult = await creditsService.getBalance(req.creditIdentityId);
+      if (balanceResult.success) {
+        creditsBalance = balanceResult.balance;
+      }
+    }
+    
+    // Check quota by site_hash (CRITICAL: Track by site, not by user)
+    // This is a secondary check for site-based quota (for non-authenticated requests)
+    const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
+    
+    // Get or create site
+    await siteService.getOrCreateSite(siteHash, siteUrl);
+    
+    // Check site quota (only if user is not authenticated, or as a fallback)
+    const quotaCheck = await siteService.checkSiteQuota(siteHash);
+    
+    if (!quotaCheck.hasQuota) {
+      console.log(`[Generate] Quota exceeded for site ${siteHash}: ${quotaCheck.used}/${quotaCheck.limit}`);
+      return res.status(429).json({
+        ok: false,
+        error: 'quota_exceeded',
+        usage: {
+          used: quotaCheck.used,
+          limit: quotaCheck.limit,
+          plan: quotaCheck.plan,
+          resetDate: quotaCheck.resetDate || getNextResetDate(),
+        },
+      });
+    }
+    
+    // Get site usage for response
+    const siteUsage = await siteService.getSiteUsage(siteHash);
+    
+    // Prepare limits object for compatibility with existing code
+    const limits = {
+      hasAccess: true,
+      hasTokens: true,
+      hasCredits: false,
+      plan: siteUsage.plan,
+      credits: siteUsage.remaining,
+      tokensRemaining: siteUsage.remaining
+    };
+    
+    // Handle meta generation differently from alt text
+    if (type === 'meta' || (service === 'seo-ai-meta' && !image_data)) {
+      // Meta tag generation - use the context directly as the prompt
+      const systemMessage = {
+        role: 'system',
+        content: 'You are an expert SEO copywriter specializing in meta tag optimization. Always respond with valid JSON only.'
+      };
+
+      const userMessage = {
+        role: 'user',
+        content: context || ''
+      };
+
+      let openaiResponse;
+      try {
+        openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
+          apiKey,
+          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          max_tokens: 300,
+          temperature: 0.7
+        });
+      } catch (error) {
+        console.error('Meta generation error:', error.response?.data || error.message);
+        throw error;
+      }
+
+      // Validate OpenAI response structure for meta generation
+      if (!openaiResponse?.choices?.[0]?.message?.content) {
+        console.error('[Generate] Invalid OpenAI response structure for meta generation:', {
+          hasResponse: !!openaiResponse,
+          hasChoices: !!openaiResponse?.choices,
+          choicesLength: openaiResponse?.choices?.length,
+          hasMessage: !!openaiResponse?.choices?.[0]?.message,
+          hasContent: !!openaiResponse?.choices?.[0]?.message?.content
+        });
+        return res.status(500).json({
+          error: 'Invalid response from AI service',
+          code: 'INVALID_AI_RESPONSE',
+          message: 'The AI service returned an unexpected response format'
+        });
+      }
+
+      const content = openaiResponse.choices[0].message.content.trim();
+
+      // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
+      let remainingCredits = creditsBalance;
+      if (req.useCredit === true && req.creditIdentityId) {
+        const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
+          service,
+          type: 'meta',
+          site_hash: siteHash,
+        });
+        
+        if (spendResult.success) {
+          remainingCredits = spendResult.remainingBalance;
+          console.log(`[Generate] Deducted 1 credit for meta generation. Remaining: ${remainingCredits}`);
+        } else {
+          console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+          // Continue anyway - generation succeeded, just log the error
+        }
+      } else {
+        // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+        // Do NOT deduct per user - all users on the same site share the quota
+        await siteService.deductSiteQuota(siteHash, 1);
+      }
+      
+      // Get updated usage after deduction (only if not using credits)
+      const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
+      
+      const planLimits = { free: 10, pro: 100, agency: 1000 }; // SEO AI Meta limits
+      const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 10) : null;
+      const remaining = updatedUsage ? updatedUsage.remaining : null;
+      const used = updatedUsage ? updatedUsage.used : 0;
+
+      // Return the raw content (JSON string) for meta generation
+      return res.json({
+        success: true,
+        alt_text: content, // Reusing alt_text field for backward compatibility
+        content: content,  // Also include as content
+        usage: {
+          used: used || 0,
+          limit: limit || Infinity,
+          remaining: usingCredits ? null : remaining,
+          plan: limits.plan,
+          credits: remainingCredits,
+          usingCredits: usingCredits,
+          resetDate: getNextResetDate()
+        },
+        tokens: openaiResponse.usage
+      });
+    }
+
+    // Original alt text generation logic
+    // Build OpenAI prompt and multimodal payload
+    const prompt = buildPrompt(image_data, context, regenerate);
+    const userMessage = buildUserMessage(prompt, image_data);
+    
+    // Call OpenAI API
+    const systemMessage = {
+      role: 'system',
+      content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
+    };
+
+    let openaiResponse;
+    try {
+      console.log(`[Generate] Calling OpenAI API for image_id: ${image_data?.image_id || 'unknown'}`);
+      const startTime = Date.now();
+      openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
+        apiKey
+      });
+      const duration = Date.now() - startTime;
+      console.log(`[Generate] OpenAI API call completed in ${duration}ms`);
+    } catch (error) {
+      console.error(`[Generate] OpenAI API call failed:`, {
+        message: error.message,
+        code: error.code,
+        status: error.response?.status
+      });
+      
+      if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
+        console.warn('Image fetch failed, retrying without image input...');
+        const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+        try {
+          openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
+            apiKey
+          });
+        } catch (fallbackError) {
+          console.error('[Generate] Fallback request also failed:', fallbackError.message);
+          throw fallbackError;
+        }
+      } else {
+        throw error;
+      }
+    }
+    
+    // Validate OpenAI response structure
+    if (!openaiResponse?.choices?.[0]?.message?.content) {
+      console.error('[Generate] Invalid OpenAI response structure:', {
+        hasResponse: !!openaiResponse,
+        hasChoices: !!openaiResponse?.choices,
+        choicesLength: openaiResponse?.choices?.length,
+        hasMessage: !!openaiResponse?.choices?.[0]?.message,
+        hasContent: !!openaiResponse?.choices?.[0]?.message?.content,
+        response: JSON.stringify(openaiResponse, null, 2)
+      });
+      return res.status(500).json({
+        error: 'Invalid response from AI service',
+        code: 'INVALID_AI_RESPONSE',
+        message: 'The AI service returned an unexpected response format'
+      });
+    }
+    
+    const altText = openaiResponse.choices[0].message.content.trim();
+
+    // Deduct credits if using credits (flag set by middleware), otherwise deduct from site quota
+    let remainingCredits = creditsBalance;
+    if (req.useCredit === true && req.creditIdentityId) {
+      const spendResult = await creditsService.spendCredits(req.creditIdentityId, 1, {
+        image_id: image_data?.image_id || null,
+        service,
+        site_hash: siteHash,
+        type: 'alt-text',
+      });
+      
+      if (spendResult.success) {
+        remainingCredits = spendResult.remainingBalance;
+        console.log(`[Generate] Deducted 1 credit. Remaining: ${remainingCredits}`);
+      } else {
+        console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+        // Continue anyway - generation succeeded, just log the error
+      }
+    } else {
+      // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
+      // Do NOT deduct per user - all users on the same site share the quota
+      await siteService.deductSiteQuota(siteHash, 1);
+    }
+    
+    // Get updated usage after deduction (only if not using credits)
+    const updatedUsage = usingCredits ? null : await siteService.getSiteUsage(siteHash);
+    
+    const planLimits = { free: 50, pro: 1000, agency: 10000 };
+    const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 50) : null;
+    const remaining = updatedUsage ? updatedUsage.remaining : null;
+    const used = updatedUsage ? updatedUsage.used : null;
+    
+    // Return response with usage data
+    res.json({
+      success: true,
+      alt_text: altText,
+      usage: {
+        used: used || 0,
+        limit: limit || Infinity,
+        remaining: usingCredits ? null : remaining,
+        plan: limits.plan,
+        credits: remainingCredits,
+        usingCredits: usingCredits,
+        resetDate: getNextResetDate()
+      },
+      tokens: openaiResponse.usage
+    });
+    
+  } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
+    const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body || {};
+    
+    console.error(`[Generate] Request failed after ${requestDuration}ms:`, {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      service: service,
+      stack: error.stack?.split('\n').slice(0, 5).join('\n')
+    });
+    
+    // Handle rate limiting
+    if (error.response?.status === 429) {
+      return res.status(429).json({
+        error: 'OpenAI rate limit reached. Please try again later.',
+        code: 'OPENAI_RATE_LIMIT'
+      });
+    }
+    
+    // Handle timeout errors
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      console.error('[Generate] Request timed out - OpenAI API took too long to respond');
+      return res.status(504).json({
+        error: 'Request timeout',
+        code: 'TIMEOUT',
+        message: 'The image generation is taking longer than expected. Please try again.'
+      });
+    }
+
+    // Extract error message from OpenAI response
+    const openaiError = error.response?.data?.error;
+    const openaiMessage = openaiError?.message || '';
+    const openaiType = openaiError?.type || '';
+    const openaiCode = openaiError?.code || '';
+    
+    // Check for API key errors specifically
+    const isApiKeyError = openaiMessage?.toLowerCase().includes('incorrect api key') ||
+                         openaiMessage?.toLowerCase().includes('invalid api key') ||
+                         openaiMessage?.toLowerCase().includes('api key provided') ||
+                         openaiType === 'invalid_request_error' && openaiCode === 'invalid_api_key';
+    
+    // Determine error message
+    let errorMessage;
+    let errorCode = 'GENERATION_ERROR';
+    
+    if (isApiKeyError) {
+      // API key is invalid - this is a backend configuration issue
+      errorMessage = 'The backend service has an invalid or expired OpenAI API key configured. Please contact support to update the API key.';
+      errorCode = 'INVALID_API_KEY';
+      // Get API key from closure or environment for logging
+      const currentApiKey = (() => {
+        try {
+          // Try to get from the service-specific logic
+          if (service === 'seo-ai-meta') {
+            return process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+          }
+          return process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+        } catch {
+          return null;
+        }
+      })();
+      
+      console.error('OpenAI API key error - backend configuration issue:', {
+        hasKey: !!currentApiKey,
+        keyPrefix: currentApiKey ? currentApiKey.substring(0, 7) + '...' : 'missing',
+        envVars: {
+          ALTTEXT_OPENAI_API_KEY: !!process.env.ALTTEXT_OPENAI_API_KEY,
+          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+          SEO_META_OPENAI_API_KEY: !!process.env.SEO_META_OPENAI_API_KEY
+        },
+        service: service || 'unknown'
+      });
+    } else if (openaiMessage) {
+      // Use OpenAI's error message
+      errorMessage = openaiMessage;
+    } else {
+      // Fallback to generic message
+      errorMessage = error.response?.data?.error || error.message || 'Failed to generate alt text';
+    }
+
+    res.status(500).json({
+      error: 'Failed to generate alt text',
+      code: errorCode,
+      message: errorMessage
+    });
+  }
+});
+
+// Review existing alt text for accuracy
+app.post('/api/review', authenticateToken, async (req, res) => {
+  try {
+    const { alt_text, image_data, context, service = 'alttext-ai' } = req.body;
+
+    if (!alt_text || typeof alt_text !== 'string') {
+      return res.status(400).json({
+        error: 'Alt text is required',
+        code: 'MISSING_ALT_TEXT'
+      });
+    }
+
+    // Select API key based on service
+    const apiKey = getReviewApiKey(service);
+
+    const review = await reviewAltText(alt_text, image_data, context, apiKey);
+
+    res.json({
+      success: true,
+      review,
+      tokens: review?.usage
+    });
+  } catch (error) {
+    console.error('Review error:', error.response?.data || error.message);
+    res.status(500).json({
+      error: 'Failed to review alt text',
+      code: 'REVIEW_ERROR',
+      message: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+// Backward compatibility endpoint for Phase 1 domains (temporary)
+app.post('/api/generate-legacy', optionalAuth, async (req, res) => {
+  try {
+    const { domain, image_data, context, regenerate = false } = req.body;
+    
+    if (!domain) {
+      return res.status(400).json({ 
+        error: 'Domain is required for legacy endpoint',
+        code: 'MISSING_DOMAIN'
+      });
+    }
+    
+    // For now, redirect to new auth-required endpoint
+    return res.status(410).json({
+      error: 'Legacy domain-based authentication is deprecated. Please create an account.',
+      code: 'LEGACY_DEPRECATED',
+      upgradeUrl: '/auth/register'
+    });
+    
+  } catch (error) {
+    console.error('Legacy generate error:', error);
+    res.status(500).json({
+      error: 'Legacy endpoint error',
+      code: 'LEGACY_ERROR'
+    });
+  }
+});
+
+// Monthly reset webhook (protected by secret)
+app.post('/api/webhook/reset', async (req, res) => {
+  try {
+    const { secret } = req.body;
+    
+    if (secret !== process.env.WEBHOOK_SECRET) {
+      return res.status(403).json({ error: 'Invalid secret' });
+    }
+    
+    const resetCount = await resetMonthlyTokens();
+    
+    res.json({
+      success: true,
+      message: 'Monthly tokens reset completed',
+      usersReset: resetCount
+    });
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.status(500).json({ error: 'Reset failed' });
+  }
+});
+
+// Helper functions (reused from Phase 1)
+function buildPrompt(imageData, context, regenerate = false) {
+  const lines = [
+    'Write accurate alternative text for the provided image.',
+    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
+    'If the image is a logo or icon, state the text or shape that appears.'
+  ];
+
+  if (regenerate) {
+    lines.push('This is a regeneration request - provide a fresh, alternative description using different wording while maintaining accuracy.');
+    lines.push('Use varied vocabulary and sentence structure to create a new but equally descriptive alt text.');
+  }
+
+  const contextLines = [];
+
+  if (imageData?.title) {
+    contextLines.push(`Media library title: ${imageData.title}`);
+  }
+  if (imageData?.caption) {
+    contextLines.push(`Attachment caption: ${imageData.caption}`);
+  }
+  if (context?.post_title) {
+    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
+  }
+  if (context?.filename || imageData?.filename) {
+    const filename = context?.filename || imageData?.filename;
+    contextLines.push(`Filename: ${filename}`);
+  }
+  if (imageData?.width && imageData?.height) {
+    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
+  }
+
+  if (contextLines.length > 0) {
+    lines.push('\nAdditional context:');
+    lines.push(...contextLines);
+  }
+
+  lines.push('\nReturn just the alt text.');
+  return lines.join('\n');
+}
+
+function buildUserMessage(prompt, imageData, options = {}) {
+  const allowImage = !options.forceTextOnly;
+  
+  // Use detail: high for better AI analysis and more accurate descriptions
+  // This uses more tokens (~170 vs 85) but provides much better quality
+  const imageUrlConfig = { detail: 'high' };
+
+  // Check for base64-encoded image (from frontend for localhost URLs)
+  // Support both 'base64' and 'image_base64' field names for compatibility
+  const base64Data = imageData?.base64 || imageData?.image_base64;
+  if (allowImage && base64Data && imageData?.mime_type) {
+    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: dataUrl, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  // Check for inline data URL
+  if (allowImage && imageData?.inline?.data_url) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.inline.data_url, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  // Check for public URL
+  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
+  if (hasUsableUrl) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.url, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  return {
+    role: 'user',
+    content: prompt
+  };
+}
+
+function getNextResetDate() {
+  const now = new Date();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return nextMonth.toISOString().split('T')[0];
+}
+
+function isLikelyPublicUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+
+    const privatePatterns = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[0-1])\./,
+      /^192\.168\./,
+      /\.local$/,
+      /\.test$/,
+      /\.internal$/
+    ];
+
+    if (privatePatterns.some(pattern => pattern.test(hostname))) {
+      return false;
+    }
+
+    if (protocol === 'http:') {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function requestChatCompletion(messages, overrides = {}) {
+  const {
+    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    max_tokens = 100,
+    temperature = 0.2,
+    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
+  } = overrides;
+
+  if (!apiKey) {
+    throw new Error('Missing OpenAI API key');
+  }
+
+  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
+  console.log(`[OpenAI] Messages count: ${messages.length}`);
+  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model,
+        messages,
+        max_tokens,
+        temperature
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 75000 // 75 second timeout for OpenAI API calls (frontend waits 90s)
+      }
+    );
+    
+    console.log(`[OpenAI] Request successful, received response`);
+    const payload = response && response.data ? response.data : response || {};
+    return {
+      choices: payload?.choices || [],
+      usage: payload?.usage || null
+    };
+  } catch (error) {
+    console.error('[OpenAI] Request failed:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
+    throw error;
+  }
+}
+
+function shouldDisableImageInput(error) {
+  const status = error?.response?.status;
+  if (!status || status >= 500) {
+    return false;
+  }
+
+  const message = error?.response?.data?.error?.message || '';
+  return (
+    status === 400 ||
+    status === 422 ||
+    /image_url/i.test(message) ||
+    /fetch/i.test(message) ||
+    /unable to load image/i.test(message)
+  );
+}
+
+function messageHasImage(message) {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  if (Array.isArray(message.content)) {
+    return message.content.some(part => part?.type === 'image_url');
+  }
+  return false;
+}
+
+async function reviewAltText(altText, imageData, context, apiKey = null) {
+  if (!altText || typeof altText !== 'string') {
+    return null;
+  }
+
+  const hasInline = Boolean(imageData?.inline?.data_url);
+  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
+
+  if (!hasInline && !hasPublicUrl) {
+    return null;
+  }
+
+    // Use provided API key or get review API key for the service
+    const service = imageData?.service || 'alttext-ai';
+    const effectiveApiKey = apiKey || getReviewApiKey(service);
+
+  const systemMessage = {
+    role: 'system',
+    content: 'You are an accessibility QA reviewer. When given an image and a candidate alternative text, you evaluate how well the text represents the image content. Respond strictly with a JSON object containing the fields: score (integer 0-100), status (one of: great, good, review, critical), grade (short human-readable label), summary (<=120 characters), and issues (array of short issue strings). Penalize hallucinations, missing key subjects, incorrect genders, colors, text, or context. Score 0 for placeholder or irrelevant descriptions.'
+  };
+
+  const prompt = buildReviewPrompt(altText, imageData, context);
+  const userMessage = buildUserMessage(prompt, imageData);
+
+  let response;
+  try {
+    response = await requestChatCompletion([
+      systemMessage,
+      userMessage
+    ], {
+      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      max_tokens: 220,
+      temperature: 0,
+      apiKey: effectiveApiKey
+    });
+  } catch (error) {
+    if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
+      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+      response = await requestChatCompletion([
+        systemMessage,
+        fallbackMessage
+      ], {
+        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        max_tokens: 220,
+        temperature: 0,
+        apiKey: effectiveApiKey
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  const content = response.choices[0].message.content.trim();
+  const parsed = parseReviewResponse(content);
+
+  if (!parsed) {
+    return null;
+  }
+
+  const score = clampScore(parsed.score);
+  const status = normalizeStatus(parsed.status, score);
+  const grade = parsed.grade || gradeFromStatus(status);
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+  const issues = Array.isArray(parsed.issues)
+    ? parsed.issues
+        .filter(item => typeof item === 'string' && item.trim() !== '')
+        .map(item => item.trim())
+        .slice(0, 6)
+    : [];
+
+  return {
+    score,
+    status,
+    grade,
+    summary,
+    issues,
+    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    usage: response.usage
+  };
+}
+
+function buildReviewPrompt(altText, imageData, context) {
+  const lines = [
+    'Evaluate whether the provided alternative text accurately describes the attached image.',
+    'Respond ONLY with a JSON object containing these keys: score, status, grade, summary, issues.',
+    'Score rules: 100 is a precise, specific match including essential context and any visible text. 0 is completely wrong, irrelevant, or placeholder text.',
+    `Alt text candidate: "${altText}".`
+  ];
+
+  if (imageData?.title) {
+    lines.push(`Media library title: ${imageData.title}`);
+  }
+  if (imageData?.caption) {
+    lines.push(`Caption: ${imageData.caption}`);
+  }
+  if (context?.post_title) {
+    lines.push(`Appears on page: ${context.post_title}`);
+  }
+  if (imageData?.filename) {
+    lines.push(`Filename: ${imageData.filename}`);
+  }
+  if (imageData?.width && imageData?.height) {
+    lines.push(`Dimensions: ${imageData.width}x${imageData.height}px`);
+  }
+
+  lines.push('Remember: return valid JSON only, without markdown fencing.');
+  return lines.join('\n');
+}
+
+function parseReviewResponse(content) {
+  if (!content) {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  const directParse = tryParseJson(trimmed);
+  if (directParse) {
+    return directParse;
+  }
+
+  const match = trimmed.match(/\{[\s\S]*\}/);
+  if (match) {
+    return tryParseJson(match[0]);
+  }
+  return null;
+}
+
+function tryParseJson(payload) {
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    return null;
+  }
+}
+
+function clampScore(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+function normalizeStatus(status, score) {
+  const lookup = {
+    great: 'great',
+    excellent: 'great',
+    good: 'good',
+    ok: 'review',
+    needs_review: 'review',
+    review: 'review',
+    poor: 'critical',
+    critical: 'critical',
+    fail: 'critical'
+  };
+
+  if (typeof status === 'string') {
+    const key = status.toLowerCase().replace(/[^a-z]/g, '_');
+    if (lookup[key]) {
+      return lookup[key];
+    }
+  }
+
+  if (typeof score === 'number' && Number.isFinite(score)) {
+    if (score >= 90) return 'great';
+    if (score >= 75) return 'good';
+    if (score >= 55) return 'review';
+    return 'critical';
+  }
+
+  return 'review';
+}
+
+function gradeFromStatus(status) {
+  switch (status) {
+    case 'great':
+      return 'Excellent';
+    case 'good':
+      return 'Strong';
+    case 'review':
+      return 'Needs review';
+    default:
+      return 'Critical';
+  }
+}
+
+// Error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  console.error('Stack:', error.stack);
+  // Don't exit - let the server continue running
+  // Render will restart if needed
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  
+  // Send to Sentry if available
+  if (Sentry) {
+    Sentry.captureException(reason);
+  }
+  
+  // Don't exit - let the server continue running
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  
+  // Send to Sentry if available
+  if (Sentry) {
+    Sentry.captureException(error);
+  }
+  
+  // Exit process for uncaught exceptions (they're usually fatal)
+  process.exit(1);
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
+    console.log(`📅 Version: 2.0.0 (Monetization)`);
+    console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+    console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    process.exit(0);
+  });
+}
+
+// Global error handler (must be last middleware)
+const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
+app.use(notFoundHandler); // 404 handler
+app.use(errorHandler); // Error handler
+
+// Capture unhandled errors with Sentry if available
+if (Sentry) {
+  app.use(Sentry.Handlers.errorHandler());
+}
+
+// Export utility functions for partner API
+// Export app and utility functions
+// Ensure app exists before exporting
+if (!app) {
+  console.error('[server-v2] ERROR: app is null/undefined at export time!');
+  throw new Error('Express app was not initialized');
+}
+
+// Export app and utility functions
+// Directly assign to app to ensure it's exported correctly
+if (typeof requestChatCompletion === 'function') {
+  app.requestChatCompletion = requestChatCompletion;
+}
+app.buildPrompt = buildPrompt;
+app.buildUserMessage = buildUserMessage;
+
+// Final check before export
+if (!app || typeof app.listen !== 'function') {
+  const error = new Error(`[server-v2] Invalid app at export: type=${typeof app}, hasListen=${typeof app?.listen}`);
+  console.error(error.message);
+  throw error;
+}
+
+module.exports = app;
+
+```
+
+---
+
 ## services/emailService.js
 
 ```
@@ -16100,2391 +18522,6 @@ module.exports = {
 
 ---
 
-## scripts/check-credits.js
-
-```
-/**
- * Check current credits state in database
- */
-
-require('dotenv').config();
-const { supabase } = require('../db/supabase-client');
-
-async function checkCredits() {
-  try {
-    console.log('🔍 Checking credits in database...\n');
-
-    // Get all credits records
-    const { data: creditsRecords, error: fetchError } = await supabase
-      .from('credits')
-      .select('id, user_id, used_this_month, monthly_limit');
-
-    if (fetchError) {
-      throw new Error(`Failed to fetch credits: ${fetchError.message}`);
-    }
-
-    if (!creditsRecords || creditsRecords.length === 0) {
-      console.log('ℹ️  No credits records found.');
-      return;
-    }
-
-    console.log(`📊 Found ${creditsRecords.length} credits records:\n`);
-    creditsRecords.forEach((record, index) => {
-      const remaining = (record.monthly_limit || 0) - (record.used_this_month || 0);
-      console.log(`Record ${index + 1}:`);
-      console.log(`   User ID: ${record.user_id}`);
-      console.log(`   Monthly Limit: ${record.monthly_limit || 0}`);
-      console.log(`   Used This Month: ${record.used_this_month || 0}`);
-      console.log(`   Remaining: ${remaining}`);
-      console.log('');
-    });
-
-    // Also check usage_logs count
-    console.log('📋 Checking usage_logs counts:\n');
-    for (const record of creditsRecords) {
-      const { count, error: countError } = await supabase
-        .from('usage_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', record.user_id);
-
-      if (!countError) {
-        console.log(`User ${record.user_id}: ${count || 0} usage log entries`);
-      }
-    }
-
-  } catch (error) {
-    console.error('❌ Error checking credits:', error);
-    process.exit(1);
-  }
-}
-
-checkCredits()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
-  });
-
-
-```
-
----
-
-## scripts/daily-rollup.js
-
-```
-#!/usr/bin/env node
-
-/**
- * Daily Rollup Script
- * Summarizes daily usage per identity from events table
- * Caches output in daily_usage_summary table
- * Updates credits_balance cache from events rollup
- * 
- * Run daily via cron job (e.g., Render cron or similar)
- * Example cron: 0 2 * * * (runs at 2 AM daily)
- */
-
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const { supabase } = require('../db/supabase-client');
-const eventService = require('../src/services/eventService');
-
-/**
- * Run daily rollup for all identities
- */
-async function runDailyRollup() {
-  try {
-    console.log('[DailyRollup] Starting daily rollup process...');
-    const startTime = Date.now();
-
-    // Get yesterday's date (rollup for previous day)
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const yesterdayEnd = new Date(yesterday);
-    yesterdayEnd.setHours(23, 59, 59, 999);
-
-    const dateStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
-
-    console.log(`[DailyRollup] Processing rollup for date: ${dateStr}`);
-
-    // Get all identities that have events
-    const { data: identities, error: identitiesError } = await supabase
-      .from('identities')
-      .select('id, email');
-
-    if (identitiesError) {
-      console.error('[DailyRollup] Error fetching identities:', identitiesError);
-      process.exit(1);
-    }
-
-    if (!identities || identities.length === 0) {
-      console.log('[DailyRollup] No identities found, skipping rollup');
-      process.exit(0);
-    }
-
-    console.log(`[DailyRollup] Processing ${identities.length} identities...`);
-
-    let processed = 0;
-    let errors = 0;
-
-    // Process each identity
-    for (const identity of identities) {
-      try {
-        // Get events for yesterday
-        const { data: events, error: eventsError } = await supabase
-          .from('events')
-          .select('event_type, credits_delta, created_at, metadata')
-          .eq('identity_id', identity.id)
-          .gte('created_at', yesterday.toISOString())
-          .lte('created_at', yesterdayEnd.toISOString());
-
-        if (eventsError) {
-          console.error(`[DailyRollup] Error fetching events for identity ${identity.id}:`, eventsError);
-          errors++;
-          continue;
-        }
-
-        // Aggregate events
-        let creditsPurchased = 0;
-        let creditsUsed = 0;
-        const eventsCount = events?.length || 0;
-
-        (events || []).forEach((event) => {
-          if (event.credits_delta > 0) {
-            creditsPurchased += event.credits_delta;
-          } else if (event.credits_delta < 0) {
-            creditsUsed += Math.abs(event.credits_delta);
-          }
-        });
-
-        // Upsert daily summary
-        const { error: upsertError } = await supabase
-          .from('daily_usage_summary')
-          .upsert({
-            identity_id: identity.id,
-            date: dateStr,
-            credits_purchased: creditsPurchased,
-            credits_used: creditsUsed,
-            events_count: eventsCount,
-            metadata: {
-              last_updated: new Date().toISOString(),
-            },
-            updated_at: new Date().toISOString(),
-          }, {
-            onConflict: 'identity_id,date',
-          });
-
-        if (upsertError) {
-          console.error(`[DailyRollup] Error upserting summary for identity ${identity.id}:`, upsertError);
-          errors++;
-          continue;
-        }
-
-        // Update credits_balance cache from events rollup
-        await eventService.updateCreditsBalanceCache(identity.id);
-
-        processed++;
-        if (processed % 100 === 0) {
-          console.log(`[DailyRollup] Processed ${processed}/${identities.length} identities...`);
-        }
-      } catch (err) {
-        console.error(`[DailyRollup] Exception processing identity ${identity.id}:`, err);
-        errors++;
-      }
-    }
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`[DailyRollup] Completed in ${duration}s. Processed: ${processed}, Errors: ${errors}`);
-
-    if (errors > 0) {
-      console.warn(`[DailyRollup] Completed with ${errors} errors`);
-      process.exit(1);
-    }
-
-    process.exit(0);
-  } catch (error) {
-    console.error('[DailyRollup] Fatal error:', error);
-    process.exit(1);
-  }
-}
-
-// Run if called directly
-if (require.main === module) {
-  runDailyRollup();
-}
-
-module.exports = { runDailyRollup };
-
-
-```
-
----
-
-## scripts/reset-all-credits.js
-
-```
-/**
- * Reset all users' credits to 0
- * This script sets used_this_month to 0 for all records in the credits table
- */
-
-require('dotenv').config();
-const { supabase } = require('../db/supabase-client');
-
-async function resetAllCredits() {
-  try {
-    console.log('🔄 Starting credit reset for all users...');
-
-    // Get all credits records
-    const { data: creditsRecords, error: fetchError } = await supabase
-      .from('credits')
-      .select('id, user_id, used_this_month, monthly_limit');
-
-    if (fetchError) {
-      throw new Error(`Failed to fetch credits: ${fetchError.message}`);
-    }
-
-    if (!creditsRecords || creditsRecords.length === 0) {
-      console.log('ℹ️  No credits records found. Nothing to reset.');
-      return;
-    }
-
-    console.log(`📊 Found ${creditsRecords.length} credits records`);
-
-    // Reset all used_this_month to 0
-    // Update all records by updating each one individually (Supabase doesn't support update all without a filter)
-    let updatedCount = 0;
-    for (const record of creditsRecords) {
-      const { error: updateError } = await supabase
-        .from('credits')
-        .update({ used_this_month: 0 })
-        .eq('id', record.id);
-
-      if (updateError) {
-        console.error(`Failed to update record ${record.id}:`, updateError.message);
-        continue;
-      }
-      updatedCount++;
-    }
-
-    console.log(`✅ Successfully reset credits for ${updatedCount} out of ${creditsRecords.length} users`);
-    console.log('📋 Summary:');
-    console.log(`   - Total records: ${creditsRecords.length}`);
-    console.log(`   - All used_this_month values set to 0`);
-
-    // Verify the update
-    const { data: verifyRecords, error: verifyError } = await supabase
-      .from('credits')
-      .select('id, user_id, used_this_month')
-      .limit(5);
-
-    if (!verifyError && verifyRecords) {
-      console.log('\n🔍 Verification (first 5 records):');
-      verifyRecords.forEach(record => {
-        console.log(`   - User ${record.user_id}: used_this_month = ${record.used_this_month}`);
-      });
-    }
-
-  } catch (error) {
-    console.error('❌ Error resetting credits:', error);
-    process.exit(1);
-  }
-}
-
-// Run the script
-resetAllCredits()
-  .then(() => {
-    console.log('\n✨ Credit reset completed successfully!');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
-  });
-
-
-```
-
----
-
-## scripts/reset-usage-logs.js
-
-```
-/**
- * Reset usage_logs for current month
- * This will clear all usage_logs entries to match the credit reset
- */
-
-require('dotenv').config();
-const { supabase } = require('../db/supabase-client');
-
-async function resetUsageLogs() {
-  try {
-    console.log('🔄 Starting usage_logs reset...\n');
-
-    // Get current month start date
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    
-    console.log(`📅 Resetting usage_logs from ${monthStart} onwards\n`);
-
-    // Get count of entries to delete
-    const { count, error: countError } = await supabase
-      .from('usage_logs')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', monthStart);
-
-    if (countError) {
-      throw new Error(`Failed to count usage_logs: ${countError.message}`);
-    }
-
-    console.log(`📊 Found ${count || 0} usage_logs entries from this month`);
-
-    if (count === 0) {
-      console.log('ℹ️  No usage_logs entries to delete.');
-      return;
-    }
-
-    // Delete all usage_logs from this month
-    // Note: Supabase doesn't support delete without a filter, so we'll delete by date range
-    const { data: deletedData, error: deleteError } = await supabase
-      .from('usage_logs')
-      .delete()
-      .gte('created_at', monthStart);
-
-    if (deleteError) {
-      throw new Error(`Failed to delete usage_logs: ${deleteError.message}`);
-    }
-
-    console.log(`✅ Successfully deleted ${count} usage_logs entries from this month`);
-
-    // Verify
-    const { count: verifyCount, error: verifyError } = await supabase
-      .from('usage_logs')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', monthStart);
-
-    if (!verifyError) {
-      console.log(`🔍 Verification: ${verifyCount || 0} entries remaining from this month`);
-    }
-
-  } catch (error) {
-    console.error('❌ Error resetting usage_logs:', error);
-    process.exit(1);
-  }
-}
-
-resetUsageLogs()
-  .then(() => {
-    console.log('\n✨ Usage logs reset completed successfully!');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('❌ Fatal error:', error);
-    process.exit(1);
-  });
-
-
-```
-
----
-
-## docs/account-dashboard.md
-
-```
-# Account Dashboard API Documentation
-
-## Overview
-
-The Account Dashboard API provides a unified endpoint that aggregates all user account data into a single response. This enables the website dashboard to render everything without multiple scattered API calls.
-
-## Endpoint
-
-**POST** `/account/summary`
-
-### Request
-
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-### Response
-
-```json
-{
-  "ok": true,
-  "data": {
-    "email": "user@example.com",
-    "installations": [
-      {
-        "id": "uuid",
-        "plugin_slug": "alttext-ai",
-        "site_url": "https://example.com",
-        "version": "1.0.0",
-        "wp_version": "6.0",
-        "last_seen_at": "2025-01-15T10:00:00Z",
-        "created_at": "2025-01-01T00:00:00Z"
-      }
-    ],
-    "subscriptions": [
-      {
-        "id": "uuid",
-        "user_email": "user@example.com",
-        "plugin_slug": "alttext-ai",
-        "plan": "pro",
-        "status": "active",
-        "renews_at": "2025-02-01T00:00:00Z",
-        "stripe_subscription_id": "sub_123"
-      }
-    ],
-    "usage": {
-      "alttext-ai": {
-        "monthlyImages": 450,
-        "dailyImages": 15,
-        "totalImages": 2000,
-        "quota": 1000,
-        "remaining": 550
-      },
-      "beepbeep-ai": {
-        "monthlyImages": 1421,
-        "dailyImages": 22,
-        "totalImages": 5000,
-        "quota": 1500,
-        "remaining": 79
-      }
-    },
-    "plans": {
-      "alttext-ai": {
-        "currentPlan": "pro",
-        "monthlyImages": 1000,
-        "tokens": 1000
-      },
-      "beepbeep-ai": {
-        "currentPlan": "free",
-        "monthlyImages": 25,
-        "tokens": 25
-      }
-    }
-  }
-}
-```
-
-## Data Sources
-
-### Installations
-
-Source: `plugin_installations` table via `userAccountService.getUserInstallations()`
-
-Returns all plugin installations for the user, including:
-- Plugin slug
-- Site URL
-- Version information
-- Last seen timestamp
-- Installation metadata
-
-### Subscriptions
-
-Source: `subscriptions` table via `billingService.getUserSubscriptions()`
-
-Returns all active and inactive subscriptions, including:
-- Plugin slug
-- Plan tier (free/pro/agency)
-- Subscription status
-- Renewal date
-- Stripe subscription ID
-
-### Usage
-
-Source: `usage_logs` table aggregated via `usageService.getUsageSummary()`
-
-Returns per-plugin usage statistics:
-- `monthlyImages`: Usage count for current month
-- `dailyImages`: Usage count for today
-- `totalImages`: Total usage count (all time)
-- `quota`: Plan-based quota limit (from plans config)
-- `remaining`: Calculated remaining quota (quota - monthlyImages)
-
-**Note:** Currently, usage is aggregated across all plugins since `usage_logs` doesn't store service/plugin information. The usage is distributed evenly across all user's plugins. Future enhancement: Add service/plugin tracking to `usage_logs` table.
-
-### Plans
-
-Source: `src/config/plans.js` merged with subscription data
-
-Returns per-plugin plan information:
-- `currentPlan`: Determined from subscription (or defaults to 'free')
-- `monthlyImages`: Quota limit from plans config
-- `tokens`: Token quota from plans config (same as monthlyImages)
-
-## How Usage is Calculated
-
-1. **Monthly Usage**: Count of `usage_logs` entries created in the current month
-2. **Daily Usage**: Count of `usage_logs` entries created today
-3. **Total Usage**: Count of all `usage_logs` entries for the user
-4. **Quota**: Looked up from `plans.js` based on plugin + current plan
-5. **Remaining**: Calculated as `quota - monthlyImages` (minimum 0)
-
-## How Plan Limits are Determined
-
-1. Get all subscriptions for the user
-2. For each plugin (from installations or subscriptions):
-   - Find matching subscription
-   - Extract `plan` field (free/pro/agency)
-   - Default to 'free' if no subscription
-3. Look up quota in `src/config/plans.js`:
-   ```javascript
-   plansConfig[pluginSlug][plan].tokens
-   ```
-4. Return plan limits merged with usage data
-
-## How Remaining Quota is Computed
-
-```
-remaining = max(0, quota - monthlyImages)
-```
-
-Where:
-- `quota`: From plans config based on plugin + current plan
-- `monthlyImages`: Count of usage_logs in current month
-
-## Error Handling
-
-### Validation Errors (400)
-
-```json
-{
-  "ok": false,
-  "error": "Invalid email"
-}
-```
-
-### Service Errors (500)
-
-```json
-{
-  "ok": false,
-  "error": "Failed to fetch account summary"
-}
-```
-
-Errors are handled gracefully - if one data source fails, others are still returned with empty arrays/objects.
-
-## Rate Limiting
-
-- **Limit**: 30 requests per IP per 15 minutes
-- **Headers**: Standard rate limit headers included
-- **Response**: 429 Too Many Requests when exceeded
-
-## Example Requests
-
-### cURL
-
-```bash
-curl -X POST https://api.optti.dev/account/summary \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com"}'
-```
-
-### JavaScript
-
-```javascript
-const response = await fetch('https://api.optti.dev/account/summary', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: 'user@example.com' }),
-});
-
-const data = await response.json();
-```
-
-## Response Time
-
-Target response time: < 500ms for typical user data
-
-The endpoint uses `Promise.all` to fetch all data sources in parallel for optimal performance.
-
-## Plugin Integration
-
-Plugins can link users to the dashboard:
-
-```
-https://yourwebsite.com/account?email=user@example.com
-```
-
-The dashboard will use this endpoint to fetch all account data and display:
-- Plugin installations table
-- Subscriptions overview
-- Usage overview per plugin
-- Plan limits and remaining quotas
-
-## Future Enhancements
-
-- [ ] Add service/plugin tracking to `usage_logs` table for accurate per-plugin usage
-- [ ] Add usage history/trends
-- [ ] Add billing/invoice data to summary
-- [ ] Add organization/team data
-- [ ] Add caching layer for frequently accessed data
-- [ ] Add real-time usage updates via WebSocket
-
-## Related Documentation
-
-- [Billing Engine Documentation](./billing-engine.md)
-- [Account Endpoints Documentation](./account-endpoints.md)
-- [Plan Configuration](../src/config/plans.js)
-
-
-```
-
----
-
-## docs/account-endpoints.md
-
-```
-# Account Endpoints Documentation
-
-## Overview
-
-The account endpoints provide aggregated user data for the Optti dashboard, including installations, plugins, and sites. These endpoints are consumed by the Next.js dashboard frontend.
-
-## Base URL
-
-All endpoints are prefixed with `/account`.
-
-## Endpoints
-
-### POST /account/overview
-
-Returns full account data including installations, plugins, and sites for a user.
-
-#### Request
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Body:**
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-**Validation:**
-- `email` (required): Valid email address format
-
-#### Response
-
-**Success (200):**
-```json
-{
-  "ok": true,
-  "data": {
-    "email": "user@example.com",
-    "installations": [
-      {
-        "email": "user@example.com",
-        "plugin_slug": "alttext-ai",
-        "site_url": "https://example.com",
-        "version": "1.0.0",
-        "wp_version": "6.0",
-        "php_version": "8.0",
-        "language": "en_US",
-        "timezone": "America/New_York",
-        "install_source": "plugin",
-        "last_seen_at": "2025-01-26T12:00:00Z",
-        "created_at": "2025-01-01T10:00:00Z"
-      }
-    ],
-    "plugins": [
-      {
-        "email": "user@example.com",
-        "plugin_slug": "alttext-ai",
-        "install_count": 2,
-        "last_active": "2025-01-26T12:00:00Z",
-        "first_seen": "2025-01-01T10:00:00Z",
-        "sites": ["https://example.com", "https://another.com"]
-      }
-    ],
-    "sites": [
-      {
-        "email": "user@example.com",
-        "site_url": "https://example.com",
-        "plugins": ["alttext-ai", "seo-ai-meta"],
-        "last_seen": "2025-01-26T12:00:00Z"
-      }
-    ]
-  }
-}
-```
-
-**Error (400):**
-```json
-{
-  "ok": false,
-  "error": "Invalid email"
-}
-```
-
-**Error (500):**
-```json
-{
-  "ok": false,
-  "error": "Failed to fetch account data"
-}
-```
-
-#### Example cURL Request
-
-```bash
-curl -X POST https://api.optti.dev/account/overview \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com"}'
-```
-
-#### Use Cases
-
-- Dashboard overview page showing all user data
-- Account summary for user profile
-- Initial data load for dashboard
-
----
-
-### POST /account/installations
-
-Returns all installations for a user.
-
-#### Request
-
-**Headers:**
-```
-Content-Type: application/json
-```
-
-**Body:**
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-**Validation:**
-- `email` (required): Valid email address format
-
-#### Response
-
-**Success (200):**
-```json
-{
-  "ok": true,
-  "installations": [
-    {
-      "email": "user@example.com",
-      "plugin_slug": "alttext-ai",
-      "site_url": "https://example.com",
-      "version": "1.0.0",
-      "wp_version": "6.0",
-      "php_version": "8.0",
-      "language": "en_US",
-      "timezone": "America/New_York",
-      "install_source": "plugin",
-      "last_seen_at": "2025-01-26T12:00:00Z",
-      "created_at": "2025-01-01T10:00:00Z"
-    },
-    {
-      "email": "user@example.com",
-      "plugin_slug": "seo-ai-meta",
-      "site_url": "https://another.com",
-      "version": "2.0.0",
-      "wp_version": "6.1",
-      "php_version": "8.1",
-      "language": "en_US",
-      "timezone": "America/Los_Angeles",
-      "install_source": "plugin",
-      "last_seen_at": "2025-01-25T15:30:00Z",
-      "created_at": "2025-01-15T09:00:00Z"
-    }
-  ]
-}
-```
-
-**Error (400):**
-```json
-{
-  "ok": false,
-  "error": "Invalid email"
-}
-```
-
-**Error (500):**
-```json
-{
-  "ok": false,
-  "error": "Failed to fetch installations"
-}
-```
-
-#### Example cURL Request
-
-```bash
-curl -X POST https://api.optti.dev/account/installations \
-  -H "Content-Type: application/json" \
-  -d '{"email": "user@example.com"}'
-```
-
-#### Use Cases
-
-- Installations list page
-- Detailed installation view
-- Installation management interface
-
----
-
-## Rate Limiting
-
-All account endpoints are rate-limited to **30 requests per 15 minutes** per IP address.
-
-**Rate Limit Response (429):**
-```json
-{
-  "message": "Too many account requests from this IP, please try again later."
-}
-```
-
-## Error Handling
-
-All endpoints follow a consistent error response format:
-
-```json
-{
-  "ok": false,
-  "error": "Error message description"
-}
-```
-
-Common error codes:
-- `400`: Validation error (invalid email format, missing required fields)
-- `429`: Rate limit exceeded
-- `500`: Internal server error (database connection issues, service failures)
-
-## Data Models
-
-### Installation Object
-
-```typescript
-{
-  email: string;              // Normalized to lowercase
-  plugin_slug: string;        // Plugin identifier (e.g., "alttext-ai")
-  site_url: string | null;    // Site URL where plugin is installed
-  version: string | null;     // Plugin version
-  wp_version: string | null;  // WordPress version
-  php_version: string | null; // PHP version
-  language: string | null;    // Language code (e.g., "en_US")
-  timezone: string | null;    // Timezone (e.g., "America/New_York")
-  install_source: string;     // Installation source (default: "plugin")
-  last_seen_at: string;       // ISO 8601 timestamp
-  created_at: string;         // ISO 8601 timestamp
-}
-```
-
-### Plugin Overview Object
-
-```typescript
-{
-  email: string;              // Normalized to lowercase
-  plugin_slug: string;       // Plugin identifier
-  install_count: number;      // Number of installations
-  last_active: string;        // ISO 8601 timestamp of most recent activity
-  first_seen: string;         // ISO 8601 timestamp of first installation
-  sites: string[];            // Array of distinct site URLs
-}
-```
-
-### Site Overview Object
-
-```typescript
-{
-  email: string;              // Normalized to lowercase
-  site_url: string;          // Site URL
-  plugins: string[];          // Array of plugin slugs installed on this site
-  last_seen: string;          // ISO 8601 timestamp of most recent activity
-}
-```
-
-## Notes
-
-- All email addresses are normalized to lowercase before querying
-- Empty arrays are returned when no data is found (not an error)
-- All timestamps are in ISO 8601 format (UTC)
-- The service never throws - all errors are returned as `{ success: false, error: '...' }`
-- Database views are used for performance (prevents expensive SQL queries)
-
-## Future Enhancements
-
-The `getFullAccount` response includes placeholder fields for future Step 3 features:
-- `billing`: Billing and subscription information
-- `subscriptions`: Active subscriptions
-- `usage`: Usage statistics and analytics
-
-These fields are currently `null` or not included in the response.
-
-
-```
-
----
-
-## docs/architecture.md
-
-```
-# Architecture
-
-## System Overview
-
-Production-ready Node.js backend API for the AltText AI WordPress plugin. Features user authentication, usage tracking, Stripe billing, and organization licensing.
-
-## Tech Stack
-
-- **Runtime:** Node.js 18+
-- **Framework:** Express.js
-- **Database:** Supabase (PostgreSQL)
-- **Authentication:** JWT
-- **Payment:** Stripe
-- **Email:** Resend
-- **AI:** OpenAI API
-
-## Design Decisions
-
-### Directory Structure
-
-The backend follows a clean, scalable structure with `/src` as the single source of truth:
-
-```
-/src
-  /auth          # Authentication logic (jwt, routes, email)
-  /routes        # API route handlers
-  /services      # Business logic services
-  /utils         # Utilities (apiKey, logger, http)
-  /validation    # Input validation layer
-  /middleware    # Express middleware
-  /stripe        # Stripe integration (checkout, webhooks)
-  /db            # Database client
-  /config        # Configuration files
-```
-
-### Authentication
-
-The backend supports multiple authentication methods:
-- **JWT tokens** for personal accounts
-- **License keys** for agency licenses
-- **Site hashes** for site-based quota sharing
-
-The `combinedAuth` middleware handles all three methods, allowing flexible authentication across different use cases.
-
-### Organization-Based Quota System
-
-Quota is tracked per organization, allowing multiple users/sites to share a single pool of tokens/credits. This enables:
-- Agency plans with multiple sites
-- Team collaboration
-- Centralized billing
-
-### Service Architecture
-
-Services are organized by domain:
-- `licenseService.js` - License and organization management
-- `emailService.js` - Email sending via Resend
-- `usageService.js` - Usage tracking and quota management
-
-## Technical Debt
-
-### High Priority
-1. **routes/organization.js** - Very low test coverage (6.99% statements, 0% branches)
-   - Action needed: Add comprehensive test coverage
-
-2. **src/stripe/checkout.js** - Low test coverage (33.76% statements)
-   - Action needed: Add tests for untested code paths
-
-3. **services/emailService.js** - Some untested code paths (lines 803-984)
-   - Action needed: Add tests for email template generation
-
-### Medium Priority
-1. **Adopt new utilities** - Gradually migrate to:
-   - `src/utils/logger.js` for standardized logging (replace console.log/error/warn)
-   - `src/utils/http.js` for standardized HTTP responses
-   - `config/loadEnv.js` for environment variable management
-
-2. **Validation layer** - Route-specific validators created and ready for adoption:
-   - `src/validation/auth.js` - Ready to use in `auth/routes.js`
-   - `src/validation/license.js` - Ready to use in `routes/license.js` and `routes/licenses.js`
-   - `src/validation/billing.js` - Ready to use in `routes/billing.js`
-   - `src/validation/generate.js` - Ready to use in `server-v2.js` generate endpoint
-
-### Low Priority
-1. **migrations/** - Consider documenting migration process or adding automated migration runner
-2. **Performance optimizations** - Consider caching, batching, and memoization opportunities
-
-## Security
-
-- OpenAI API key stored server-side only
-- Domains are hashed for privacy
-- Rate limiting enabled
-- CORS configured
-- Helmet security headers
-- JWT tokens with expiration
-- Input validation and sanitization
-
-## Backward Compatibility
-
-All public APIs remain unchanged:
-- Service methods maintain identical signatures
-- Route endpoints unchanged
-- Response formats unchanged
-- Authentication mechanisms unchanged
-
-
-```
-
----
-
-## docs/backend-structure.md
-
-```
-# Backend Structure
-
-## Directory Organization
-
-The backend follows a clean, scalable structure with `/src` as the single source of truth:
-
-```
-/
-├── src/                      # Main application code
-│   ├── auth/                 # Authentication logic
-│   │   ├── jwt.js           # JWT token generation/verification
-│   │   ├── routes.js        # Auth routes (register, login, etc.)
-│   │   └── email.js         # Auth-related emails
-│   ├── routes/               # API route handlers
-│   │   ├── billing.js       # Stripe billing routes
-│   │   ├── license.js       # License management routes
-│   │   ├── licenses.js      # Organization license routes
-│   │   ├── organization.js  # Organization management
-│   │   └── usage.js         # Usage tracking routes
-│   ├── services/             # Business logic services
-│   │   ├── emailService.js  # Email sending service
-│   │   └── licenseService.js # License management service
-│   ├── utils/                # Utilities
-│   │   ├── apiKey.js        # OpenAI API key selection
-│   │   ├── http.js          # HTTP response utilities
-│   │   └── logger.js        # Standardized logging
-│   ├── validation/           # Input validation layer
-│   │   ├── index.js         # Validation exports
-│   │   ├── validators.js    # Core validation functions
-│   │   ├── auth.js          # Auth route validation
-│   │   ├── billing.js       # Billing route validation
-│   │   ├── generate.js      # Generate route validation
-│   │   └── license.js       # License route validation
-│   ├── middleware/           # Express middleware
-│   │   └── dual-auth.js     # Dual authentication (JWT/License)
-│   ├── stripe/               # Stripe integration
-│   │   ├── checkout.js       # Checkout session creation
-│   │   └── webhooks.js      # Webhook handling
-│   ├── db/                   # Database client
-│   │   └── supabase-client.js
-│   └── config/               # Configuration
-│       ├── env.example      # Environment template
-│       ├── env.test          # Test environment
-│       └── loadEnv.js        # Environment loading utility
-├── tests/                     # Test files
-│   ├── unit/                 # Unit tests
-│   ├── integration/          # Integration tests
-│   ├── mocks/                # Mock implementations
-│   └── helpers/              # Test utilities
-├── migrations/                # Database migrations
-│   └── add_licenses_table.sql
-├── docs/                      # Documentation
-├── server-v2.js              # Main entry point
-├── package.json
-├── jest.config.js
-└── README.md
-```
-
-## File Organization Principles
-
-### Separation of Concerns
-- **Routes** (`/src/routes`) - Handle HTTP requests/responses only
-- **Services** (`/src/services`) - Business logic, no HTTP concerns
-- **Validation** (`/src/validation`) - Input validation and sanitization
-- **Middleware** (`/src/middleware`) - Request processing (auth, logging, etc.)
-
-### Single Source of Truth
-All application code lives under `/src`:
-- `/src/auth` - Authentication
-- `/src/routes` - API endpoints
-- `/src/services` - Business logic
-- `/src/utils` - Shared utilities
-- `/src/validation` - Input validation
-- `/src/middleware` - Express middleware
-- `/src/stripe` - Stripe integration
-- `/src/db` - Database client
-- `/src/config` - Configuration
-
-### Test Organization
-Tests mirror the source structure:
-- `tests/unit/` - Unit tests for individual modules
-- `tests/integration/` - Integration tests for API endpoints
-- `tests/mocks/` - Mock implementations
-- `tests/helpers/` - Test utilities
-
-## Import Paths
-
-### Standard Import Patterns
-
-```javascript
-// From routes to services
-const licenseService = require('../services/licenseService');
-
-// From routes to middleware
-const { combinedAuth } = require('../src/middleware/dual-auth');
-
-// From routes to validation
-const { validateRegistrationInput } = require('../src/validation/auth');
-
-// From services to database
-const { supabase } = require('../db/supabase-client');
-
-// From services to utils
-const { getServiceApiKey } = require('../src/utils/apiKey');
-```
-
-## Key Files
-
-### Entry Point
-- `server-v2.js` - Main Express application, route registration, middleware setup
-
-### Core Services
-- `src/services/licenseService.js` - License and organization management
-- `src/services/emailService.js` - Email sending via Resend
-
-### Authentication
-- `src/auth/jwt.js` - JWT token generation and verification
-- `src/auth/routes.js` - Authentication endpoints (register, login, etc.)
-- `src/middleware/dual-auth.js` - Dual authentication middleware (JWT/License/Site Hash)
-
-### Validation
-- `src/validation/validators.js` - Core validation functions (email, password, domain)
-- `src/validation/index.js` - Validation layer with standardized errors
-- `src/validation/*.js` - Route-specific validators
-
-## Migration History
-
-### Recent Changes
-- Moved `/validation` → `/src/validation`
-- Moved `/middleware` → `/src/middleware`
-- Moved `/stripe` → `/src/stripe`
-- Moved `/utils` → `/src/utils`
-- Created `/config` for environment files
-- Created `/docs` for documentation
-
-All import paths have been updated to reflect the new structure.
-
-
-```
-
----
-
-## docs/billing-engine.md
-
-```
-# Billing Engine Documentation
-
-## Overview
-
-The Optti billing engine provides a unified subscription system that works across all Optti plugins and the website. It integrates with Stripe for payment processing, manages subscriptions, tracks invoices, and enforces usage quotas.
-
-## Architecture
-
-### Core Components
-
-1. **Database Layer** (`db/migrations/`)
-   - `subscriptions` table: Tracks user subscriptions per plugin
-   - `invoices` table: Stores payment invoices and receipts
-
-2. **Service Layer** (`src/services/`)
-   - `billingService.js`: Core billing logic (customer creation, subscriptions, syncing)
-   - `userAccountService.js`: Aggregates account data including billing
-
-3. **Client Abstraction** (`src/utils/`)
-   - `stripeClient.js`: Single gateway for all Stripe API calls
-
-4. **Configuration** (`src/config/`)
-   - `plans.js`: Defines token quotas and Stripe price IDs for each plugin/plan tier
-
-5. **Routes** (`src/routes/`)
-   - `billing.js`: Public billing endpoints
-   - `account.js`: Account overview including billing data
-
-6. **Webhooks** (`src/stripe/`)
-   - `webhooks.js`: Handles Stripe webhook events
-
-## Subscription Lifecycle
-
-### 1. Customer Creation
-
-When a user initiates checkout:
-- `billingService.createOrGetCustomer()` checks for existing Stripe customer
-- If not found, creates new customer in Stripe
-- Customer ID is stored in subscription records
-
-### 2. Subscription Creation
-
-When user completes checkout:
-- Stripe creates subscription via checkout session
-- Webhook `customer.subscription.created` triggers
-- `billingService.syncSubscriptionFromWebhook()` stores subscription in database
-- Subscription email sent via `emailService.sendLicenseActivated()`
-
-### 3. Subscription Updates
-
-When subscription changes:
-- Webhook `customer.subscription.updated` triggers
-- `billingService.syncSubscriptionFromWebhook()` updates database
-- Status, renewal date, and plan changes are synced
-
-### 4. Subscription Cancellation
-
-When user cancels:
-- Webhook `customer.subscription.deleted` triggers
-- Subscription status set to 'canceled' in database
-- Cancellation email sent (if implemented)
-
-## Webhook Flows
-
-### Supported Events
-
-- `customer.created`: Logged for auditing
-- `customer.subscription.created`: Sync subscription, send activation email
-- `customer.subscription.updated`: Sync subscription changes
-- `customer.subscription.deleted`: Mark as canceled, send cancellation email
-- `invoice.paid`: Store invoice, send receipt email
-- `invoice.payment_failed`: Send payment failed email
-
-### Webhook Endpoint
-
-**POST** `/stripe/webhook`
-
-- Requires Stripe signature verification
-- Uses raw body parser (before express.json())
-- Returns `{ received: true }` on success
-
-## Plan Configuration
-
-Plans are defined in `src/config/plans.js`:
-
-```javascript
-{
-  'alttext-ai': {
-    free: { tokens: 50 },
-    pro: { tokens: 1000, priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO },
-    agency: { tokens: 10000, priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY },
-  }
-}
-```
-
-### Plan Tiers
-
-- **Free**: Limited token quota (no payment)
-- **Pro**: Higher quota, monthly subscription
-- **Agency**: Highest quota, monthly subscription
-
-## API Endpoints
-
-### POST /billing/create-checkout
-
-Creates a Stripe Checkout Session.
-
-**Request:**
-```json
-{
-  "email": "user@example.com",
-  "plugin": "alttext-ai",
-  "priceId": "price_123"
-}
-```
-
-**Response:**
-```json
-{
-  "ok": true,
-  "url": "https://checkout.stripe.com/..."
-}
-```
-
-### POST /billing/create-portal
-
-Creates a Stripe Customer Portal session for managing subscriptions.
-
-**Request:**
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-**Response:**
-```json
-{
-  "ok": true,
-  "url": "https://billing.stripe.com/..."
-}
-```
-
-### POST /billing/subscriptions
-
-Gets all subscriptions for a user.
-
-**Request:**
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-**Response:**
-```json
-{
-  "ok": true,
-  "subscriptions": [
-    {
-      "id": "uuid",
-      "user_email": "user@example.com",
-      "plugin_slug": "alttext-ai",
-      "plan": "pro",
-      "status": "active",
-      "renews_at": "2025-03-01T00:00:00Z"
-    }
-  ]
-}
-```
-
-## Quota Enforcement
-
-Quota enforcement is integrated into the `/api/generate` endpoint:
-
-1. **Find Subscription**: Look up active subscription for user + plugin
-2. **Get Plan**: Determine plan tier (free/pro/agency)
-3. **Get Allowed Quota**: From `plans.js` config
-4. **Get Used Quota**: Count from `usage_logs` table
-5. **Check**: If `used >= allowed`, return `{ ok: false, error: "quota_exceeded" }`
-
-This enables upsell modals in plugins when quota is exceeded.
-
-## How Plugins Integrate
-
-1. **Checkout Flow**:
-   - Plugin calls `POST /billing/create-checkout` with user email, plugin slug, and price ID
-   - User redirected to Stripe Checkout
-   - On success, webhook creates subscription
-
-2. **Quota Checking**:
-   - Plugin calls `/api/generate` for each generation
-   - Backend checks subscription quota
-   - If exceeded, returns `quota_exceeded` error
-   - Plugin shows upgrade modal
-
-3. **Account Management**:
-   - Plugin can call `POST /billing/create-portal` to let users manage subscriptions
-   - Users can upgrade, downgrade, or cancel
-
-## How Website Dashboard Connects
-
-The website dashboard uses:
-
-1. **Account Overview**: `POST /account/overview`
-   - Returns installations, plugins, sites, subscriptions, usage, invoices
-   - Single source of truth for user account
-
-2. **Subscription Management**:
-   - Display active subscriptions
-   - Show usage vs. quota
-   - Link to Stripe Customer Portal
-
-3. **Invoice History**:
-   - Display past invoices
-   - Link to hosted invoice URLs
-
-## Database Schema
-
-### subscriptions
-
-- `id` (uuid): Primary key
-- `user_email` (text): User email (lowercased)
-- `plugin_slug` (text): Plugin identifier
-- `stripe_customer_id` (text): Stripe customer ID
-- `stripe_subscription_id` (text): Stripe subscription ID
-- `stripe_price_id` (text): Stripe price ID
-- `plan` (text): Plan tier (free/pro/agency)
-- `status` (text): Subscription status (active/canceled)
-- `quantity` (int): Subscription quantity
-- `renews_at` (timestamptz): Next renewal date
-- `canceled_at` (timestamptz): Cancellation date
-- `metadata` (jsonb): Additional data
-- Unique constraint on `(user_email, plugin_slug)`
-
-### invoices
-
-- `id` (uuid): Primary key
-- `invoice_id` (text): Stripe invoice ID (unique)
-- `user_email` (text): User email
-- `plugin_slug` (text): Plugin identifier
-- `amount` (integer): Amount in cents
-- `currency` (text): Currency code (usd, gbp, etc.)
-- `hosted_invoice_url` (text): Stripe hosted invoice URL
-- `pdf_url` (text): Invoice PDF URL
-- `paid_at` (timestamptz): Payment timestamp
-- `receipt_email_sent` (boolean): Whether receipt email was sent
-
-## Error Handling
-
-All billing service methods return:
-```javascript
-{ success: true, data: {...} }  // Success
-{ success: false, error: "..." } // Failure
-```
-
-Never throws exceptions - always returns error objects.
-
-## Testing
-
-- **Unit Tests**: `tests/unit/billingService.test.js`, `tests/unit/stripeClient.test.js`, `tests/unit/plans.test.js`
-- **Integration Tests**: `tests/integration/billingRoutes.test.js`
-
-Coverage target: ≥85% for billing subsystem.
-
-## Environment Variables
-
-Required:
-- `STRIPE_SECRET_KEY`: Stripe secret API key
-- `STRIPE_WEBHOOK_SECRET`: Webhook signature secret
-- `ALTTEXT_AI_STRIPE_PRICE_PRO`: Pro plan price ID
-- `ALTTEXT_AI_STRIPE_PRICE_AGENCY`: Agency plan price ID
-- `SEO_AI_META_STRIPE_PRICE_PRO`: SEO plugin Pro price ID
-- `SEO_AI_META_STRIPE_PRICE_AGENCY`: SEO plugin Agency price ID
-- `BEEPBEEP_AI_STRIPE_PRICE_PRO`: BeepBeep plugin Pro price ID
-- `BEEPBEEP_AI_STRIPE_PRICE_AGENCY`: BeepBeep plugin Agency price ID
-
-## Future Enhancements
-
-- [ ] Subscription upgrade/downgrade flows
-- [ ] Prorated billing calculations
-- [ ] Usage-based billing (pay-per-use)
-- [ ] Multi-currency support
-- [ ] Tax calculation integration
-- [ ] Subscription analytics dashboard
-
-
-```
-
----
-
-## docs/deployment.md
-
-```
-# Deployment Guide
-
-## Overview
-
-This document describes the deployment process for the AltText AI backend API.
-
-## Current Deployment Setup
-
-The backend is deployed to **Render.com** and automatically deploys on every push to the `main` branch.
-
-## ⚠️ IMPORTANT: Deployment Protection
-
-**Currently, Render is configured to auto-deploy on every push, regardless of GitHub Actions test status.**
-
-### Problem
-If GitHub Actions tests fail, Render will still deploy the broken code to production. This is a **critical security and quality issue**.
-
-### Solution: Require GitHub Actions Status Checks
-
-To prevent deployments when tests fail, you need to configure Render to require GitHub Actions status checks:
-
-#### Option 1: Configure Render Dashboard (Recommended)
-
-1. Go to your Render dashboard: https://dashboard.render.com
-2. Navigate to your service: `alttext-ai-phase2`
-3. Go to **Settings** → **Build & Deploy**
-4. Under **Deploy Hooks** or **Auto-Deploy**, look for **"Required Status Checks"** or **"Branch Protection"**
-5. Add the required status check: `Backend Tests / test (18.x)` and `Backend Tests / test (20.x)`
-6. Save changes
-
-#### Option 2: Use Render API (Advanced)
-
-If the dashboard doesn't have this option, you can use the Render API to configure deployment protection.
-
-#### Option 3: Manual Deployment Only
-
-As a temporary measure, you can:
-1. Disable auto-deploy in Render
-2. Manually trigger deployments only after verifying GitHub Actions passes
-
-## GitHub Actions Workflow
-
-The `.github/workflows/tests.yml` workflow runs on every push to `main` and:
-- Tests on Node.js 18.x and 20.x
-- Runs unit tests
-- Runs integration tests
-- Uploads coverage reports
-
-**The workflow must pass before deployment should be allowed.**
-
-## Manual Deployment
-
-If auto-deploy is disabled:
-
-1. Verify GitHub Actions workflow passes: https://github.com/TheLaughingGod1986/optiap-backend/actions
-2. Go to Render dashboard
-3. Click **"Manual Deploy"** → **"Deploy latest commit"**
-
-## Environment Variables
-
-All required environment variables must be set in Render dashboard under **Environment**:
-
-### Required Variables
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `ALTTEXT_OPENAI_API_KEY`
-- `SEO_META_OPENAI_API_KEY`
-- `JWT_SECRET`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-
-### Email Service (Resend)
-- `RESEND_API_KEY` - Resend API key (required)
-- `EMAIL_FROM` - Default from email address
-- `TRANSACTIONAL_FROM_EMAIL` - From email for general emails (defaults to `EMAIL_FROM`)
-- `BILLING_FROM_EMAIL` - From email for receipts (defaults to `EMAIL_FROM`)
-- `RESEND_AUDIENCE_ID` - Optional: Resend audience ID for subscriber management
-
-### Branding Configuration
-- `BRAND_NAME` - Brand name (defaults to "AltText AI")
-- `BRAND_DOMAIN` - Brand domain (defaults to "optti.dev")
-- `SUPPORT_EMAIL` - Support email (defaults to `support@${BRAND_DOMAIN}`)
-- `FRONTEND_DASHBOARD_URL` - Dashboard URL (defaults to `https://app.${BRAND_DOMAIN}`)
-- `PUBLIC_API_DOMAIN` - Public API domain (defaults to `api.${BRAND_DOMAIN}`)
-
-See `config/env.example` for the complete list.
-
-## Health Check
-
-The service exposes a health check endpoint at `/health` which Render uses to verify the service is running.
-
-## Rollback
-
-If a deployment fails or causes issues:
-
-1. Go to Render dashboard
-2. Navigate to **Deploys** tab
-3. Find the previous successful deployment
-4. Click **"Rollback to this deploy"**
-
-## Monitoring
-
-- **Render Dashboard**: https://dashboard.render.com
-- **GitHub Actions**: https://github.com/TheLaughingGod1986/optiap-backend/actions
-- **Application Logs**: Available in Render dashboard under **Logs** tab
-
-```
-
----
-
-## docs/email-system-implementation-summary.md
-
-```
-# Email System Implementation Summary
-
-## Implementation Date
-January 2025
-
-## Overview
-Successfully centralized all email logic in the backend, providing a single source of truth for all email functionality across Optti plugins and the website.
-
-## Files Created
-
-### Configuration
-- `src/emails/emailConfig.js` - Centralized email configuration (moved from `src/config/emailConfig.js`)
-
-### Services
-- `src/services/emailEventService.js` - Email event logging and de-duplication service
-
-### Templates
-- `src/emails/templates/index.js` - Updated with `passwordResetEmail` and `usageSummaryEmail` templates
-
-### Database
-- `db/migrations/20250125_email_events.sql` - Migration for email events table
-
-### Documentation
-- `docs/email-system.md` - Complete email system documentation
-- `docs/email-system-notes.md` - Current state mapping (for reference)
-- `docs/email-system-implementation-summary.md` - This file
-
-## Files Modified
-
-### Core Email System
-- `src/utils/resendClient.js` - Updated to use `transactionalFromEmail` from config
-- `src/services/emailService.js` - Added `sendPasswordReset` and `sendUsageSummary`, integrated event logging
-- `src/emails/templates/index.js` - Added `passwordResetEmail` and `usageSummaryEmail`
-- `src/emails/renderHelper.js` - Updated to use `emailConfig` for brand name
-
-### Routes
-- `src/routes/email.js` - Already existed, verified all routes are correct
-- `auth/routes.js` - Migrated from `auth/email.js` to use `emailService`
-
-### Configuration
-- `config/env.example` - Added `TRANSACTIONAL_FROM_EMAIL` and `BILLING_FROM_EMAIL`
-- `tests/unit/emailConfig.test.js` - Updated to test new config fields
-- `tests/unit/resendClient.test.js` - Updated to use new config path
-- `tests/unit/emailTemplates.test.js` - Added tests for new templates
-- `tests/integration/auth.test.js` - Updated to mock `emailService` instead of `auth/email`
-
-### Documentation
-- `docs/deployment.md` - Added email-related environment variables
-
-## Files Deleted
-- `src/config/emailConfig.js` - Moved to `src/emails/emailConfig.js`
-
-## Endpoints Ready for Use
-
-All endpoints are available at `https://api.optti.dev/email/*` (or configured `PUBLIC_API_DOMAIN`):
-
-- `POST /email/waitlist` - Waitlist signup
-- `POST /email/dashboard-welcome` - Dashboard welcome
-- `POST /email/plugin-signup` - Plugin installation
-- `POST /email/license-activated` - License activation (authenticated)
-- `POST /email/low-credit-warning` - Low credit warning
-- `POST /email/receipt` - Payment receipt (authenticated)
-
-## Integration Points
-
-### Migrated to emailService
-- ✅ Password reset emails (`auth/routes.js` → `emailService.sendPasswordReset`)
-- ✅ Welcome emails (`auth/routes.js` → `emailService.sendDashboardWelcome`)
-
-### Not Yet Integrated (Future Work)
-- ⚠️ Receipt emails from Stripe webhooks (`src/stripe/checkout.js` → `handleInvoicePaid` could call `emailService.sendReceipt`)
-- ⚠️ Low credit warnings from usage tracking (could call `emailService.sendLowCreditWarning` when credits < 30%)
-- ⚠️ License activation emails from license routes (could call `emailService.sendLicenseActivated`)
-
-## Test Coverage
-
-- **Total Tests**: 377 passed
-- **Coverage**: 57.48% (maintained from before)
-- **Email System Coverage**:
-  - `emailConfig`: 100%
-  - `resendClient`: 67.74%
-  - `emailTemplates`: 32.72%
-  - `emailService`: 15.72% (needs improvement)
-  - `emailEventService`: 70%
-
-## Known Limitations
-
-1. **Legacy Code Still Exists**:
-   - `auth/email.js` - Still exists but is deprecated (password reset and welcome now use `emailService`)
-   - `services/emailService.js` - Legacy service (different from `src/services/emailService.js`)
-   - `routes/email.js` - Legacy routes (different from `src/routes/email.js`)
-
-2. **React Email Templates**:
-   - React Email templates (`.tsx` files) exist but are not currently used by the new system
-   - The new system uses HTML template functions in `src/emails/templates/index.js`
-
-3. **Missing Integrations**:
-   - Receipt emails not automatically sent from Stripe webhooks
-   - Low credit warnings not automatically triggered from usage tracking
-   - License activation emails not automatically sent from license routes
-
-4. **Database Migration**:
-   - `email_events` table migration must be applied to production database before using event logging
-
-## Environment Variables Added
-
-- `TRANSACTIONAL_FROM_EMAIL` - For general transactional emails
-- `BILLING_FROM_EMAIL` - For receipts and payment emails
-- All existing email variables remain supported for backward compatibility
-
-## Next Steps (Future Enhancements)
-
-1. Apply `email_events` migration to production database
-2. Integrate receipt emails into Stripe webhook handler
-3. Integrate low credit warnings into usage tracking
-4. Integrate license activation emails into license routes
-5. Consider migrating React Email templates to be used by the new system
-6. Add unit tests for `emailEventService` with mocked Supabase
-7. Improve test coverage for `emailService` methods
-
-## Backward Compatibility
-
-- All existing environment variables are still supported
-- Legacy email routes still exist for backward compatibility
-- New system coexists with old system during transition
-
-
-```
-
----
-
-## docs/email-system-notes.md
-
-```
-# Email System Current State Documentation
-
-This document maps all current email-related code and flows in the backend before centralization.
-
-## Email-Related Files
-
-### Core Email Infrastructure
-- **`src/utils/resendClient.js`** - Resend client wrapper (new, centralized)
-- **`src/services/emailService.js`** - New email service with methods for waitlist, dashboard welcome, license activated, low credit warning, receipt, plugin signup, and subscribe
-- **`src/config/emailConfig.js`** - Email configuration helper (needs to move to `src/emails/emailConfig.js` per plan)
-- **`src/emails/templates/index.js`** - HTML email template functions
-- **`src/emails/`** - React Email templates (.tsx files) and renderHelper.js
-- **`src/routes/email.js`** - New email API routes (waitlist, dashboard-welcome, plugin-signup, license-activated, low-credit-warning, receipt)
-- **`src/routes/waitlist.js`** - Waitlist signup endpoint (calls emailService.sendWaitlistWelcome and subscribe)
-
-### Legacy Email Code
-- **`auth/email.js`** - Legacy email service with direct Resend calls:
-  - `sendPasswordResetEmail()` - Direct Resend call with inline HTML
-  - `sendWelcomeEmail()` - Direct Resend call with inline HTML
-  - Both have hardcoded "AltText AI" branding
-  - Both have fallback to SendGrid and console logging
-- **`routes/email.js`** - Legacy email routes (different from `src/routes/email.js`)
-- **`services/emailService.js`** - Legacy email service (different from `src/services/emailService.js`)
-
-## Current Email Flows
-
-### 1. Password Reset Email
-**Location:** `auth/email.js` → `sendPasswordResetEmail()`
-**Triggered from:** `auth/routes.js` → `POST /auth/forgot-password`
-**Current Implementation:**
-- Direct Resend API call (bypasses `resendClient`)
-- Inline HTML template with hardcoded "AltText AI" branding
-- Uses `RESEND_FROM_EMAIL` env var or hardcoded fallback
-- Has SendGrid fallback and console logging fallback
-- **Needs Migration:** Should use `emailService.sendPasswordReset()` with template from `src/emails/templates/`
-
-### 2. Welcome Email (User Registration)
-**Location:** `auth/email.js` → `sendWelcomeEmail()`
-**Triggered from:** `auth/routes.js` → `POST /auth/register`
-**Current Implementation:**
-- Direct Resend API call (bypasses `resendClient`)
-- Inline HTML template with hardcoded "SEO AI Alt Text Generator" branding
-- Uses `RESEND_FROM_EMAIL` env var or hardcoded fallback
-- Has SendGrid fallback and console logging fallback
-- **Needs Migration:** Should use `emailService.sendDashboardWelcome()` or new welcome email method
-
-### 3. Waitlist Welcome Email
-**Location:** `src/services/emailService.js` → `sendWaitlistWelcome()`
-**Triggered from:** `src/routes/waitlist.js` → `POST /waitlist/submit`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `welcomeWaitlistEmail()`
-- Also calls `emailService.subscribe()` to add to Resend audience
-- **Status:** Already centralized ✓
-
-### 4. Dashboard Welcome Email
-**Location:** `src/services/emailService.js` → `sendDashboardWelcome()`
-**Triggered from:** `src/routes/email.js` → `POST /email/dashboard-welcome`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `welcomeDashboardEmail()`
-- **Status:** Already centralized ✓
-
-### 5. License Activated Email
-**Location:** `src/services/emailService.js` → `sendLicenseActivated()`
-**Triggered from:** `src/routes/email.js` → `POST /email/license-activated`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `licenseActivatedEmail()`
-- **Status:** Already centralized ✓
-- **Note:** Legacy `routes/email.js` has `/license/activated` route that calls `emailService.sendLicenseIssuedEmail()` - need to check if this is different
-
-### 6. Low Credit Warning Email
-**Location:** `src/services/emailService.js` → `sendLowCreditWarning()`
-**Triggered from:** `src/routes/email.js` → `POST /email/low-credit-warning`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `lowCreditWarningEmail()`
-- **Status:** Already centralized ✓
-- **Note:** Need to check if usage routes actually call this when credits are low
-
-### 7. Receipt Email
-**Location:** `src/services/emailService.js` → `sendReceipt()`
-**Triggered from:** `src/routes/email.js` → `POST /email/receipt`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `receiptEmail()`
-- **Status:** Already centralized ✓
-- **Note:** Need to check if Stripe webhook handlers call this
-
-### 8. Plugin Signup Email
-**Location:** `src/services/emailService.js` → `sendPluginSignup()`
-**Triggered from:** `src/routes/email.js` → `POST /email/plugin-signup`
-**Current Implementation:**
-- Uses `resendClient.sendEmail()` (correct)
-- Uses template from `src/emails/templates/index.js` → `pluginSignupEmail()`
-- **Status:** Already centralized ✓
-
-## Direct Resend Calls (Need Migration)
-
-1. **`auth/email.js`**:
-   - `sendPasswordResetEmail()` - Line 23: `const resend = new Resend(process.env.RESEND_API_KEY)`
-   - `sendWelcomeEmail()` - Line 176: `const resend = new Resend(process.env.RESEND_API_KEY)`
-   - Both need to be migrated to use `resendClient` and `emailService`
-
-## Hardcoded Values Found
-
-1. **`auth/email.js`**:
-   - "AltText AI" (multiple places)
-   - "SEO AI Alt Text Generator" (welcome email)
-   - `'AltText AI <noreply@alttextai.com>'` (from email fallback)
-   - `'noreply@alttextai.com'` (SendGrid fallback)
-
-2. **`src/config/emailConfig.js`**:
-   - Default fallbacks: `'AltText AI'`, `'optti.dev'`, `'support@optti.dev'`, etc.
-   - These are acceptable as fallbacks but should use env vars when available
-
-## Email Tests
-
-### Unit Tests
-- `tests/unit/emailConfig.test.js` - Tests email configuration
-- `tests/unit/resendClient.test.js` - Tests Resend client wrapper
-- `tests/unit/emailTemplates.test.js` - Tests email templates
-- `tests/unit/emailService.test.js` - Tests email service methods
-
-### Integration Tests
-- `tests/integration/emailRoutes.test.js` - Tests email API routes
-- `tests/integration/email.test.js` - Legacy email route tests
-- `tests/integration/waitlistRoutes.test.js` - Tests waitlist endpoint
-
-## Migration Priorities
-
-1. **High Priority:**
-   - Migrate `auth/email.js` password reset to use `emailService.sendPasswordReset()`
-   - Migrate `auth/email.js` welcome email to use `emailService.sendDashboardWelcome()`
-   - Move `src/config/emailConfig.js` to `src/emails/emailConfig.js`
-   - Add `transactionalFromEmail` and `billingFromEmail` to config
-
-2. **Medium Priority:**
-   - Verify billing routes call `emailService.sendReceipt()` after Stripe payments
-   - Verify usage routes call `emailService.sendLowCreditWarning()` when credits low
-   - Verify license routes call `emailService.sendLicenseActivated()` when license created
-   - Add email event logging and de-duplication
-
-3. **Low Priority:**
-   - Add `usageSummaryEmail` template (future feature)
-   - Consolidate legacy `routes/email.js` and `services/emailService.js` if still in use
-
-## Notes
-
-- There are two `emailService.js` files: one in `services/` (legacy) and one in `src/services/` (new)
-- There are two `routes/email.js` files: one in `routes/` (legacy) and one in `src/routes/` (new)
-- The new system is already partially implemented and working for waitlist, dashboard welcome, license activated, low credit warning, receipt, and plugin signup
-- The main migration work is moving password reset and welcome email from `auth/email.js` to the centralized system
-
-
-```
-
----
-
-## docs/email-system.md
-
-```
-# Email System Documentation
-
-## Overview
-
-The backend email system is centralized and provides a single source of truth for all email functionality across Optti plugins and the website. All emails are sent via Resend and use configurable branding.
-
-## Architecture
-
-The email system consists of the following layers:
-
-1. **Configuration** (`src/emails/emailConfig.js`) - Centralizes all email-related environment variables
-2. **Templates** (`src/emails/templates/index.js`) - HTML email template functions
-3. **Resend Client** (`src/utils/resendClient.js`) - Single gateway to Resend API
-4. **Email Service** (`src/services/emailService.js`) - High-level semantic API for sending emails
-5. **Email Event Service** (`src/services/emailEventService.js`) - Logging and de-duplication
-6. **Routes** (`src/routes/email.js`) - Public API endpoints for plugins and website
-
-## Configuration
-
-All email configuration is centralized in `src/emails/emailConfig.js` and pulled from environment variables:
-
-- `BRAND_NAME` - Brand name (defaults to "AltText AI")
-- `BRAND_DOMAIN` - Brand domain (defaults to "optti.dev")
-- `SUPPORT_EMAIL` - Support email address (defaults to `support@${BRAND_DOMAIN}`)
-- `FRONTEND_DASHBOARD_URL` - Dashboard URL (defaults to `https://app.${BRAND_DOMAIN}`)
-- `PUBLIC_API_DOMAIN` - Public API domain (defaults to `api.${BRAND_DOMAIN}`)
-- `TRANSACTIONAL_FROM_EMAIL` - From email for general emails (defaults to `EMAIL_FROM`)
-- `BILLING_FROM_EMAIL` - From email for receipts (defaults to `EMAIL_FROM`)
-
-## Email Service Methods
-
-The `emailService` provides the following methods:
-
-### `sendWaitlistWelcome({ email, plugin, source })`
-Sends welcome email to waitlist signups. Includes de-duplication (60-minute window).
-
-### `sendDashboardWelcome({ email })`
-Sends welcome email to new dashboard users. Includes de-duplication (60-minute window).
-
-### `sendLicenseActivated({ email, planName, siteUrl })`
-Sends email when a license is activated.
-
-### `sendLowCreditWarning({ email, remainingCredits, pluginName, siteUrl })`
-Sends warning when credits are running low.
-
-### `sendReceipt({ email, amount, planName, invoiceUrl })`
-Sends payment receipt email. Uses `billingFromEmail` as the from address.
-
-### `sendPluginSignup({ email, pluginName, siteUrl })`
-Sends email when a plugin is installed.
-
-### `sendPasswordReset({ email, resetUrl })`
-Sends password reset email with reset link.
-
-### `sendUsageSummary({ email, pluginName, stats })`
-Placeholder for future usage summary emails.
-
-### `subscribe({ email, name, metadata })`
-Subscribes user to Resend audience (for marketing emails).
-
-## Public API Endpoints
-
-All endpoints are under `/email` and require rate limiting (10 requests per 15 minutes per IP).
-
-### `POST /email/waitlist`
-Body: `{ email, plugin?, source? }`
-- Sends waitlist welcome email
-- No authentication required
-
-### `POST /email/dashboard-welcome`
-Body: `{ email }`
-- Sends dashboard welcome email
-- No authentication required
-
-### `POST /email/plugin-signup`
-Body: `{ email, pluginName, siteUrl? }`
-- Sends plugin signup email
-- No authentication required
-
-### `POST /email/license-activated`
-Body: `{ email, planName, siteUrl? }`
-- Sends license activated email
-- **Requires authentication** (JWT token)
-
-### `POST /email/low-credit-warning`
-Body: `{ email, remainingCredits, pluginName?, siteUrl? }`
-- Sends low credit warning
-- No authentication required (but should be called internally)
-
-### `POST /email/receipt`
-Body: `{ email, amount, planName, invoiceUrl?, pluginName? }`
-- Sends payment receipt
-- **Requires authentication** (JWT token)
-
-## Email Event Logging
-
-All email sends are logged to the `email_events` table in Supabase for:
-- Audit trail
-- De-duplication (prevents duplicate emails within time windows)
-- Analytics
-
-The `emailEventService` provides:
-- `hasRecentEvent({ email, eventType, windowMinutes })` - Check for recent events
-- `logEvent({ userId, email, pluginSlug, eventType, context, success, emailId, errorMessage })` - Log an event
-
-## De-duplication
-
-The following email types are de-duplicated (60-minute window):
-- `waitlist_welcome`
-- `dashboard_welcome`
-
-If a recent event exists, the email is not sent and `{ success: true, deduped: true }` is returned.
-
-## Internal Usage
-
-For internal backend code, import and use `emailService` directly:
-
-```javascript
-const emailService = require('./src/services/emailService');
-
-// Send welcome email
-await emailService.sendDashboardWelcome({ email: 'user@example.com' });
-
-// Send receipt
-await emailService.sendReceipt({
-  email: 'user@example.com',
-  amount: 29.99,
-  planName: 'Pro',
-  invoiceUrl: 'https://stripe.com/invoice/123',
-});
-```
-
-## External Usage (Plugins/Website)
-
-For external clients (WordPress plugins, website), use the public API endpoints:
-
-```javascript
-// Waitlist signup
-await fetch('https://api.optti.dev/email/waitlist', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    email: 'user@example.com',
-    plugin: 'AltText AI',
-    source: 'website',
-  }),
-});
-```
-
-## Adding a New Email Type
-
-To add a new email type:
-
-1. **Add template function** in `src/emails/templates/index.js`:
-   ```javascript
-   function myNewEmail({ email, customField }) {
-     const config = getEmailConfig();
-     // ... build HTML and text
-     return { subject, html, text };
-   }
-   ```
-
-2. **Export from templates**:
-   ```javascript
-   module.exports = {
-     // ... existing exports
-     myNewEmail,
-   };
-   ```
-
-3. **Add service method** in `src/services/emailService.js`:
-   ```javascript
-   async function sendMyNewEmail({ email, customField }) {
-     const eventType = 'my_new_email';
-     try {
-       const template = myNewEmail({ email, customField });
-       const result = await sendEmail({ ... });
-       await logEvent({ email, eventType, ... });
-       return { success: true, emailId: result.id };
-     } catch (error) {
-       // ... error handling
-     }
-   }
-   ```
-
-4. **Add route** (if needed) in `src/routes/email.js`:
-   ```javascript
-   router.post('/my-new-email', async (req, res) => {
-     // ... validation
-     const result = await emailService.sendMyNewEmail({ ... });
-     // ... response
-   });
-   ```
-
-5. **Add tests**:
-   - Unit test for template in `tests/unit/emailTemplates.test.js`
-   - Unit test for service method in `tests/unit/emailService.test.js`
-   - Integration test for route in `tests/integration/emailRoutes.test.js`
-
-## Database Migration
-
-The `email_events` table must be created before using the email system:
-
-```sql
--- Run: db/migrations/20250125_email_events.sql
-```
-
-This creates the table and indexes for efficient querying and de-duplication.
-
-## Environment Variables
-
-Required environment variables (see `config/env.example`):
-
-```
-RESEND_API_KEY=re_xxx
-EMAIL_FROM=OpttiAI <hello@optti.dev>
-TRANSACTIONAL_FROM_EMAIL=OpttiAI <hello@optti.dev>
-BILLING_FROM_EMAIL=OpttiAI <billing@optti.dev>
-BRAND_NAME=OpttiAI
-BRAND_DOMAIN=optti.dev
-SUPPORT_EMAIL=support@optti.dev
-FRONTEND_DASHBOARD_URL=https://app.optti.dev
-PUBLIC_API_DOMAIN=api.optti.dev
-RESEND_AUDIENCE_ID=aud_xxx  # Optional
-```
-
-## Known Limitations
-
-- React Email templates (`.tsx` files) exist but are not currently used by the new system
-- Legacy `auth/email.js` still exists but is deprecated (password reset and welcome email now use `emailService`)
-- Legacy `services/emailService.js` and `routes/email.js` exist but are separate from the new system
-- Receipt emails are not automatically sent from Stripe webhooks (can be added to `handleInvoicePaid`)
-
-## Future Enhancements
-
-- Migrate React Email templates to be used by the new system
-- Add automatic receipt emails from Stripe webhooks
-- Add usage summary email automation
-- Add user-managed email preferences
-- Add unsubscribe functionality
-
-
-```
-
----
-
-## docs/migrations.md
-
-```
-# Database Migrations
-
-## Migration Process
-
-Database migrations are managed manually through SQL files in the `/migrations` directory.
-
-### Running Migrations
-
-1. Connect to your Supabase database
-2. Open the Supabase SQL Editor
-3. Copy the contents of the migration file
-4. Execute the SQL
-5. Verify the changes
-
-## Migration Files
-
-### add_licenses_table.sql
-
-**Date:** 2025-01-24  
-**Purpose:** Create licenses table and add WordPress user tracking to usage_logs
-
-**Changes:**
-- Creates `licenses` table with:
-  - License key (unique)
-  - Plan, service, token limits
-  - Site URL, site hash, install ID
-  - Auto-attach status
-  - User and organization references
-  - Stripe customer/subscription IDs
-  - Email status tracking
-- Adds indexes for fast lookups
-- Adds `wp_user_id` and `wp_user_name` columns to `usage_logs` table
-- Creates index on `wp_user_id` for auditing
-
-**SQL:**
-```sql
--- Create licenses table
-CREATE TABLE IF NOT EXISTS licenses (
-  id SERIAL PRIMARY KEY,
-  "licenseKey" VARCHAR(255) UNIQUE NOT NULL,
-  plan VARCHAR(50) NOT NULL DEFAULT 'free',
-  service VARCHAR(50) NOT NULL DEFAULT 'alttext-ai',
-  "tokenLimit" INTEGER NOT NULL DEFAULT 50,
-  "tokensRemaining" INTEGER NOT NULL DEFAULT 50,
-  "siteUrl" TEXT,
-  "siteHash" VARCHAR(255),
-  "installId" VARCHAR(255),
-  "autoAttachStatus" VARCHAR(50) DEFAULT 'manual',
-  "userId" INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  "organizationId" INTEGER REFERENCES organizations(id) ON DELETE SET NULL,
-  "stripeCustomerId" VARCHAR(255),
-  "stripeSubscriptionId" VARCHAR(255),
-  "licenseEmailSentAt" TIMESTAMP,
-  "emailStatus" VARCHAR(50) DEFAULT 'pending',
-  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
-  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- Create indexes
-CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses("licenseKey");
-CREATE INDEX IF NOT EXISTS idx_licenses_user_id ON licenses("userId");
-CREATE INDEX IF NOT EXISTS idx_licenses_organization_id ON licenses("organizationId");
-CREATE INDEX IF NOT EXISTS idx_licenses_site_hash ON licenses("siteHash");
-
--- Add WordPress user tracking to usage_logs
-ALTER TABLE usage_logs 
-  ADD COLUMN IF NOT EXISTS "wp_user_id" INTEGER,
-  ADD COLUMN IF NOT EXISTS "wp_user_name" VARCHAR(255);
-
--- Create index on wp_user_id
-CREATE INDEX IF NOT EXISTS idx_usage_logs_wp_user_id ON usage_logs("wp_user_id");
-```
-
-## Future Migrations
-
-When creating new migrations:
-
-1. Create a new SQL file in `/migrations/`
-2. Name it descriptively: `YYYY-MM-DD_description.sql`
-3. Use `IF NOT EXISTS` and `IF EXISTS` clauses for idempotency
-4. Document the purpose and changes in this file
-5. Test on a development database first
-6. Backup production database before running
-
-## Rollback
-
-Currently, migrations do not include rollback scripts. To rollback:
-
-1. Create a new migration file with reverse changes
-2. Test thoroughly on development
-3. Backup production before applying
-
-## Migration Best Practices
-
-- Always use `IF NOT EXISTS` / `IF EXISTS` for idempotency
-- Test migrations on development database first
-- Backup production database before running migrations
-- Document all changes in this file
-- Use transactions where possible
-- Add indexes for frequently queried columns
-- Consider performance impact of large migrations
-
-
-```
-
----
-
-## docs/testing.md
-
-```
-# Testing
-
-## Test Structure
-
-The test suite is organized into:
-- `/tests/unit` - Unit tests for individual modules
-- `/tests/integration` - Integration tests for API endpoints
-- `/tests/mocks` - Mock implementations for external dependencies
-- `/tests/helpers` - Test utilities and helpers
-
-## Test Coverage
-
-### Current Status
-- **Tests:** 287 passing, 14 test suites
-- **Coverage:** 63.91% statements, 54.13% branches, 62.67% functions, 65.16% lines
-- **Coverage threshold:** Maintained above 60% requirement
-
-### Coverage by Module
-
-**High Coverage:**
-- `auth/jwt.js` - 96.55% statements
-- `routes/license.js` - 96.2% statements
-- `routes/usage.js` - 95.73% statements
-
-**Low Coverage (Needs Improvement):**
-- `routes/organization.js` - 6.99% statements, 0% branches
-- `src/stripe/checkout.js` - 33.76% statements
-- `services/emailService.js` - 65.13% statements (some untested paths)
-
-## Running Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run with coverage
-npm test -- --coverage
-
-# Run specific test file
-npm test -- tests/unit/validation.test.js
-
-# Run in watch mode
-npm test -- --watch
-```
-
-## Test Mocks
-
-### Supabase Mock
-Located in `tests/mocks/supabase.mock.js`
-- Mocks database queries (select, insert, update, delete)
-- Supports queued responses for complex test scenarios
-- Handles authentication methods
-
-### Stripe Mock
-Located in `tests/mocks/stripe.mock.js`
-- Mocks checkout sessions, billing portal, subscriptions
-- Supports subscription state transitions
-- Handles webhook events
-
-### Resend Mock
-Located in `tests/mocks/resend.mock.js`
-- Mocks email sending
-- Supports success/failure scenarios
-- Handles rate limiting
-
-## Test Helpers
-
-### createTestServer.js
-Creates a fresh Express app instance for each test, ensuring isolation.
-
-### testHelpers.js
-Provides utilities for:
-- Creating test users
-- Generating JWT tokens
-- Creating test licenses
-- Waiting for async operations
-
-## Writing Tests
-
-### Unit Test Example
-```javascript
-const { validateEmail } = require('../../src/validation/validators');
-
-describe('validateEmail', () => {
-  test('validates correct email formats', () => {
-    expect(validateEmail('user@example.com')).toBe(true);
-  });
-});
-```
-
-### Integration Test Example
-```javascript
-const request = require('supertest');
-const { createTestServer } = require('../helpers/createTestServer');
-
-describe('POST /auth/register', () => {
-  test('registers a new user', async () => {
-    const app = createTestServer();
-    const res = await request(app)
-      .post('/auth/register')
-      .send({ email: 'test@example.com', password: 'Password123!' });
-    
-    expect(res.status).toBe(201);
-    expect(res.body.user.email).toBe('test@example.com');
-  });
-});
-```
-
-## CI/CD
-
-Tests run automatically on:
-- Pull requests
-- Pushes to main branch
-- Via GitHub Actions workflow (`.github/workflows/tests.yml`)
-
-The CI pipeline:
-1. Installs dependencies
-2. Runs linter
-3. Runs full test suite
-4. Generates coverage report
-5. Fails if coverage drops below 60%
-
-
-```
-
----
-
 ## src/config/plans.js
 
 ```
@@ -18535,876 +18572,6 @@ module.exports = [
   { id: "pack_1000", credits: 1000, price: 2000 }, // £20.00
   { id: "pack_2500", credits: 2500, price: 4500 }, // £45.00
 ];
-
-
-```
-
----
-
-## src/emails/emailConfig.js
-
-```
-/**
- * Email Configuration Helper
- * Centralizes email-related configuration from environment variables
- */
-
-/**
- * Get email configuration from environment variables
- * @returns {Object} Email configuration object
- */
-function getEmailConfig() {
-  // Get brand name from env vars
-  const brandName = process.env.BRAND_NAME || process.env.EMAIL_BRAND_NAME || 'AltText AI';
-  
-  // Get brand domain from env var (default to 'optti.dev' for backward compatibility)
-  const brandDomain = process.env.BRAND_DOMAIN || 'optti.dev';
-  
-  // Construct support email from domain if not provided
-  const supportEmail = process.env.SUPPORT_EMAIL || `support@${brandDomain}`;
-  
-  // Construct dashboard URL from domain if not provided
-  const dashboardUrl = process.env.FRONTEND_DASHBOARD_URL || 
-    process.env.FRONTEND_URL || 
-    `https://app.${brandDomain}`;
-  
-  // Construct API domain from brand domain if not provided
-  const publicApiDomain = process.env.PUBLIC_API_DOMAIN || `api.${brandDomain}`;
-  
-  // Transactional from email (for general emails)
-  const transactionalFromEmail = process.env.TRANSACTIONAL_FROM_EMAIL || 
-    process.env.EMAIL_FROM || 
-    process.env.RESEND_FROM_EMAIL || 
-    `${brandName} <hello@${brandDomain}>`;
-  
-  // Billing from email (for receipts and payment-related emails)
-  const billingFromEmail = process.env.BILLING_FROM_EMAIL || 
-    process.env.EMAIL_FROM || 
-    process.env.RESEND_FROM_EMAIL || 
-    `${brandName} <billing@${brandDomain}>`;
-
-  return {
-    brandName,
-    brandDomain,
-    supportEmail,
-    dashboardUrl,
-    publicApiDomain,
-    transactionalFromEmail,
-    billingFromEmail,
-  };
-}
-
-// Export plain object for direct property access
-const emailConfig = {
-  get brandName() {
-    return getEmailConfig().brandName;
-  },
-  get brandDomain() {
-    return getEmailConfig().brandDomain;
-  },
-  get supportEmail() {
-    return getEmailConfig().supportEmail;
-  },
-  get dashboardUrl() {
-    return getEmailConfig().dashboardUrl;
-  },
-  get publicApiDomain() {
-    return getEmailConfig().publicApiDomain;
-  },
-  get transactionalFromEmail() {
-    return getEmailConfig().transactionalFromEmail;
-  },
-  get billingFromEmail() {
-    return getEmailConfig().billingFromEmail;
-  },
-};
-
-// Also export the function for cases where full config object is needed
-module.exports = {
-  ...emailConfig,
-  getEmailConfig,
-};
-
-
-```
-
----
-
-## src/emails/index.ts
-
-```
-export { WelcomeEmail } from './WelcomeEmail';
-export { LicenseActivatedEmail } from './LicenseActivatedEmail';
-export { LowCreditWarningEmail } from './LowCreditWarningEmail';
-export { ReceiptEmail } from './ReceiptEmail';
-export { PluginSignupEmail } from './PluginSignupEmail';
-export { UsageLimitReachedEmail } from './UsageLimitReachedEmail';
-export { UpgradeEmail } from './UpgradeEmail';
-export { InactiveEmail } from './InactiveEmail';
-export { LicenseKeyEmail } from './LicenseKeyEmail';
-export { PasswordResetEmail } from './PasswordResetEmail';
-
-export { default as WelcomeEmailDefault } from './WelcomeEmail';
-export { default as LicenseActivatedEmailDefault } from './LicenseActivatedEmail';
-export { default as LowCreditWarningEmailDefault } from './LowCreditWarningEmail';
-export { default as ReceiptEmailDefault } from './ReceiptEmail';
-export { default as PluginSignupEmailDefault } from './PluginSignupEmail';
-export { default as UsageLimitReachedEmailDefault } from './UsageLimitReachedEmail';
-export { default as UpgradeEmailDefault } from './UpgradeEmail';
-export { default as InactiveEmailDefault } from './InactiveEmail';
-export { default as LicenseKeyEmailDefault } from './LicenseKeyEmail';
-export { default as PasswordResetEmailDefault } from './PasswordResetEmail';
-
-
-```
-
----
-
-## src/emails/renderHelper.js
-
-```
-/**
- * Helper module for rendering React Email templates
- * Handles the rendering of TSX email templates to HTML and text
- */
-
-const { render } = require('@react-email/render');
-const React = require('react');
-
-// Register ts-node to handle TypeScript/TSX files
-let tsNodeRegistered = false;
-try {
-  require('ts-node').register({
-    transpileOnly: true,
-    compilerOptions: {
-      jsx: 'react',
-      module: 'commonjs',
-      esModuleInterop: true,
-      allowSyntheticDefaultImports: true,
-    },
-  });
-  tsNodeRegistered = true;
-} catch (error) {
-  // ts-node not available, will try compiled JS or fallback
-  console.warn('[Email Render Helper] ts-node not available, will try compiled JS');
-}
-
-// Import email templates
-let WelcomeEmail, LicenseActivatedEmail, LowCreditWarningEmail, ReceiptEmail, 
-    PluginSignupEmail, UsageLimitReachedEmail, UpgradeEmail, InactiveEmail, 
-    LicenseKeyEmail, PasswordResetEmail;
-
-try {
-  // Try to require TSX files (will work if ts-node is registered)
-  // or compiled JS versions
-  const emails = require('./index');
-  WelcomeEmail = emails.WelcomeEmail || emails.WelcomeEmailDefault;
-  LicenseActivatedEmail = emails.LicenseActivatedEmail || emails.LicenseActivatedEmailDefault;
-  LowCreditWarningEmail = emails.LowCreditWarningEmail || emails.LowCreditWarningEmailDefault;
-  ReceiptEmail = emails.ReceiptEmail || emails.ReceiptEmailDefault;
-  PluginSignupEmail = emails.PluginSignupEmail || emails.PluginSignupEmailDefault;
-  UsageLimitReachedEmail = emails.UsageLimitReachedEmail || emails.UsageLimitReachedEmailDefault;
-  UpgradeEmail = emails.UpgradeEmail || emails.UpgradeEmailDefault;
-  InactiveEmail = emails.InactiveEmail || emails.InactiveEmailDefault;
-  LicenseKeyEmail = emails.LicenseKeyEmail || emails.LicenseKeyEmailDefault;
-  PasswordResetEmail = emails.PasswordResetEmail || emails.PasswordResetEmailDefault;
-} catch (error) {
-  console.warn('[Email Render Helper] Could not load React Email templates:', error.message);
-  console.warn('[Email Render Helper] Falling back to inline HTML templates');
-}
-
-/**
- * Get brand name from environment variable
- */
-function getBrandName() {
-  const { brandName } = require('./emailConfig');
-  return brandName;
-}
-
-/**
- * Render a React Email component to HTML
- * @param {React.Component} Component - React Email component
- * @param {Object} props - Component props
- * @returns {Promise<string>} Rendered HTML
- */
-async function renderEmailToHTML(Component, props) {
-  if (!Component) {
-    throw new Error('Email component not available');
-  }
-
-  try {
-    const html = await render(React.createElement(Component, props));
-    return html;
-  } catch (error) {
-    console.error('[Email Render Helper] Error rendering email to HTML:', error);
-    throw error;
-  }
-}
-
-/**
- * Render a React Email component to plain text
- * @param {React.Component} Component - React Email component
- * @param {Object} props - Component props
- * @returns {Promise<string>} Rendered plain text
- */
-async function renderEmailToText(Component, props) {
-  if (!Component) {
-    throw new Error('Email component not available');
-  }
-
-  try {
-    const text = await render(React.createElement(Component, props), {
-      plainText: true,
-    });
-    return text;
-  } catch (error) {
-    console.error('[Email Render Helper] Error rendering email to text:', error);
-    throw error;
-  }
-}
-
-/**
- * Render welcome email
- */
-async function renderWelcomeEmail(props) {
-  if (!WelcomeEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(WelcomeEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(WelcomeEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render license activated email
- */
-async function renderLicenseActivatedEmail(props) {
-  if (!LicenseActivatedEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(LicenseActivatedEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(LicenseActivatedEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render low credit warning email
- */
-async function renderLowCreditWarningEmail(props) {
-  if (!LowCreditWarningEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(LowCreditWarningEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(LowCreditWarningEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render receipt email
- */
-async function renderReceiptEmail(props) {
-  if (!ReceiptEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(ReceiptEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(ReceiptEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render plugin signup email
- */
-async function renderPluginSignupEmail(props) {
-  if (!PluginSignupEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(PluginSignupEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(PluginSignupEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render usage limit reached email
- */
-async function renderUsageLimitReachedEmail(props) {
-  if (!UsageLimitReachedEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(UsageLimitReachedEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(UsageLimitReachedEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render upgrade email
- */
-async function renderUpgradeEmail(props) {
-  if (!UpgradeEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(UpgradeEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(UpgradeEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render inactive email
- */
-async function renderInactiveEmail(props) {
-  if (!InactiveEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(InactiveEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(InactiveEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render license key email
- */
-async function renderLicenseKeyEmail(props) {
-  if (!LicenseKeyEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(LicenseKeyEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(LicenseKeyEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-/**
- * Render password reset email
- */
-async function renderPasswordResetEmail(props) {
-  if (!PasswordResetEmail) {
-    return null;
-  }
-  return {
-    html: await renderEmailToHTML(PasswordResetEmail, { ...props, brandName: getBrandName() }),
-    text: await renderEmailToText(PasswordResetEmail, { ...props, brandName: getBrandName() }),
-  };
-}
-
-module.exports = {
-  renderWelcomeEmail,
-  renderLicenseActivatedEmail,
-  renderLowCreditWarningEmail,
-  renderReceiptEmail,
-  renderPluginSignupEmail,
-  renderUsageLimitReachedEmail,
-  renderUpgradeEmail,
-  renderInactiveEmail,
-  renderLicenseKeyEmail,
-  renderPasswordResetEmail,
-  getBrandName,
-  // Export components for direct use if needed
-  WelcomeEmail,
-  LicenseActivatedEmail,
-  LowCreditWarningEmail,
-  ReceiptEmail,
-  PluginSignupEmail,
-  UsageLimitReachedEmail,
-  UpgradeEmail,
-  InactiveEmail,
-  LicenseKeyEmail,
-  PasswordResetEmail,
-};
-
-
-```
-
----
-
-## src/emails/templates/index.js
-
-```
-/**
- * Email Templates
- * HTML template functions for all email types
- */
-
-const { getEmailConfig } = require('../emailConfig');
-
-/**
- * Generate email footer HTML
- * @param {Object} config - Email config
- * @returns {string} Footer HTML
- */
-function getEmailFooter(config) {
-  const { brandName, supportEmail } = config;
-  return `
-    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-    <p style="font-size: 12px; color: #9ca3af; text-align: center; margin-top: 30px;">
-      You received this email because you use ${brandName}. Contact <a href="mailto:${supportEmail}" style="color: #667eea; text-decoration: none;">${supportEmail}</a> for help.
-    </p>
-    <p style="font-size: 11px; color: #d1d5db; text-align: center; margin-top: 10px;">
-      Best regards,<br>The ${brandName} Team
-    </p>
-  `;
-}
-
-/**
- * Generate base email HTML structure
- * @param {Object} config - Email config
- * @param {string} headerTitle - Header title
- * @param {string} headerColor - Header gradient color (default: purple)
- * @param {string} content - Main content HTML
- * @returns {string} Complete email HTML
- */
-function getBaseEmailHTML(config, headerTitle, headerColor = '667eea', content) {
-  const { brandName } = config;
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
-  <div style="background: linear-gradient(135deg, #${headerColor} 0%, #764ba2 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 28px;">${headerTitle}</h1>
-  </div>
-  <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-    ${content}
-    ${getEmailFooter(config)}
-  </div>
-</body>
-</html>`;
-}
-
-/**
- * Welcome email for waitlist signups
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} [params.source] - Source of signup (plugin, website, etc.)
- * @returns {Object} Email content with subject, html, and text
- */
-function welcomeWaitlistEmail({ email, source }) {
-  const config = getEmailConfig();
-  const { brandName, dashboardUrl } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Thank you for joining the ${brandName} waitlist! We're excited to have you on board.</p>
-    
-    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 What's Next:</p>
-      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-        <li>We'll notify you when ${brandName} is available</li>
-        <li>You'll get early access to new features</li>
-        <li>Check out our dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
-      </ul>
-    </div>
-  `;
-
-  const html = getBaseEmailHTML(config, `Welcome to ${brandName}! 🎉`, '667eea', content);
-
-  const text = `
-Welcome to ${brandName}! 🎉
-
-Thank you for joining the ${brandName} waitlist! We're excited to have you on board.
-
-What's Next:
-- We'll notify you when ${brandName} is available
-- You'll get early access to new features
-- Check out our dashboard: ${dashboardUrl}
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Welcome to ${brandName}! 🎉`,
-    html,
-    text,
-  };
-}
-
-/**
- * Welcome email for dashboard users
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @returns {Object} Email content with subject, html, and text
- */
-function welcomeDashboardEmail({ email }) {
-  const config = getEmailConfig();
-  const { brandName, dashboardUrl } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Welcome to ${brandName}! We're excited to help you get started.</p>
-    
-    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Get Started:</p>
-      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-        <li>Access your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
-        <li>Set up your first project</li>
-        <li>Explore our features</li>
-      </ul>
-    </div>
-  `;
-
-  const html = getBaseEmailHTML(config, `Welcome to ${brandName}! 🎉`, '667eea', content);
-
-  const text = `
-Welcome to ${brandName}! 🎉
-
-Welcome to ${brandName}! We're excited to help you get started.
-
-Get Started:
-- Access your dashboard: ${dashboardUrl}
-- Set up your first project
-- Explore our features
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Welcome to ${brandName}! 🎉`,
-    html,
-    text,
-  };
-}
-
-/**
- * License activated email
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} params.planName - Plan name (Pro, Agency, etc.)
- * @param {string} [params.siteUrl] - Site URL where license is activated
- * @returns {Object} Email content with subject, html, and text
- */
-function licenseActivatedEmail({ email, planName, siteUrl }) {
-  const config = getEmailConfig();
-  const { brandName } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Your ${planName} license has been activated${siteUrl ? ` for ${siteUrl}` : ''}!</p>
-    
-    <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 15px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; font-weight: 600; color: #10b981;">✅ Your ${planName} Plan Includes:</p>
-      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-        <li>Full access to all ${planName} features</li>
-        <li>Priority support</li>
-        <li>Advanced capabilities</li>
-      </ul>
-    </div>
-    
-    ${siteUrl ? `<p>Your license is now active on <strong>${siteUrl}</strong>. Start using ${brandName} right away!</p>` : ''}
-  `;
-
-  const html = getBaseEmailHTML(config, `Your ${planName} License is Active! 🎉`, '10b981', content);
-
-  const text = `
-Your ${planName} License is Active! 🎉
-
-Your ${planName} license has been activated${siteUrl ? ` for ${siteUrl}` : ''}!
-
-Your ${planName} Plan Includes:
-- Full access to all ${planName} features
-- Priority support
-- Advanced capabilities
-
-${siteUrl ? `Your license is now active on ${siteUrl}. Start using ${brandName} right away!` : ''}
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Your ${planName} License is Active! 🎉`,
-    html,
-    text,
-  };
-}
-
-/**
- * Low credit warning email
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} [params.siteUrl] - Site URL
- * @param {number} params.remainingCredits - Remaining credits
- * @param {string} [params.pluginName] - Plugin name
- * @returns {Object} Email content with subject, html, and text
- */
-function lowCreditWarningEmail({ email, siteUrl, remainingCredits, pluginName }) {
-  const config = getEmailConfig();
-  const { brandName, dashboardUrl } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>You're running low on credits${pluginName ? ` for ${pluginName}` : ''}!</p>
-    
-    <div style="background: #fffbeb; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px; text-align: center;">
-      <div style="font-size: 48px; font-weight: bold; color: #d97706; margin-bottom: 10px;">${remainingCredits}</div>
-      <div style="font-size: 14px; color: #92400e;">Credits Remaining</div>
-    </div>
-    
-    <p>Consider upgrading your plan to get more credits and avoid interruptions.</p>
-    
-    <div style="text-align: center; margin: 30px 0;">
-      <a href="${dashboardUrl}/upgrade" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">Upgrade Now</a>
-    </div>
-  `;
-
-  const html = getBaseEmailHTML(config, `Low Credit Warning ⚡`, 'f59e0b', content);
-
-  const text = `
-Low Credit Warning ⚡
-
-You're running low on credits${pluginName ? ` for ${pluginName}` : ''}!
-
-${remainingCredits} Credits Remaining
-
-Consider upgrading your plan to get more credits and avoid interruptions.
-
-Upgrade now: ${dashboardUrl}/upgrade
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Low Credit Warning - ${remainingCredits} Credits Remaining ⚡`,
-    html,
-    text,
-  };
-}
-
-/**
- * Receipt email
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {number} params.amount - Payment amount
- * @param {string} params.planName - Plan name
- * @param {string} [params.invoiceUrl] - Invoice URL
- * @returns {Object} Email content with subject, html, and text
- */
-function receiptEmail({ email, amount, planName, invoiceUrl }) {
-  const config = getEmailConfig();
-  const { brandName } = config;
-
-  const formattedAmount = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount);
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Thank you for your payment! Your receipt is below.</p>
-    
-    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
-      <p style="margin: 0 0 10px 0;"><strong>Amount:</strong> ${formattedAmount}</p>
-      <p style="margin: 0 0 10px 0;"><strong>Plan:</strong> ${planName}</p>
-      ${invoiceUrl ? `<p style="margin: 0;"><strong>Invoice:</strong> <a href="${invoiceUrl}" style="color: #667eea;">View Invoice</a></p>` : ''}
-    </div>
-    
-    <p>Your ${planName} plan is now active!</p>
-  `;
-
-  const html = getBaseEmailHTML(config, `Payment Receipt`, '10b981', content);
-
-  const text = `
-Payment Receipt
-
-Thank you for your payment! Your receipt is below.
-
-Amount: ${formattedAmount}
-Plan: ${planName}
-${invoiceUrl ? `Invoice: ${invoiceUrl}` : ''}
-
-Your ${planName} plan is now active!
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Payment Receipt - ${formattedAmount}`,
-    html,
-    text,
-  };
-}
-
-/**
- * Plugin signup email
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} params.pluginName - Plugin name
- * @param {string} [params.siteUrl] - Site URL
- * @returns {Object} Email content with subject, html, and text
- */
-function pluginSignupEmail({ email, pluginName, siteUrl }) {
-  const config = getEmailConfig();
-  const { brandName, dashboardUrl } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Thank you for installing <strong>${pluginName}</strong>${siteUrl ? ` on ${siteUrl}` : ''}!</p>
-    
-    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
-      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Quick Start:</p>
-      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
-        <li>Your plugin is now active and ready to use</li>
-        <li>Access your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
-        <li>Check out our documentation for setup guides</li>
-      </ul>
-    </div>
-  `;
-
-  const html = getBaseEmailHTML(config, `Welcome to ${pluginName}! 🎉`, '667eea', content);
-
-  const text = `
-Welcome to ${pluginName}! 🎉
-
-Thank you for installing ${pluginName}${siteUrl ? ` on ${siteUrl}` : ''}!
-
-Quick Start:
-- Your plugin is now active and ready to use
-- Access your dashboard: ${dashboardUrl}
-- Check out our documentation for setup guides
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Welcome to ${pluginName}! 🎉`,
-    html,
-    text,
-  };
-}
-
-/**
- * Password reset email
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} params.resetUrl - Password reset URL with token
- * @returns {Object} Email content with subject, html, and text
- */
-function passwordResetEmail({ email, resetUrl }) {
-  const config = getEmailConfig();
-  const { brandName } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>You requested to reset your password for ${brandName}.</p>
-    <p>Click the button below to reset your password:</p>
-    
-    <div style="text-align: center; margin: 30px 0;">
-      <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 600;">Reset Password</a>
-    </div>
-    
-    <p style="font-size: 14px; color: #6b7280;">Or copy and paste this link into your browser:</p>
-    <p style="font-size: 12px; word-break: break-all; color: #9ca3af; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetUrl}</p>
-    
-    <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">This link will expire in 1 hour.</p>
-    <p style="font-size: 14px; color: #6b7280;">If you didn't request this, please ignore this email.</p>
-  `;
-
-  const html = getBaseEmailHTML(config, 'Reset Your Password', '667eea', content);
-
-  const text = `
-Reset Your Password
-
-You requested to reset your password for ${brandName}.
-
-Click the link below to reset your password:
-${resetUrl}
-
-This link will expire in 1 hour.
-
-If you didn't request this, please ignore this email.
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Reset Your ${brandName} Password`,
-    html,
-    text,
-  };
-}
-
-/**
- * Usage summary email (placeholder for future feature)
- * @param {Object} params - Email parameters
- * @param {string} params.email - Recipient email
- * @param {string} [params.pluginName] - Plugin name
- * @param {Object} [params.stats] - Usage statistics
- * @returns {Object} Email content with subject, html, and text
- */
-function usageSummaryEmail({ email, pluginName, stats = {} }) {
-  const config = getEmailConfig();
-  const { brandName, dashboardUrl } = config;
-
-  const content = `
-    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
-    <p>Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.</p>
-    
-    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
-      <p style="margin: 0;"><strong>Usage Summary:</strong></p>
-      <p style="margin: 10px 0 0 0;">View detailed analytics in your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></p>
-    </div>
-  `;
-
-  const html = getBaseEmailHTML(config, 'Your Usage Summary', '667eea', content);
-
-  const text = `
-Your Usage Summary
-
-Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.
-
-View detailed analytics in your dashboard: ${dashboardUrl}
-
-You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
-
-Best regards,
-The ${brandName} Team
-  `.trim();
-
-  return {
-    subject: `Your ${brandName} Usage Summary`,
-    html,
-    text,
-  };
-}
-
-module.exports = {
-  welcomeWaitlistEmail,
-  welcomeDashboardEmail,
-  licenseActivatedEmail,
-  lowCreditWarningEmail,
-  receiptEmail,
-  pluginSignupEmail,
-  passwordResetEmail,
-  usageSummaryEmail,
-};
 
 
 ```
@@ -21923,6 +21090,876 @@ const signature = {
   color: '#9ca3af',
   textAlign: 'center' as const,
   marginTop: '30px',
+};
+
+
+```
+
+---
+
+## src/emails/emailConfig.js
+
+```
+/**
+ * Email Configuration Helper
+ * Centralizes email-related configuration from environment variables
+ */
+
+/**
+ * Get email configuration from environment variables
+ * @returns {Object} Email configuration object
+ */
+function getEmailConfig() {
+  // Get brand name from env vars
+  const brandName = process.env.BRAND_NAME || process.env.EMAIL_BRAND_NAME || 'AltText AI';
+  
+  // Get brand domain from env var (default to 'optti.dev' for backward compatibility)
+  const brandDomain = process.env.BRAND_DOMAIN || 'optti.dev';
+  
+  // Construct support email from domain if not provided
+  const supportEmail = process.env.SUPPORT_EMAIL || `support@${brandDomain}`;
+  
+  // Construct dashboard URL from domain if not provided
+  const dashboardUrl = process.env.FRONTEND_DASHBOARD_URL || 
+    process.env.FRONTEND_URL || 
+    `https://app.${brandDomain}`;
+  
+  // Construct API domain from brand domain if not provided
+  const publicApiDomain = process.env.PUBLIC_API_DOMAIN || `api.${brandDomain}`;
+  
+  // Transactional from email (for general emails)
+  const transactionalFromEmail = process.env.TRANSACTIONAL_FROM_EMAIL || 
+    process.env.EMAIL_FROM || 
+    process.env.RESEND_FROM_EMAIL || 
+    `${brandName} <hello@${brandDomain}>`;
+  
+  // Billing from email (for receipts and payment-related emails)
+  const billingFromEmail = process.env.BILLING_FROM_EMAIL || 
+    process.env.EMAIL_FROM || 
+    process.env.RESEND_FROM_EMAIL || 
+    `${brandName} <billing@${brandDomain}>`;
+
+  return {
+    brandName,
+    brandDomain,
+    supportEmail,
+    dashboardUrl,
+    publicApiDomain,
+    transactionalFromEmail,
+    billingFromEmail,
+  };
+}
+
+// Export plain object for direct property access
+const emailConfig = {
+  get brandName() {
+    return getEmailConfig().brandName;
+  },
+  get brandDomain() {
+    return getEmailConfig().brandDomain;
+  },
+  get supportEmail() {
+    return getEmailConfig().supportEmail;
+  },
+  get dashboardUrl() {
+    return getEmailConfig().dashboardUrl;
+  },
+  get publicApiDomain() {
+    return getEmailConfig().publicApiDomain;
+  },
+  get transactionalFromEmail() {
+    return getEmailConfig().transactionalFromEmail;
+  },
+  get billingFromEmail() {
+    return getEmailConfig().billingFromEmail;
+  },
+};
+
+// Also export the function for cases where full config object is needed
+module.exports = {
+  ...emailConfig,
+  getEmailConfig,
+};
+
+
+```
+
+---
+
+## src/emails/index.ts
+
+```
+export { WelcomeEmail } from './WelcomeEmail';
+export { LicenseActivatedEmail } from './LicenseActivatedEmail';
+export { LowCreditWarningEmail } from './LowCreditWarningEmail';
+export { ReceiptEmail } from './ReceiptEmail';
+export { PluginSignupEmail } from './PluginSignupEmail';
+export { UsageLimitReachedEmail } from './UsageLimitReachedEmail';
+export { UpgradeEmail } from './UpgradeEmail';
+export { InactiveEmail } from './InactiveEmail';
+export { LicenseKeyEmail } from './LicenseKeyEmail';
+export { PasswordResetEmail } from './PasswordResetEmail';
+
+export { default as WelcomeEmailDefault } from './WelcomeEmail';
+export { default as LicenseActivatedEmailDefault } from './LicenseActivatedEmail';
+export { default as LowCreditWarningEmailDefault } from './LowCreditWarningEmail';
+export { default as ReceiptEmailDefault } from './ReceiptEmail';
+export { default as PluginSignupEmailDefault } from './PluginSignupEmail';
+export { default as UsageLimitReachedEmailDefault } from './UsageLimitReachedEmail';
+export { default as UpgradeEmailDefault } from './UpgradeEmail';
+export { default as InactiveEmailDefault } from './InactiveEmail';
+export { default as LicenseKeyEmailDefault } from './LicenseKeyEmail';
+export { default as PasswordResetEmailDefault } from './PasswordResetEmail';
+
+
+```
+
+---
+
+## src/emails/renderHelper.js
+
+```
+/**
+ * Helper module for rendering React Email templates
+ * Handles the rendering of TSX email templates to HTML and text
+ */
+
+const { render } = require('@react-email/render');
+const React = require('react');
+
+// Register ts-node to handle TypeScript/TSX files
+let tsNodeRegistered = false;
+try {
+  require('ts-node').register({
+    transpileOnly: true,
+    compilerOptions: {
+      jsx: 'react',
+      module: 'commonjs',
+      esModuleInterop: true,
+      allowSyntheticDefaultImports: true,
+    },
+  });
+  tsNodeRegistered = true;
+} catch (error) {
+  // ts-node not available, will try compiled JS or fallback
+  console.warn('[Email Render Helper] ts-node not available, will try compiled JS');
+}
+
+// Import email templates
+let WelcomeEmail, LicenseActivatedEmail, LowCreditWarningEmail, ReceiptEmail, 
+    PluginSignupEmail, UsageLimitReachedEmail, UpgradeEmail, InactiveEmail, 
+    LicenseKeyEmail, PasswordResetEmail;
+
+try {
+  // Try to require TSX files (will work if ts-node is registered)
+  // or compiled JS versions
+  const emails = require('./index');
+  WelcomeEmail = emails.WelcomeEmail || emails.WelcomeEmailDefault;
+  LicenseActivatedEmail = emails.LicenseActivatedEmail || emails.LicenseActivatedEmailDefault;
+  LowCreditWarningEmail = emails.LowCreditWarningEmail || emails.LowCreditWarningEmailDefault;
+  ReceiptEmail = emails.ReceiptEmail || emails.ReceiptEmailDefault;
+  PluginSignupEmail = emails.PluginSignupEmail || emails.PluginSignupEmailDefault;
+  UsageLimitReachedEmail = emails.UsageLimitReachedEmail || emails.UsageLimitReachedEmailDefault;
+  UpgradeEmail = emails.UpgradeEmail || emails.UpgradeEmailDefault;
+  InactiveEmail = emails.InactiveEmail || emails.InactiveEmailDefault;
+  LicenseKeyEmail = emails.LicenseKeyEmail || emails.LicenseKeyEmailDefault;
+  PasswordResetEmail = emails.PasswordResetEmail || emails.PasswordResetEmailDefault;
+} catch (error) {
+  console.warn('[Email Render Helper] Could not load React Email templates:', error.message);
+  console.warn('[Email Render Helper] Falling back to inline HTML templates');
+}
+
+/**
+ * Get brand name from environment variable
+ */
+function getBrandName() {
+  const { brandName } = require('./emailConfig');
+  return brandName;
+}
+
+/**
+ * Render a React Email component to HTML
+ * @param {React.Component} Component - React Email component
+ * @param {Object} props - Component props
+ * @returns {Promise<string>} Rendered HTML
+ */
+async function renderEmailToHTML(Component, props) {
+  if (!Component) {
+    throw new Error('Email component not available');
+  }
+
+  try {
+    const html = await render(React.createElement(Component, props));
+    return html;
+  } catch (error) {
+    console.error('[Email Render Helper] Error rendering email to HTML:', error);
+    throw error;
+  }
+}
+
+/**
+ * Render a React Email component to plain text
+ * @param {React.Component} Component - React Email component
+ * @param {Object} props - Component props
+ * @returns {Promise<string>} Rendered plain text
+ */
+async function renderEmailToText(Component, props) {
+  if (!Component) {
+    throw new Error('Email component not available');
+  }
+
+  try {
+    const text = await render(React.createElement(Component, props), {
+      plainText: true,
+    });
+    return text;
+  } catch (error) {
+    console.error('[Email Render Helper] Error rendering email to text:', error);
+    throw error;
+  }
+}
+
+/**
+ * Render welcome email
+ */
+async function renderWelcomeEmail(props) {
+  if (!WelcomeEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(WelcomeEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(WelcomeEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render license activated email
+ */
+async function renderLicenseActivatedEmail(props) {
+  if (!LicenseActivatedEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(LicenseActivatedEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(LicenseActivatedEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render low credit warning email
+ */
+async function renderLowCreditWarningEmail(props) {
+  if (!LowCreditWarningEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(LowCreditWarningEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(LowCreditWarningEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render receipt email
+ */
+async function renderReceiptEmail(props) {
+  if (!ReceiptEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(ReceiptEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(ReceiptEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render plugin signup email
+ */
+async function renderPluginSignupEmail(props) {
+  if (!PluginSignupEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(PluginSignupEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(PluginSignupEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render usage limit reached email
+ */
+async function renderUsageLimitReachedEmail(props) {
+  if (!UsageLimitReachedEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(UsageLimitReachedEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(UsageLimitReachedEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render upgrade email
+ */
+async function renderUpgradeEmail(props) {
+  if (!UpgradeEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(UpgradeEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(UpgradeEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render inactive email
+ */
+async function renderInactiveEmail(props) {
+  if (!InactiveEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(InactiveEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(InactiveEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render license key email
+ */
+async function renderLicenseKeyEmail(props) {
+  if (!LicenseKeyEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(LicenseKeyEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(LicenseKeyEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+/**
+ * Render password reset email
+ */
+async function renderPasswordResetEmail(props) {
+  if (!PasswordResetEmail) {
+    return null;
+  }
+  return {
+    html: await renderEmailToHTML(PasswordResetEmail, { ...props, brandName: getBrandName() }),
+    text: await renderEmailToText(PasswordResetEmail, { ...props, brandName: getBrandName() }),
+  };
+}
+
+module.exports = {
+  renderWelcomeEmail,
+  renderLicenseActivatedEmail,
+  renderLowCreditWarningEmail,
+  renderReceiptEmail,
+  renderPluginSignupEmail,
+  renderUsageLimitReachedEmail,
+  renderUpgradeEmail,
+  renderInactiveEmail,
+  renderLicenseKeyEmail,
+  renderPasswordResetEmail,
+  getBrandName,
+  // Export components for direct use if needed
+  WelcomeEmail,
+  LicenseActivatedEmail,
+  LowCreditWarningEmail,
+  ReceiptEmail,
+  PluginSignupEmail,
+  UsageLimitReachedEmail,
+  UpgradeEmail,
+  InactiveEmail,
+  LicenseKeyEmail,
+  PasswordResetEmail,
+};
+
+
+```
+
+---
+
+## src/emails/templates/index.js
+
+```
+/**
+ * Email Templates
+ * HTML template functions for all email types
+ */
+
+const { getEmailConfig } = require('../emailConfig');
+
+/**
+ * Generate email footer HTML
+ * @param {Object} config - Email config
+ * @returns {string} Footer HTML
+ */
+function getEmailFooter(config) {
+  const { brandName, supportEmail } = config;
+  return `
+    <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+    <p style="font-size: 12px; color: #9ca3af; text-align: center; margin-top: 30px;">
+      You received this email because you use ${brandName}. Contact <a href="mailto:${supportEmail}" style="color: #667eea; text-decoration: none;">${supportEmail}</a> for help.
+    </p>
+    <p style="font-size: 11px; color: #d1d5db; text-align: center; margin-top: 10px;">
+      Best regards,<br>The ${brandName} Team
+    </p>
+  `;
+}
+
+/**
+ * Generate base email HTML structure
+ * @param {Object} config - Email config
+ * @param {string} headerTitle - Header title
+ * @param {string} headerColor - Header gradient color (default: purple)
+ * @param {string} content - Main content HTML
+ * @returns {string} Complete email HTML
+ */
+function getBaseEmailHTML(config, headerTitle, headerColor = '667eea', content) {
+  const { brandName } = config;
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+  <div style="background: linear-gradient(135deg, #${headerColor} 0%, #764ba2 100%); padding: 40px 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 28px;">${headerTitle}</h1>
+  </div>
+  <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+    ${content}
+    ${getEmailFooter(config)}
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Welcome email for waitlist signups
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.source] - Source of signup (plugin, website, etc.)
+ * @returns {Object} Email content with subject, html, and text
+ */
+function welcomeWaitlistEmail({ email, source }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Thank you for joining the ${brandName} waitlist! We're excited to have you on board.</p>
+    
+    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 What's Next:</p>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+        <li>We'll notify you when ${brandName} is available</li>
+        <li>You'll get early access to new features</li>
+        <li>Check out our dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
+      </ul>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, `Welcome to ${brandName}! 🎉`, '667eea', content);
+
+  const text = `
+Welcome to ${brandName}! 🎉
+
+Thank you for joining the ${brandName} waitlist! We're excited to have you on board.
+
+What's Next:
+- We'll notify you when ${brandName} is available
+- You'll get early access to new features
+- Check out our dashboard: ${dashboardUrl}
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Welcome to ${brandName}! 🎉`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Welcome email for dashboard users
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @returns {Object} Email content with subject, html, and text
+ */
+function welcomeDashboardEmail({ email }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Welcome to ${brandName}! We're excited to help you get started.</p>
+    
+    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Get Started:</p>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+        <li>Access your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
+        <li>Set up your first project</li>
+        <li>Explore our features</li>
+      </ul>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, `Welcome to ${brandName}! 🎉`, '667eea', content);
+
+  const text = `
+Welcome to ${brandName}! 🎉
+
+Welcome to ${brandName}! We're excited to help you get started.
+
+Get Started:
+- Access your dashboard: ${dashboardUrl}
+- Set up your first project
+- Explore our features
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Welcome to ${brandName}! 🎉`,
+    html,
+    text,
+  };
+}
+
+/**
+ * License activated email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} params.planName - Plan name (Pro, Agency, etc.)
+ * @param {string} [params.siteUrl] - Site URL where license is activated
+ * @returns {Object} Email content with subject, html, and text
+ */
+function licenseActivatedEmail({ email, planName, siteUrl }) {
+  const config = getEmailConfig();
+  const { brandName } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Your ${planName} license has been activated${siteUrl ? ` for ${siteUrl}` : ''}!</p>
+    
+    <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="margin: 0; font-weight: 600; color: #10b981;">✅ Your ${planName} Plan Includes:</p>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+        <li>Full access to all ${planName} features</li>
+        <li>Priority support</li>
+        <li>Advanced capabilities</li>
+      </ul>
+    </div>
+    
+    ${siteUrl ? `<p>Your license is now active on <strong>${siteUrl}</strong>. Start using ${brandName} right away!</p>` : ''}
+  `;
+
+  const html = getBaseEmailHTML(config, `Your ${planName} License is Active! 🎉`, '10b981', content);
+
+  const text = `
+Your ${planName} License is Active! 🎉
+
+Your ${planName} license has been activated${siteUrl ? ` for ${siteUrl}` : ''}!
+
+Your ${planName} Plan Includes:
+- Full access to all ${planName} features
+- Priority support
+- Advanced capabilities
+
+${siteUrl ? `Your license is now active on ${siteUrl}. Start using ${brandName} right away!` : ''}
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Your ${planName} License is Active! 🎉`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Low credit warning email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.siteUrl] - Site URL
+ * @param {number} params.remainingCredits - Remaining credits
+ * @param {string} [params.pluginName] - Plugin name
+ * @returns {Object} Email content with subject, html, and text
+ */
+function lowCreditWarningEmail({ email, siteUrl, remainingCredits, pluginName }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>You're running low on credits${pluginName ? ` for ${pluginName}` : ''}!</p>
+    
+    <div style="background: #fffbeb; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px; text-align: center;">
+      <div style="font-size: 48px; font-weight: bold; color: #d97706; margin-bottom: 10px;">${remainingCredits}</div>
+      <div style="font-size: 14px; color: #92400e;">Credits Remaining</div>
+    </div>
+    
+    <p>Consider upgrading your plan to get more credits and avoid interruptions.</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${dashboardUrl}/upgrade" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 16px;">Upgrade Now</a>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, `Low Credit Warning ⚡`, 'f59e0b', content);
+
+  const text = `
+Low Credit Warning ⚡
+
+You're running low on credits${pluginName ? ` for ${pluginName}` : ''}!
+
+${remainingCredits} Credits Remaining
+
+Consider upgrading your plan to get more credits and avoid interruptions.
+
+Upgrade now: ${dashboardUrl}/upgrade
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Low Credit Warning - ${remainingCredits} Credits Remaining ⚡`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Receipt email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {number} params.amount - Payment amount
+ * @param {string} params.planName - Plan name
+ * @param {string} [params.invoiceUrl] - Invoice URL
+ * @returns {Object} Email content with subject, html, and text
+ */
+function receiptEmail({ email, amount, planName, invoiceUrl }) {
+  const config = getEmailConfig();
+  const { brandName } = config;
+
+  const formattedAmount = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(amount);
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Thank you for your payment! Your receipt is below.</p>
+    
+    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+      <p style="margin: 0 0 10px 0;"><strong>Amount:</strong> ${formattedAmount}</p>
+      <p style="margin: 0 0 10px 0;"><strong>Plan:</strong> ${planName}</p>
+      ${invoiceUrl ? `<p style="margin: 0;"><strong>Invoice:</strong> <a href="${invoiceUrl}" style="color: #667eea;">View Invoice</a></p>` : ''}
+    </div>
+    
+    <p>Your ${planName} plan is now active!</p>
+  `;
+
+  const html = getBaseEmailHTML(config, `Payment Receipt`, '10b981', content);
+
+  const text = `
+Payment Receipt
+
+Thank you for your payment! Your receipt is below.
+
+Amount: ${formattedAmount}
+Plan: ${planName}
+${invoiceUrl ? `Invoice: ${invoiceUrl}` : ''}
+
+Your ${planName} plan is now active!
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Payment Receipt - ${formattedAmount}`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Plugin signup email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} params.pluginName - Plugin name
+ * @param {string} [params.siteUrl] - Site URL
+ * @returns {Object} Email content with subject, html, and text
+ */
+function pluginSignupEmail({ email, pluginName, siteUrl }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Thank you for installing <strong>${pluginName}</strong>${siteUrl ? ` on ${siteUrl}` : ''}!</p>
+    
+    <div style="background: #f0f9ff; border-left: 4px solid #667eea; padding: 15px; margin: 25px 0; border-radius: 4px;">
+      <p style="margin: 0; font-weight: 600; color: #667eea;">🚀 Quick Start:</p>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #1e293b;">
+        <li>Your plugin is now active and ready to use</li>
+        <li>Access your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></li>
+        <li>Check out our documentation for setup guides</li>
+      </ul>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, `Welcome to ${pluginName}! 🎉`, '667eea', content);
+
+  const text = `
+Welcome to ${pluginName}! 🎉
+
+Thank you for installing ${pluginName}${siteUrl ? ` on ${siteUrl}` : ''}!
+
+Quick Start:
+- Your plugin is now active and ready to use
+- Access your dashboard: ${dashboardUrl}
+- Check out our documentation for setup guides
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Welcome to ${pluginName}! 🎉`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Password reset email
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} params.resetUrl - Password reset URL with token
+ * @returns {Object} Email content with subject, html, and text
+ */
+function passwordResetEmail({ email, resetUrl }) {
+  const config = getEmailConfig();
+  const { brandName } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>You requested to reset your password for ${brandName}.</p>
+    <p>Click the button below to reset your password:</p>
+    
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${resetUrl}" style="display: inline-block; background: #667eea; color: white; text-decoration: none; padding: 12px 30px; border-radius: 6px; font-weight: 600;">Reset Password</a>
+    </div>
+    
+    <p style="font-size: 14px; color: #6b7280;">Or copy and paste this link into your browser:</p>
+    <p style="font-size: 12px; word-break: break-all; color: #9ca3af; background: #f3f4f6; padding: 10px; border-radius: 4px;">${resetUrl}</p>
+    
+    <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">This link will expire in 1 hour.</p>
+    <p style="font-size: 14px; color: #6b7280;">If you didn't request this, please ignore this email.</p>
+  `;
+
+  const html = getBaseEmailHTML(config, 'Reset Your Password', '667eea', content);
+
+  const text = `
+Reset Your Password
+
+You requested to reset your password for ${brandName}.
+
+Click the link below to reset your password:
+${resetUrl}
+
+This link will expire in 1 hour.
+
+If you didn't request this, please ignore this email.
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Reset Your ${brandName} Password`,
+    html,
+    text,
+  };
+}
+
+/**
+ * Usage summary email (placeholder for future feature)
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.pluginName] - Plugin name
+ * @param {Object} [params.stats] - Usage statistics
+ * @returns {Object} Email content with subject, html, and text
+ */
+function usageSummaryEmail({ email, pluginName, stats = {} }) {
+  const config = getEmailConfig();
+  const { brandName, dashboardUrl } = config;
+
+  const content = `
+    <p style="font-size: 16px; margin-top: 0;">Hi there!</p>
+    <p>Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.</p>
+    
+    <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 25px 0;">
+      <p style="margin: 0;"><strong>Usage Summary:</strong></p>
+      <p style="margin: 10px 0 0 0;">View detailed analytics in your dashboard: <a href="${dashboardUrl}" style="color: #667eea;">${dashboardUrl}</a></p>
+    </div>
+  `;
+
+  const html = getBaseEmailHTML(config, 'Your Usage Summary', '667eea', content);
+
+  const text = `
+Your Usage Summary
+
+Here's your usage summary for ${brandName}${pluginName ? ` (${pluginName})` : ''}.
+
+View detailed analytics in your dashboard: ${dashboardUrl}
+
+You received this email because you use ${brandName}. Contact ${config.supportEmail} for help.
+
+Best regards,
+The ${brandName} Team
+  `.trim();
+
+  return {
+    subject: `Your ${brandName} Usage Summary`,
+    html,
+    text,
+  };
+}
+
+module.exports = {
+  welcomeWaitlistEmail,
+  welcomeDashboardEmail,
+  licenseActivatedEmail,
+  lowCreditWarningEmail,
+  receiptEmail,
+  pluginSignupEmail,
+  passwordResetEmail,
+  usageSummaryEmail,
 };
 
 
@@ -35341,6 +35378,11 @@ let listenPatched = false;
  * Clears module cache to ensure clean state
  */
 function createTestServer() {
+  // Ensure NODE_ENV is set to test
+  if (process.env.NODE_ENV !== 'test') {
+    process.env.NODE_ENV = 'test';
+  }
+  
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
   if (!listenPatched) {
     const http = require('http');
@@ -35391,8 +35433,43 @@ function createTestServer() {
     }
   });
   
-  const app = require('../../server-v2');
-  return app;
+  try {
+    // Force clear the cache and require fresh
+    const serverPath = require.resolve('../../server-v2');
+    delete require.cache[serverPath];
+    
+    const app = require('../../server-v2');
+    
+    // Debug logging
+    if (!app) {
+      console.error('[createTestServer] server-v2 module returned null/undefined');
+      const mod = require.cache[serverPath];
+      console.error('[createTestServer] Module in cache:', mod ? 'exists' : 'missing');
+      if (mod && mod.exports) {
+        console.error('[createTestServer] Module exports type:', typeof mod.exports);
+        console.error('[createTestServer] Module exports keys:', Object.keys(mod.exports || {}).slice(0, 10));
+      }
+      throw new Error('server-v2 module returned null/undefined');
+    }
+    
+    if (typeof app.listen !== 'function') {
+      console.error('[createTestServer] app.listen is not a function');
+      console.error('[createTestServer] app type:', typeof app);
+      console.error('[createTestServer] app value:', app);
+      console.error('[createTestServer] app keys:', Object.keys(app || {}).slice(0, 10));
+      throw new Error('server-v2 module did not export an Express app (listen is not a function)');
+    }
+    
+    return app;
+  } catch (error) {
+    console.error('[createTestServer] Error loading server-v2:', error.message);
+    if (error.stack) {
+      const stackLines = error.stack.split('\n');
+      console.error('[createTestServer] Stack (first 15 lines):');
+      stackLines.slice(0, 15).forEach(line => console.error('  ', line));
+    }
+    throw error;
+  }
 }
 
 /**
@@ -36317,7 +36394,7 @@ const supabaseMock = require('../mocks/supabase.mock');
 const licenseServiceMock = require('../mocks/licenseService.mock');
 const emailService = require('../../src/services/emailService');
 const { generateToken, hashPassword } = require('../../auth/jwt');
-const { createLicenseSnapshot, createLicenseCreationResponse } = require('../mocks/createLicenseMock');
+const { createLicenseSnapshot, createLicenseCreationResponse } = require('../mocks/createLicenseMock');                                                         
 
 // Mock emailService
 jest.mock('../../src/services/emailService', () => ({
@@ -36325,9 +36402,16 @@ jest.mock('../../src/services/emailService', () => ({
   sendPasswordReset: jest.fn(),
 }));
 
-const app = createTestServer();
+let app;
 
 describe('Auth routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
+
   beforeEach(() => {
     supabaseMock.__reset();
     licenseServiceMock.__reset();
@@ -36964,9 +37048,15 @@ const jestMock = require('jest-mock');
 const checkoutModule = require('../../src/stripe/checkout');
 const checkoutSpy = jest.spyOn(checkoutModule, 'createCheckoutSession').mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
 const portalSpy = jest.spyOn(checkoutModule, 'createCustomerPortalSession').mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
-const app = createTestServer();
+let app;
 
 describe('Billing routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeAll(() => {
     process.env.ALTTEXT_AI_STRIPE_PRICE_PRO = 'price_pro';
     process.env.FRONTEND_URL = 'https://app.test';
@@ -41791,9 +41881,15 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const siteServiceMock = require('../../src/services/siteService');
 
-const app = createTestServer();
+let app;
 
 describe('License routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     supabaseMock.__reset();
     siteServiceMock.__setState(0, 50, 'free');
@@ -42712,7 +42808,7 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const siteServiceMock = require('../../src/services/siteService');
 
-const app = createTestServer();
+let app;
 
 function queueOrgAuth() {
   supabaseMock.__queueResponse('organizations', 'select', {
@@ -42722,6 +42818,12 @@ function queueOrgAuth() {
 }
 
 describe('License routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     supabaseMock.__reset();
     queueOrgAuth();
@@ -43714,10 +43816,16 @@ const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 
-const app = createTestServer();
+let app;
 const token = generateToken({ id: 20, email: 'usage@example.com', plan: 'pro' });
 
 describe('Usage routes', () => {
+  beforeAll(() => {
+    app = createTestServer();
+    if (!app) {
+      throw new Error('Failed to create test server');
+    }
+  });
   beforeEach(() => {
     supabaseMock.__reset();
   });
@@ -50962,138 +51070,32 @@ describe('Validation utilities', () => {
 
 ---
 
-
-## config/env.example
+## tsconfig.json
 
 ```
-# Supabase Database (REQUIRED)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-# SUPABASE_ANON_KEY is optional - only needed for client-side operations
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "jsx": "react",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "declaration": false,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "tests"]
+}
 
-# JWT Authentication
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
-JWT_EXPIRES_IN=7d
 
-# OpenAI - Service-specific API keys
-ALTTEXT_OPENAI_API_KEY=sk-your-alttext-openai-api-key
-SEO_META_OPENAI_API_KEY=sk-your-seo-meta-openai-api-key
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_REVIEW_API_KEY=sk-your-review-api-key
-OPENAI_REVIEW_MODEL=gpt-4o-mini
-
-# Stripe
-STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
-STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
-
-# Stripe Product/Price IDs - Service-specific (clean separation)
-# AltText AI Plugin Prices
-ALTTEXT_AI_STRIPE_PRICE_PRO=price_1SMrxaJl9Rm418cMM4iikjlJ
-ALTTEXT_AI_STRIPE_PRICE_AGENCY=price_1SMrxaJl9Rm418cMnJTShXSY
-ALTTEXT_AI_STRIPE_PRICE_CREDITS=price_1SMrxbJl9Rm418cM0gkzZQZt
-
-# SEO AI Meta Plugin Prices
-SEO_AI_META_STRIPE_PRICE_PRO=price_1SQ72OJl9Rm418cMruYB5Pgb
-SEO_AI_META_STRIPE_PRICE_AGENCY=price_1SQ72KJl9Rm418cMB0CYh8xe
-
-# Credit Pack Stripe Price IDs
-CREDIT_PACK_50_PRICE_ID=price_xxx
-CREDIT_PACK_200_PRICE_ID=price_xxx
-CREDIT_PACK_1000_PRICE_ID=price_xxx
-
-# Application
-PORT=3000
-NODE_ENV=development
-FRONTEND_URL=http://localhost:3000
-
-# Email Service (Resend - Required)
-RESEND_API_KEY=re_xxx
-EMAIL_FROM=OpttiAI <hello@optti.dev>  # Default from email (used as fallback)
-RESEND_FROM_EMAIL=OpttiAI <hello@optti.dev>  # Legacy support, use EMAIL_FROM
-RESEND_AUDIENCE_ID=aud_xxx  # Optional: For subscriber management
-
-# Email From Addresses
-TRANSACTIONAL_FROM_EMAIL=OpttiAI <hello@optti.dev>  # For general transactional emails (defaults to EMAIL_FROM)
-BILLING_FROM_EMAIL=OpttiAI <billing@optti.dev>  # For receipts and payment emails (defaults to EMAIL_FROM)
-
-# Branding Configuration
-BRAND_NAME=OpttiAI
-EMAIL_BRAND_NAME=OpttiAI  # Legacy support, use BRAND_NAME
-BRAND_DOMAIN=optti.dev
-FRONTEND_DASHBOARD_URL=https://app.optti.dev
-SUPPORT_EMAIL=support@optti.dev
-PUBLIC_API_DOMAIN=api.optti.dev
-
-# Webhook
-WEBHOOK_SECRET=your-webhook-secret-for-monthly-reset
 ```
 
 ---
 
-## config/env.test
-
-```
-NODE_ENV=test
-SUPABASE_URL=http://localhost/test
-SUPABASE_SERVICE_ROLE_KEY=test_service_key
-SUPABASE_ANON_KEY=test_anon_key
-STRIPE_SECRET_KEY=sk_test_fake
-STRIPE_WEBHOOK_SECRET=whsec_test_fake
-RESEND_API_KEY=re_test_fake
-RESEND_AUDIENCE_ID=aud_test
-RESEND_FROM_EMAIL="AltText AI <test@example.com>"
-JWT_SECRET=test_jwt_secret
-ALTTEXT_OPENAI_API_KEY=test-openai-key
-SEO_META_OPENAI_API_KEY=test-seo-key
-FRONTEND_URL=https://app.test
-```
-
----
-
-## .github/workflows/tests.yml
-
-```
-name: Backend Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run unit tests
-        run: npm run test:unit
-        timeout-minutes: 5
-
-      - name: Run integration tests
-        run: npm run test:integration
-        timeout-minutes: 10
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.node-version }}
-          path: coverage
-          if-no-files-found: ignore
-```
-
----
