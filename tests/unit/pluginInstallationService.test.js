@@ -6,16 +6,41 @@ describe('pluginInstallationService', () => {
   const MODULE_PATH = '../../src/services/pluginInstallationService';
 
   let mockSupabase;
+  let mockFromResult;
+  let mockSelectChain;
+  let mockInsertChain;
+  let mockUpdateChain;
 
   beforeEach(() => {
     jest.resetModules();
 
+    // Mock the query chain methods
+    mockSelectChain = {
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    };
+
+    mockInsertChain = {
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { id: '123' }, error: null }),
+    };
+
+    mockUpdateChain = {
+      eq: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: { id: '123' }, error: null }),
+    };
+
+    // Create a mock object that from() returns, which has select(), insert(), update()
+    mockFromResult = {
+      select: jest.fn().mockReturnValue(mockSelectChain),
+      insert: jest.fn().mockReturnValue(mockInsertChain),
+      update: jest.fn().mockReturnValue(mockUpdateChain),
+    };
+
     // Mock Supabase client
     mockSupabase = {
-      from: jest.fn().mockReturnThis(),
-      insert: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      single: jest.fn(),
+      from: jest.fn().mockReturnValue(mockFromResult),
     };
 
     jest.mock('../../db/supabase-client', () => ({
@@ -29,7 +54,13 @@ describe('pluginInstallationService', () => {
 
   describe('recordInstallation', () => {
     test('records installation successfully', async () => {
-      mockSupabase.single.mockResolvedValue({
+      // Mock no existing installation (new record)
+      mockSelectChain.maybeSingle.mockResolvedValue({
+        data: null,
+        error: null,
+      });
+      // Mock successful insert
+      mockInsertChain.single.mockResolvedValue({
         data: { id: '123', email: 'test@example.com', plugin_slug: 'beepbeep-ai' },
         error: null,
       });
@@ -44,11 +75,17 @@ describe('pluginInstallationService', () => {
       expect(result.success).toBe(true);
       expect(result.record.id).toBe('123');
       expect(mockSupabase.from).toHaveBeenCalledWith('plugin_installations');
-      expect(mockSupabase.insert).toHaveBeenCalled();
+      expect(mockFromResult.insert).toHaveBeenCalled();
     });
 
     test('handles database errors gracefully', async () => {
-      mockSupabase.single.mockResolvedValue({
+      // Mock no existing installation
+      mockSelectChain.maybeSingle.mockResolvedValue({
+        data: null,
+        error: null,
+      });
+      // Mock insert error
+      mockInsertChain.single.mockResolvedValue({
         data: null,
         error: { message: 'Database error' },
       });
@@ -64,7 +101,13 @@ describe('pluginInstallationService', () => {
     });
 
     test('normalizes email to lowercase', async () => {
-      mockSupabase.single.mockResolvedValue({
+      // Mock no existing installation
+      mockSelectChain.maybeSingle.mockResolvedValue({
+        data: null,
+        error: null,
+      });
+      // Mock successful insert
+      mockInsertChain.single.mockResolvedValue({
         data: { id: '123' },
         error: null,
       });
@@ -75,7 +118,7 @@ describe('pluginInstallationService', () => {
         plugin: 'beepbeep-ai',
       });
 
-      expect(mockSupabase.insert).toHaveBeenCalledWith(
+      expect(mockFromResult.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'test@example.com',
         })
@@ -83,7 +126,13 @@ describe('pluginInstallationService', () => {
     });
 
     test('handles optional fields correctly', async () => {
-      mockSupabase.single.mockResolvedValue({
+      // Mock no existing installation
+      mockSelectChain.maybeSingle.mockResolvedValue({
+        data: null,
+        error: null,
+      });
+      // Mock successful insert
+      mockInsertChain.single.mockResolvedValue({
         data: { id: '123' },
         error: null,
       });
@@ -95,7 +144,7 @@ describe('pluginInstallationService', () => {
         // No optional fields
       });
 
-      expect(mockSupabase.insert).toHaveBeenCalledWith(
+      expect(mockFromResult.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           site_url: null,
           version: null,
@@ -109,7 +158,13 @@ describe('pluginInstallationService', () => {
     });
 
     test('includes all metadata fields when provided', async () => {
-      mockSupabase.single.mockResolvedValue({
+      // Mock no existing installation
+      mockSelectChain.maybeSingle.mockResolvedValue({
+        data: null,
+        error: null,
+      });
+      // Mock successful insert
+      mockInsertChain.single.mockResolvedValue({
         data: { id: '123' },
         error: null,
       });
@@ -127,7 +182,7 @@ describe('pluginInstallationService', () => {
         installSource: 'website',
       });
 
-      expect(mockSupabase.insert).toHaveBeenCalledWith(
+      expect(mockFromResult.insert).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'test@example.com',
           plugin_slug: 'beepbeep-ai',
@@ -143,7 +198,8 @@ describe('pluginInstallationService', () => {
     });
 
     test('handles exceptions gracefully', async () => {
-      mockSupabase.single.mockRejectedValue(new Error('Unexpected error'));
+      // Mock lookup throwing an error
+      mockSelectChain.maybeSingle.mockRejectedValue(new Error('Unexpected error'));
 
       const { recordInstallation } = require(MODULE_PATH);
       const result = await recordInstallation({
