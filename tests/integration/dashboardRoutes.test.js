@@ -29,7 +29,7 @@ jest.mock('../../db/supabase-client', () => {
 });
 
 describe('Dashboard Routes', () => {
-  let app;
+  let server;
   let mockIdentityService;
   let mockCreditsService;
   let testToken;
@@ -37,10 +37,19 @@ describe('Dashboard Routes', () => {
   const testUserId = 'test-user-id';
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     mockIdentityService = require('../../src/services/identityService');
     mockCreditsService = require('../../src/services/creditsService');
     testToken = createTestToken({ id: testUserId, email: testEmail, plugin: 'alttext-ai' });
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -54,7 +63,7 @@ describe('Dashboard Routes', () => {
 
   describe('GET /me', () => {
     it('returns email and plugin from JWT payload', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/me')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -66,7 +75,7 @@ describe('Dashboard Routes', () => {
     });
 
     it('returns 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/me');
 
       expect(res.status).toBe(401);
@@ -102,7 +111,7 @@ describe('Dashboard Routes', () => {
     });
 
     it('returns dashboard data with valid token', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -119,7 +128,7 @@ describe('Dashboard Routes', () => {
     });
 
     it('returns 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard');
 
       expect(res.status).toBe(401);
@@ -133,7 +142,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 0, dailyImages: 0, totalImages: 0 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -149,7 +158,7 @@ describe('Dashboard Routes', () => {
       // Mock getIdentityDashboard to not be called
       mockIdentityService.getIdentityDashboard.mockClear();
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${tokenWithoutEmail}`);
 
@@ -164,7 +173,7 @@ describe('Dashboard Routes', () => {
         new Error('Service error')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -174,7 +183,7 @@ describe('Dashboard Routes', () => {
     });
 
     it('response shape matches spec', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -195,7 +204,7 @@ describe('Dashboard Routes', () => {
         balance: 500,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -210,7 +219,7 @@ describe('Dashboard Routes', () => {
         error: 'Service error',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -228,7 +237,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 0, dailyImages: 0, totalImages: 0 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -250,7 +259,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 100, dailyImages: 5, totalImages: 500 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -273,7 +282,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 50, dailyImages: 2, totalImages: 200 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -296,7 +305,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 200, dailyImages: 10, totalImages: 1000 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -319,7 +328,7 @@ describe('Dashboard Routes', () => {
         usage: { monthlyImages: 5000, dailyImages: 200, totalImages: 50000 },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard')
         .set('Authorization', `Bearer ${testToken}`);
 

@@ -10,7 +10,7 @@ const { supabase } = require('../../db/supabase-client');
 const jwt = require('jsonwebtoken');
 const errorCodes = require('../../src/constants/errorCodes');
 
-let app;
+let server;
 
 // Mock Supabase
 jest.mock('../../db/supabase-client', () => {
@@ -137,7 +137,7 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
         .set('X-Site-Hash', 'test-site-hash')
@@ -169,7 +169,7 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
         .set('X-Site-Hash', 'test-site-hash')
@@ -211,7 +211,7 @@ describe('Access Control Integration Tests', () => {
         remainingBalance: 9,
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
         .set('X-Site-Hash', 'test-site-hash')
@@ -243,7 +243,7 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
         .set('X-Site-Hash', 'test-site-hash')
@@ -257,7 +257,7 @@ describe('Access Control Integration Tests', () => {
     });
 
     it('should return 401 when token is missing', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/generate')
         .set('X-Site-Hash', 'test-site-hash')
         .send({
@@ -290,7 +290,7 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/review')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -327,7 +327,7 @@ describe('Access Control Integration Tests', () => {
         },
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/api/review')
         .set('Authorization', `Bearer ${token}`)
         .send({

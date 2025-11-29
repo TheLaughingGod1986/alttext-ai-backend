@@ -99,7 +99,7 @@ const { generateToken } = require('../../auth/jwt');
 const axios = require('axios');
 const siteServiceMock = require('../../src/services/siteService');
 
-let app;
+let server;
 
 describe('Generate endpoint', () => {
   // Helper function to mock checkSubscription middleware query
@@ -118,14 +118,15 @@ describe('Generate endpoint', () => {
   beforeAll(() => {
     process.env.ALTTEXT_OPENAI_API_KEY = 'test-openai-key';
     process.env.SEO_META_OPENAI_API_KEY = 'test-seo-meta-key';
-    try {
-      app = createTestServer();
-      if (!app) {
-        throw new Error('createTestServer returned null/undefined');
-      }
-    } catch (error) {
-      console.error('Error creating test server:', error);
-      throw error;
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
 
@@ -177,7 +178,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 30, email: 'gen@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -210,7 +211,7 @@ describe('Generate endpoint', () => {
     });
     supabaseMock.__queueResponse('organizations', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('X-License-Key', 'org-license')
       .set('X-Site-Hash', 'test-site-hash')
@@ -228,7 +229,7 @@ describe('Generate endpoint', () => {
   test('generate requires authentication', async () => {
     mockCheckSubscription();
     mockSiteService();
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('X-Site-Hash', 'test-site-hash')
       .send({
@@ -252,7 +253,7 @@ describe('Generate endpoint', () => {
     supabaseMock.__queueResponse('credits', 'select', { data: { monthly_limit: 50, used_this_month: 0 }, error: null });
 
     const token = generateToken({ id: 31, email: 'noapikey@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -284,7 +285,7 @@ describe('Generate endpoint', () => {
     supabaseMock.__queueResponse('users', 'select', { data: { id: 32, plan: 'free' }, error: null });
 
     const token = generateToken({ id: 32, email: 'exhausted@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -314,7 +315,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 33, email: 'apierror@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -342,7 +343,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 34, email: 'ratelimit@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -370,7 +371,7 @@ describe('Generate endpoint', () => {
     axios.post.mockRejectedValueOnce(timeoutError);
 
     const token = generateToken({ id: 35, email: 'timeout@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -403,7 +404,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 36, email: 'meta@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -430,7 +431,7 @@ describe('Generate endpoint', () => {
     supabaseMock.__queueResponse('users', 'select', { data: { id: 37, plan: 'free' }, error: null });
 
     const token = generateToken({ id: 37, email: 'wpuser@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -462,7 +463,7 @@ describe('Generate endpoint', () => {
     supabaseMock.__queueResponse('usage_logs', 'insert', { error: null });
 
     const token = generateToken({ id: 38, email: 'credits@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -489,7 +490,7 @@ describe('Generate endpoint', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('X-License-Key', 'out-of-quota-license')
       .set('X-Site-Hash', 'test-site-hash')
@@ -536,7 +537,7 @@ describe('Generate endpoint', () => {
     axios.post.mockRejectedValueOnce(invalidKeyError);
 
     const token = generateToken({ id: 39, email: 'invalidkey@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -562,7 +563,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 40, email: 'noimage@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -594,7 +595,7 @@ describe('Generate endpoint', () => {
     });
 
     const token = generateToken({ id: 41, email: 'noimagedata@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -627,7 +628,7 @@ describe('Generate endpoint', () => {
       });
 
       const token = generateToken({ id: 45, email: 'nokey@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -658,7 +659,7 @@ describe('Generate endpoint', () => {
       axios.post.mockRejectedValueOnce(networkError);
 
       const token = generateToken({ id: 46, email: 'network@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -684,7 +685,7 @@ describe('Generate endpoint', () => {
       axios.post.mockRejectedValueOnce(timeoutError);
 
       const token = generateToken({ id: 47, email: 'timeout@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -717,7 +718,7 @@ describe('Generate endpoint', () => {
       axios.post.mockRejectedValueOnce(apiError);
 
       const token = generateToken({ id: 48, email: 'unauth@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -747,7 +748,7 @@ describe('Generate endpoint', () => {
       axios.post.mockRejectedValueOnce(apiError);
 
       const token = generateToken({ id: 49, email: 'servererror@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -777,7 +778,7 @@ describe('Generate endpoint', () => {
       axios.post.mockRejectedValueOnce(apiError);
 
       const token = generateToken({ id: 50, email: 'unavailable@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -801,7 +802,7 @@ describe('Generate endpoint', () => {
       axios.post.mockResolvedValueOnce({ data: null }); // Malformed - null data
 
       const token = generateToken({ id: 51, email: 'malformed@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -829,7 +830,7 @@ describe('Generate endpoint', () => {
       });
 
       const token = generateToken({ id: 52, email: 'empty@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')
@@ -857,7 +858,7 @@ describe('Generate endpoint', () => {
       });
 
       const token = generateToken({ id: 53, email: 'nocontent@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-site-hash')

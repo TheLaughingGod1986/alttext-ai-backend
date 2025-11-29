@@ -77,7 +77,8 @@ router.post(
 
       // Import generation utilities
       const { getServiceApiKey } = require('../utils/apiKey');
-      const { requestChatCompletion } = require('../../server-v2');
+      const createApp = require('../../server-v2');
+      const { requestChatCompletion } = createApp;
 
       // Select API key based on service
       const apiKey = getServiceApiKey(service);
@@ -115,7 +116,8 @@ router.post(
         altText = openaiResponse.choices[0].message.content.trim();
       } else {
         // Alt text generation
-        const { buildPrompt, buildUserMessage } = require('../../server-v2');
+        const createApp = require('../../server-v2');
+        const { buildPrompt, buildUserMessage } = createApp;
         const prompt = buildPrompt(image_data, context, regenerate);
         const userMessage = buildUserMessage(prompt, image_data);
 

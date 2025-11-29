@@ -78,7 +78,7 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const siteServiceMock = require('../../src/services/siteService');
 
-let app;
+let server;
 
 function queueOrgAuth() {
   supabaseMock.__queueResponse('organizations', 'select', {
@@ -89,9 +89,15 @@ function queueOrgAuth() {
 
 describe('License routes', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
   beforeEach(() => {
@@ -114,7 +120,7 @@ describe('License routes', () => {
     // Mock sites update (createFreeLicenseForSite updates site with license_key)
     supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
       .set('X-Site-Hash', 'test-site-hash')
@@ -125,7 +131,7 @@ describe('License routes', () => {
   });
 
   test('auto-attach requires site identifier', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
       .send({});
@@ -166,7 +172,7 @@ describe('License routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('X-License-Key', 'org-license');
 
@@ -187,7 +193,7 @@ describe('License routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/licenses/sites/install_1')
       .set('X-License-Key', 'org-license');
 
@@ -206,7 +212,7 @@ describe('License routes', () => {
     });
 
     const token = generateToken({ id: 42, email: 'free@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('Authorization', `Bearer ${token}`);
 
@@ -225,7 +231,7 @@ describe('License routes', () => {
       new Error('Site limit reached. This license allows 1 active site(s).')
     );
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
       .set('X-Site-Hash', 'hash1')
@@ -246,7 +252,7 @@ describe('License routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'org-license')
       .set('X-Site-Hash', 'conflicting-hash')
@@ -266,7 +272,7 @@ describe('License routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/licenses/sites/nonexistent')
       .set('X-License-Key', 'org-license');
 
@@ -287,7 +293,7 @@ describe('License routes', () => {
       error: new Error('Delete failed')
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/licenses/sites/install_1')
       .set('X-License-Key', 'org-license');
 
@@ -318,7 +324,7 @@ describe('License routes', () => {
     });
 
     const token = generateToken({ id: 42, email: 'agency@example.com', plan: 'agency' });
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('Authorization', `Bearer ${token}`);
 
@@ -343,7 +349,7 @@ describe('License routes', () => {
     supabaseMock.__queueResponse('sites', 'update', { error: null });
 
     const token = generateToken({ id: 50, email: 'newuser@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'newhash')
@@ -367,7 +373,7 @@ describe('License routes', () => {
     // Mock sites update (createFreeLicenseForSite updates site with license_key)
     supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'existing-org-license')
       .set('X-Site-Hash', 'orghash')
@@ -391,7 +397,7 @@ describe('License routes', () => {
     // Mock sites update (createFreeLicenseForSite updates site with license_key)
     supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-License-Key', 'nonexistent-license')
       .set('X-Site-Hash', 'test-hash')
@@ -416,7 +422,7 @@ describe('License routes', () => {
     supabaseMock.__queueResponse('sites', 'update', { error: null });
 
     const token = generateToken({ id: 999, email: 'missing@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('Authorization', `Bearer ${token}`)
       .set('X-Site-Hash', 'test-hash')
@@ -427,7 +433,7 @@ describe('License routes', () => {
   });
 
   test('auto-attach returns 401 when no authentication provided', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/api/licenses/auto-attach')
       .set('X-Site-Hash', 'test-hash')
       .send({ siteUrl: 'https://example.com' });
@@ -468,7 +474,7 @@ describe('License routes', () => {
     });
 
     const token = generateToken({ id: 43, email: 'member@example.com', plan: 'agency' });
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('Authorization', `Bearer ${token}`);
 
@@ -494,7 +500,7 @@ describe('License routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('X-License-Key', 'org-license');
 
@@ -512,7 +518,7 @@ describe('License routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .delete('/api/licenses/sites/nonexistent-install')
       .set('X-License-Key', 'org-license');
 
@@ -560,7 +566,7 @@ describe('License routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/api/licenses/sites')
       .set('X-License-Key', 'org-license');
 

@@ -78,13 +78,19 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const siteServiceMock = require('../../src/services/siteService');
 
-let app;
+let server;
 
 describe('License routes', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
   beforeEach(() => {
@@ -106,7 +112,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'test-license',
@@ -122,7 +128,7 @@ describe('License routes', () => {
     });
 
     test('requires license key and site hash', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({ licenseKey: 'test-license' });
 
@@ -136,7 +142,7 @@ describe('License routes', () => {
         error: { message: 'not found', code: 'PGRST116' }
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'invalid-license',
@@ -164,7 +170,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'test-license',
@@ -188,7 +194,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'test-license',
@@ -209,7 +215,7 @@ describe('License routes', () => {
       supabaseMock.__queueResponse('sites', 'select', { data: activeSites, error: null }); // Active sites at limit
       supabaseMock.__queueResponse('sites', 'select', { data: null, error: { code: 'PGRST116' } }); // Site lookup
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'test-license',
@@ -233,7 +239,7 @@ describe('License routes', () => {
         error: new Error('Database error')
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'test-license',
@@ -258,7 +264,7 @@ describe('License routes', () => {
       });
       supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({ siteId: 5 });
@@ -269,7 +275,7 @@ describe('License routes', () => {
     });
 
     test('requires authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .send({ siteId: 5 });
 
@@ -279,7 +285,7 @@ describe('License routes', () => {
 
     test('requires site ID or site hash', async () => {
       const token = generateToken({ id: 10, email: 'owner@example.com', plan: 'agency' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({});
@@ -295,7 +301,7 @@ describe('License routes', () => {
         error: { message: 'not found', code: 'PGRST116' }
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({ siteId: 999 });
@@ -315,7 +321,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({ siteId: 5 });
@@ -339,7 +345,7 @@ describe('License routes', () => {
         error: new Error('Database error')
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({ siteId: 5 });
@@ -364,7 +370,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'New Org',
@@ -378,7 +384,7 @@ describe('License routes', () => {
     });
 
     test('requires name and plan', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({ name: 'Test Org' });
 
@@ -392,7 +398,7 @@ describe('License routes', () => {
         error: new Error('Database error')
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'New Org',
@@ -417,7 +423,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'Default Org',
@@ -459,7 +465,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/info-license');
 
       expect(res.status).toBe(200);
@@ -475,7 +481,7 @@ describe('License routes', () => {
         error: { message: 'not found', code: 'PGRST116' }
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/invalid-license');
 
       expect(res.status).toBe(404);
@@ -490,7 +496,7 @@ describe('License routes', () => {
         error: { message: 'Database error', code: 'PGRST500' }
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/test-license');
 
       // Route returns 404 for invalid license key when org not found
@@ -515,7 +521,7 @@ describe('License routes', () => {
       supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('users', 'select', { data: [], error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/no-members-license');
 
       expect(res.status).toBe(200);
@@ -538,7 +544,7 @@ describe('License routes', () => {
       // Update should still be called even if already inactive
       supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/deactivate')
         .set('Authorization', `Bearer ${token}`)
         .send({ siteId: 6 });
@@ -563,7 +569,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .send({
           licenseKey: 'mismatch-license',
@@ -595,7 +601,7 @@ describe('License routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'Agency Org',
@@ -629,7 +635,7 @@ describe('License routes', () => {
       supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('users', 'select', { data: [], error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/corrupted-license');
 
       // Should handle corrupted data gracefully - may return 200 with partial data or 500
@@ -674,7 +680,7 @@ describe('License routes', () => {
           error: null
         });
 
-        const res = await request(app)
+        const res = await request(server)
           .get('/api/license/info/corrupted-email-license');
 
         expect(res.status).toBe(200);
@@ -711,7 +717,7 @@ describe('License routes', () => {
         });
         supabaseMock.__queueResponse('sites', 'select', { data: [], error: null });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/license/activate')
           .send({
             licenseKey: 'expired-license',
@@ -746,7 +752,7 @@ describe('License routes', () => {
           error: null
         });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/generate')
           .set('X-License-Key', 'negative-quota-license')
           .set('X-Site-Hash', 'test-hash')
@@ -781,7 +787,7 @@ describe('License routes', () => {
         });
         supabaseMock.__queueResponse('sites', 'select', { data: [], error: null });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/license/activate')
           .send({
             licenseKey: 'negative-activation-license',
@@ -816,7 +822,7 @@ describe('License routes', () => {
           error: null
         });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/license/activate')
           .send({
             licenseKey: 'sitehash-license',
@@ -849,7 +855,7 @@ describe('License routes', () => {
         });
         supabaseMock.__queueResponse('sites', 'update', { error: null });
 
-        const res = await request(app)
+        const res = await request(server)
           .post('/api/license/activate')
           .send({
             licenseKey: 'reactivate-license',
@@ -882,7 +888,7 @@ describe('License routes', () => {
         supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
         supabaseMock.__queueResponse('users', 'select', { data: [], error: null });
 
-        const res1 = await request(app)
+        const res1 = await request(server)
           .get('/api/license/info/plan-swap-license');
 
         expect(res1.status).toBe(200);
@@ -905,7 +911,7 @@ describe('License routes', () => {
         supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
         supabaseMock.__queueResponse('users', 'select', { data: [], error: null });
 
-        const res2 = await request(app)
+        const res2 = await request(server)
           .get('/api/license/info/plan-swap-license');
 
         expect(res2.status).toBe(200);

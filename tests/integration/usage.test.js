@@ -3,14 +3,20 @@ const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 
-let app;
+let server;
 const token = generateToken({ id: 20, email: 'usage@example.com', plan: 'pro' });
 
 describe('Usage routes', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
   beforeEach(() => {
@@ -31,7 +37,7 @@ describe('Usage routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -45,7 +51,7 @@ describe('Usage routes', () => {
       error: { message: 'not found' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -62,7 +68,7 @@ describe('Usage routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage/history')
       .set('Authorization', `Bearer ${token}`);
 
@@ -80,7 +86,7 @@ describe('Usage routes', () => {
       error: { message: 'DB connection failed', code: 'PGRST500' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -94,7 +100,7 @@ describe('Usage routes', () => {
       error: { message: 'Query failed', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage/history')
       .set('Authorization', `Bearer ${token}`);
 
@@ -116,7 +122,7 @@ describe('Usage routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -139,7 +145,7 @@ describe('Usage routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -161,7 +167,7 @@ describe('Usage routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage/history?page=2&limit=10')
       .set('Authorization', `Bearer ${token}`);
 
@@ -182,7 +188,7 @@ describe('Usage routes', () => {
       error: new Error('Count query failed')
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage/history')
       .set('Authorization', `Bearer ${token}`);
 
@@ -196,7 +202,7 @@ describe('Usage routes', () => {
       error: { message: 'Database error', code: 'PGRST500' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 
@@ -210,7 +216,7 @@ describe('Usage routes', () => {
       error: null // Query succeeds but returns no user
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/usage')
       .set('Authorization', `Bearer ${token}`);
 

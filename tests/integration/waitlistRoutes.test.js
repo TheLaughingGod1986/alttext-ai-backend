@@ -27,10 +27,22 @@ jest.mock('../../db/supabase-client', () => ({
 }));
 
 describe('POST /waitlist/submit', () => {
-  let app;
+  let server;
+
+  beforeAll(() => {
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
+  });
 
   beforeEach(() => {
-    app = createTestServer();
     resetTestState();
     jest.clearAllMocks();
 
@@ -75,7 +87,7 @@ describe('POST /waitlist/submit', () => {
 
   describe('successful signup', () => {
     it('should accept valid email and return success', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -97,7 +109,7 @@ describe('POST /waitlist/submit', () => {
     });
 
     it('should accept email with plugin and source', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -122,7 +134,7 @@ describe('POST /waitlist/submit', () => {
         }),
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -137,7 +149,7 @@ describe('POST /waitlist/submit', () => {
 
   describe('validation errors', () => {
     it('should return 400 when email is missing', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({})
         .expect(400);
@@ -150,7 +162,7 @@ describe('POST /waitlist/submit', () => {
     });
 
     it('should return 400 when email is invalid format', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'not-an-email',
@@ -163,7 +175,7 @@ describe('POST /waitlist/submit', () => {
     });
 
     it('should return 400 when email is empty string', async () => {
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: '',
@@ -195,7 +207,7 @@ describe('POST /waitlist/submit', () => {
         }),
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -235,7 +247,7 @@ describe('POST /waitlist/submit', () => {
         insert: jest.fn().mockReturnValue(mockInsert),
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -267,7 +279,7 @@ describe('POST /waitlist/submit', () => {
         insert: jest.fn().mockReturnValue(mockInsert),
       });
 
-      const response = await request(app)
+      const response = await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'test@example.com',
@@ -280,7 +292,7 @@ describe('POST /waitlist/submit', () => {
     });
 
     it('should lowercase email addresses', async () => {
-      await request(app)
+      await request(server)
         .post('/waitlist/submit')
         .send({
           email: 'TEST@EXAMPLE.COM',

@@ -13,12 +13,21 @@ jest.mock('../../src/services/emailService', () => ({
 }));
 
 describe('Backward Compatibility Email Routes', () => {
-  let app;
+  let server;
   let mockEmailService;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     mockEmailService = require('../../src/services/emailService');
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -31,7 +40,7 @@ describe('Backward Compatibility Email Routes', () => {
 
   describe('POST /plugin/register', () => {
     test('sends plugin signup email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/plugin/register')
         .send({
           email: 'test@example.com',
@@ -51,7 +60,7 @@ describe('Backward Compatibility Email Routes', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendPluginSignup.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/plugin/register')
         .send({
           email: 'test@example.com',
@@ -64,7 +73,7 @@ describe('Backward Compatibility Email Routes', () => {
     });
 
     test('returns 400 when validation fails', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/plugin/register')
         .send({
           email: 'invalid-email',
@@ -82,7 +91,7 @@ describe('Backward Compatibility Email Routes', () => {
         error: 'Failed to send email',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/plugin/register')
         .send({
           email: 'test@example.com',
@@ -96,7 +105,7 @@ describe('Backward Compatibility Email Routes', () => {
     test('handles errors gracefully without breaking endpoint', async () => {
       mockEmailService.sendPluginSignup.mockRejectedValue(new Error('Unexpected error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/plugin/register')
         .send({
           email: 'test@example.com',
@@ -111,7 +120,7 @@ describe('Backward Compatibility Email Routes', () => {
 
   describe('POST /wp-signup', () => {
     test('sends plugin signup email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/wp-signup')
         .send({
           email: 'test@example.com',
@@ -131,7 +140,7 @@ describe('Backward Compatibility Email Routes', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendPluginSignup.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/wp-signup')
         .send({
           email: 'test@example.com',
@@ -144,7 +153,7 @@ describe('Backward Compatibility Email Routes', () => {
     });
 
     test('returns 400 when plugin is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/wp-signup')
         .send({
           email: 'test@example.com',
@@ -157,7 +166,7 @@ describe('Backward Compatibility Email Routes', () => {
 
   describe('POST /legacy-waitlist', () => {
     test('sends waitlist welcome email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/legacy-waitlist')
         .send({
           email: 'test@example.com',
@@ -177,7 +186,7 @@ describe('Backward Compatibility Email Routes', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendWaitlistWelcome.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/legacy-waitlist')
         .send({
           email: 'test@example.com',
@@ -189,7 +198,7 @@ describe('Backward Compatibility Email Routes', () => {
     });
 
     test('returns 400 when email is invalid', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/legacy-waitlist')
         .send({
           email: 'invalid-email',
@@ -202,7 +211,7 @@ describe('Backward Compatibility Email Routes', () => {
 
   describe('POST /dashboard/email', () => {
     test('sends dashboard welcome email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/dashboard/email')
         .send({
           email: 'test@example.com',
@@ -218,7 +227,7 @@ describe('Backward Compatibility Email Routes', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendDashboardWelcome.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/dashboard/email')
         .send({
           email: 'test@example.com',
@@ -230,7 +239,7 @@ describe('Backward Compatibility Email Routes', () => {
     });
 
     test('returns 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/dashboard/email')
         .send({});
 
@@ -239,7 +248,7 @@ describe('Backward Compatibility Email Routes', () => {
     });
 
     test('returns 400 when email format is invalid', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/dashboard/email')
         .send({
           email: 'invalid-email',

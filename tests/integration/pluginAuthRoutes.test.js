@@ -17,14 +17,23 @@ jest.mock('../../src/services/pluginInstallationService', () => ({
 }));
 
 describe('Plugin Auth Routes', () => {
-  let app;
+  let server;
   let mockIdentityService;
   let mockPluginInstallationService;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     mockIdentityService = require('../../src/services/identityService');
     mockPluginInstallationService = require('../../src/services/pluginInstallationService');
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -47,7 +56,7 @@ describe('Plugin Auth Routes', () => {
         success: true,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'test@example.com',
@@ -83,7 +92,7 @@ describe('Plugin Auth Routes', () => {
       mockIdentityService.getOrCreateIdentity.mockResolvedValue(newIdentity);
       mockIdentityService.issueJwt.mockReturnValue('new-jwt-token');
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'new@example.com',
@@ -110,7 +119,7 @@ describe('Plugin Auth Routes', () => {
         success: true,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'test@example.com',
@@ -125,7 +134,7 @@ describe('Plugin Auth Routes', () => {
     });
 
     it('returns 400 for invalid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'invalid-email',
@@ -138,7 +147,7 @@ describe('Plugin Auth Routes', () => {
     });
 
     it('returns 400 for missing plugin', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'test@example.com',
@@ -152,7 +161,7 @@ describe('Plugin Auth Routes', () => {
     it('returns 500 when identity creation fails', async () => {
       mockIdentityService.getOrCreateIdentity.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'test@example.com',
@@ -175,7 +184,7 @@ describe('Plugin Auth Routes', () => {
       mockIdentityService.getOrCreateIdentity.mockResolvedValue(identity);
       mockIdentityService.issueJwt.mockReturnValue('token');
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/plugin-init')
         .send({
           email: 'test@example.com',
@@ -200,7 +209,7 @@ describe('Plugin Auth Routes', () => {
         token: 'new-jwt-token',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/refresh-token')
         .send({
           token: 'old-token',
@@ -218,7 +227,7 @@ describe('Plugin Auth Routes', () => {
         error: 'Invalid token',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/refresh-token')
         .send({
           token: 'invalid-token',
@@ -235,7 +244,7 @@ describe('Plugin Auth Routes', () => {
         error: 'IDENTITY_NOT_FOUND',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/refresh-token')
         .send({
           token: 'old-token',
@@ -252,7 +261,7 @@ describe('Plugin Auth Routes', () => {
         error: 'TOKEN_VERSION_INVALID',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/refresh-token')
         .send({
           token: 'old-token',
@@ -264,7 +273,7 @@ describe('Plugin Auth Routes', () => {
     });
 
     it('returns 400 when token is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/auth/refresh-token')
         .send({});
 
@@ -276,7 +285,7 @@ describe('Plugin Auth Routes', () => {
 
   describe('GET /auth/me', () => {
     it('returns ok: true', async () => {
-      const res = await request(app).get('/auth/me');
+      const res = await request(server).get('/auth/me');
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);

@@ -16,10 +16,19 @@ const { createTestServer } = require('../helpers/createTestServer');
 const analyticsService = require('../../src/services/analyticsService');
 
 describe('Analytics Routes', () => {
-  let app;
+  let server;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -30,7 +39,7 @@ describe('Analytics Routes', () => {
     it('should successfully log a single event', async () => {
       analyticsService.logEvent.mockResolvedValue({ success: true });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/log')
         .send({
           email: 'test@example.com',
@@ -48,7 +57,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 200 even when validation fails', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/log')
         .send({
           email: 'invalid-email',
@@ -66,7 +75,7 @@ describe('Analytics Routes', () => {
         error: 'Database error',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/log')
         .send({
           email: 'test@example.com',
@@ -81,7 +90,7 @@ describe('Analytics Routes', () => {
     it('should include IP address in logEvent call', async () => {
       analyticsService.logEvent.mockResolvedValue({ success: true });
 
-      await request(app)
+      await request(server)
         .post('/analytics/log')
         .send({
           email: 'test@example.com',
@@ -100,7 +109,7 @@ describe('Analytics Routes', () => {
     it('should successfully log a single event', async () => {
       analyticsService.logEvent.mockResolvedValue({ success: true });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send({
           email: 'test@example.com',
@@ -120,7 +129,7 @@ describe('Analytics Routes', () => {
         failed: 0,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send([
           {
@@ -142,7 +151,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 200 even when validation fails for single event', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send({
           email: 'invalid-email',
@@ -155,7 +164,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 200 even when validation fails for batch', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send([
           {
@@ -187,7 +196,7 @@ describe('Analytics Routes', () => {
         ],
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send([
           {
@@ -215,7 +224,7 @@ describe('Analytics Routes', () => {
     it('should always return 200 status even on unexpected errors', async () => {
       analyticsService.logEvent.mockRejectedValue(new Error('Unexpected error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/analytics/event')
         .send({
           email: 'test@example.com',
@@ -235,7 +244,7 @@ describe('Analytics Routes', () => {
         failed: 0,
       });
 
-      await request(app)
+      await request(server)
         .post('/analytics/event')
         .send([
           {
@@ -269,7 +278,7 @@ describe('Analytics Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({ email: 'test@example.com' });
 
@@ -284,7 +293,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary');
 
       expect(res.status).toBe(400);
@@ -306,7 +315,7 @@ describe('Analytics Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -323,7 +332,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 400 for invalid days parameter', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -348,7 +357,7 @@ describe('Analytics Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -367,7 +376,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 400 for invalid date format', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -391,7 +400,7 @@ describe('Analytics Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -412,7 +421,7 @@ describe('Analytics Routes', () => {
         dateRange: {},
       });
 
-      await request(app)
+      await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -427,7 +436,7 @@ describe('Analytics Routes', () => {
     });
 
     it('should return 400 when eventNames is empty', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({
           email: 'test@example.com',
@@ -445,7 +454,7 @@ describe('Analytics Routes', () => {
         summary: null,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({ email: 'test@example.com' });
 
@@ -457,7 +466,7 @@ describe('Analytics Routes', () => {
     it('should handle unexpected errors', async () => {
       analyticsService.getAnalyticsSummary.mockRejectedValue(new Error('Unexpected error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/analytics/summary')
         .query({ email: 'test@example.com' });
 

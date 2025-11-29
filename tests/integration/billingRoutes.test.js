@@ -44,17 +44,23 @@ const { createTestServer } = require('../helpers/createTestServer');
 const { createTestToken } = require('../helpers/testHelpers');
 
 describe('Billing Routes', () => {
-  let app;
+  let server;
   let testToken;
   const testEmail = 'test@example.com';
 
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
-    }
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     // Create a test token for authentication
     testToken = createTestToken({ id: 'test-user-id', email: testEmail });
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -63,7 +69,7 @@ describe('Billing Routes', () => {
 
   describe('POST /billing/create-checkout', () => {
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-checkout')
         .send({
           email: testEmail,
@@ -77,7 +83,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 400 for invalid input', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-checkout')
         .set('Authorization', `Bearer ${testToken}`)
         .send({});
@@ -87,7 +93,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 403 for email mismatch', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-checkout')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -102,7 +108,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 500 if Stripe not configured', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-checkout')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -118,7 +124,7 @@ describe('Billing Routes', () => {
 
   describe('POST /billing/create-portal', () => {
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-portal')
         .send({ email: testEmail });
 
@@ -128,7 +134,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 400 for invalid input', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-portal')
         .set('Authorization', `Bearer ${testToken}`)
         .send({});
@@ -138,7 +144,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 403 for email mismatch', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/create-portal')
         .set('Authorization', `Bearer ${testToken}`)
         .send({ email: 'different@example.com' });
@@ -151,7 +157,7 @@ describe('Billing Routes', () => {
 
   describe('POST /billing/subscriptions', () => {
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/subscriptions')
         .send({ email: testEmail });
 
@@ -161,7 +167,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 400 for invalid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/subscriptions')
         .set('Authorization', `Bearer ${testToken}`)
         .send({ email: 'invalid-email' });
@@ -171,7 +177,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return 403 for email mismatch', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/subscriptions')
         .set('Authorization', `Bearer ${testToken}`)
         .send({ email: 'different@example.com' });
@@ -182,7 +188,7 @@ describe('Billing Routes', () => {
     });
 
     it('should return subscriptions array for valid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/billing/subscriptions')
         .set('Authorization', `Bearer ${testToken}`)
         .send({ email: testEmail });

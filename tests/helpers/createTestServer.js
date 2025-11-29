@@ -24,12 +24,13 @@ jest.mock('../../db/supabase-client', () => {
   return require('../mocks/supabase.mock');
 });
 
-let listenPatched = false;
+const http = require('http');
+const createApp = require('../../server-v2');
 
 /** 
  * Create a test server instance
- * Always returns a valid Express app instance
- * Uses module cache when available, only clears cache when module fails to load or returns invalid result
+ * Returns an HTTP Server instance (not Express app) for Supertest compatibility
+ * Supertest requires an HTTP Server with address() method, not an Express app
  */
 function createTestServer() {
   // Ensure NODE_ENV is set to test BEFORE any modules are loaded
@@ -38,131 +39,32 @@ function createTestServer() {
     process.env.NODE_ENV = 'test';
   }
   
-  // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
-  // This patch is critical for GitHub Actions sandbox environment
-  if (!listenPatched) {
-    const http = require('http');
-    const originalServerListen = http.Server.prototype.listen;
-    http.Server.prototype.listen = function (...args) {
-      // Normalize arguments so calls like listen(0) or listen(0, callback)
-      // bind to 127.0.0.1 instead of 0.0.0.0
-      if (typeof args[0] === 'number') {
-        const port = args[0];
-        const hasHost = typeof args[1] === 'string';
-        const hasCallback = typeof args[1] === 'function' || typeof args[2] === 'function';
-        
-        // If host already specified, respect it; otherwise force localhost
-        if (!hasHost) {
-          // Determine callback - could be args[1] or args[2]
-          const cb = typeof args[1] === 'function' ? args[1] : (typeof args[2] === 'function' ? args[2] : undefined);
-          
-          // Call original listen with localhost
-          // If callback exists, pass it; otherwise just pass port and hostname
-          const result = cb 
-            ? originalServerListen.call(this, port, '127.0.0.1', cb)
-            : originalServerListen.call(this, port, '127.0.0.1');
-          
-          // Unref to prevent keeping process alive, but always return the server
-          // Supertest needs the server instance to call address() on it
-          if (result && typeof result.unref === 'function') {
-            result.unref();
-          }
-          // Always return the server instance (result) or this if result is falsy
-          // This ensures supertest can call address() on the returned value
-          return result || this;
-        }
-      }
-      // If host is specified or port is not a number, use original behavior
-      return originalServerListen.apply(this, args);
-    };
-    listenPatched = true;
-  }
-  
-  // Try to load server - use cached module if available, otherwise load fresh
-  let app;
-  const serverPath = require.resolve('../../server-v2');
-  
   try {
-    // First attempt: try to use cached module if available
-    if (require.cache[serverPath]) {
-      app = require('../../server-v2');
-    } else {
-      // Module not in cache, require it (will be cached automatically)
-      app = require('../../server-v2');
-    }
+    // Create a fresh Express app instance using the factory
+    const app = createApp();
     
     // Validate the app
-    if (!app) {
-      // Module returned null/undefined - clear cache and retry
-      delete require.cache[serverPath];
-      // Also clear supabase-client cache to ensure mock is used
-      try {
-        const supabasePath = require.resolve('../../db/supabase-client');
-        delete require.cache[supabasePath];
-      } catch (e) {
-        // Ignore if not found
-      }
-      app = require('../../server-v2');
-    }
-    
-    if (typeof app.listen !== 'function') {
-      // Invalid app - clear cache and retry
-      delete require.cache[serverPath];
-      try {
-        const supabasePath = require.resolve('../../db/supabase-client');
-        delete require.cache[supabasePath];
-      } catch (e) {
-        // Ignore if not found
-      }
-      app = require('../../server-v2');
-      
-      // Validate again
-      if (typeof app.listen !== 'function') {
-        throw new Error('server-v2 module did not export an Express app (listen is not a function)');
-      }
-    }
-    
-    // Final validation - ensure we never return null
     if (!app || typeof app.listen !== 'function') {
-      throw new Error('server-v2 module did not export a valid Express app');
+      throw new Error('createApp did not return a valid Express app');
     }
     
-    return app;
+    // Create HTTP server from Express app
+    // This is what Supertest needs - an HTTP Server instance, not an Express app
+    const server = http.createServer(app);
+    
+    // Start server on random available port (0 = OS chooses)
+    // This allows Supertest to get the server address via server.address()
+    server.listen(0);
+    
+    return server;
   } catch (error) {
-    // If loading failed, try clearing cache and retrying once
-    if (require.cache[serverPath]) {
-      try {
-        delete require.cache[serverPath];
-        // Also clear supabase-client cache to ensure mock is used
-        try {
-          const supabasePath = require.resolve('../../db/supabase-client');
-          delete require.cache[supabasePath];
-        } catch (e) {
-          // Ignore if not found
-        }
-        
-        app = require('../../server-v2');
-        
-        if (!app || typeof app.listen !== 'function') {
-          throw new Error('server-v2 module did not export an Express app after cache clear');
-        }
-        
-        return app;
-      } catch (retryError) {
-        // Both attempts failed
-        console.error('[createTestServer] Error loading server-v2 after retry:', retryError.message);
-        throw new Error(`Failed to create test server: ${retryError.message}. This is likely due to a dependency issue with @supabase/storage-js.`);
-      }
-    } else {
-      // No cache to clear, error is real
-      console.error('[createTestServer] Error loading server-v2:', error.message);
-      if (error.stack) {
-        const stackLines = error.stack.split('\n');
-        console.error('[createTestServer] Stack (first 20 lines):');
-        stackLines.slice(0, 20).forEach(line => console.error('  ', line));
-      }
-      throw new Error(`Failed to create test server: ${error.message}. This is likely due to a dependency issue with @supabase/storage-js.`);
+    console.error('[createTestServer] Error creating test server:', error.message);
+    if (error.stack) {
+      const stackLines = error.stack.split('\n');
+      console.error('[createTestServer] Stack (first 20 lines):');
+      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
     }
+    throw new Error(`Failed to create test server: ${error.message}`);
   }
 }
 

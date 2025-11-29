@@ -18,14 +18,23 @@ jest.mock('../../src/services/accountService', () => ({
 }));
 
 describe('Account Routes', () => {
-  let app;
+  let server;
   let mockUserAccountService;
   let mockAccountService;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     mockUserAccountService = require('../../src/services/userAccountService');
     mockAccountService = require('../../src/services/accountService');
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -46,7 +55,7 @@ describe('Account Routes', () => {
 
   describe('POST /account/overview', () => {
     test('returns full account data with valid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/overview')
         .send({
           email: 'test@example.com',
@@ -62,7 +71,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 400 for invalid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/overview')
         .send({
           email: 'invalid-email',
@@ -74,7 +83,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/overview')
         .send({});
 
@@ -88,7 +97,7 @@ describe('Account Routes', () => {
         error: 'Database connection failed',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/overview')
         .send({
           email: 'test@example.com',
@@ -100,7 +109,7 @@ describe('Account Routes', () => {
     });
 
     test('response shape matches spec', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/overview')
         .send({
           email: 'test@example.com',
@@ -121,7 +130,7 @@ describe('Account Routes', () => {
 
   describe('POST /account/installations', () => {
     test('returns installations with valid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/installations')
         .send({
           email: 'test@example.com',
@@ -135,7 +144,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 400 for invalid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/installations')
         .send({
           email: 'invalid-email',
@@ -152,7 +161,7 @@ describe('Account Routes', () => {
         error: 'Database query failed',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/installations')
         .send({
           email: 'test@example.com',
@@ -164,7 +173,7 @@ describe('Account Routes', () => {
     });
 
     test('response shape matches spec', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/installations')
         .send({
           email: 'test@example.com',
@@ -210,7 +219,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 200 with valid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({
           email: 'test@example.com',
@@ -227,7 +236,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 400 for invalid email', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({
           email: 'invalid-email',
@@ -239,7 +248,7 @@ describe('Account Routes', () => {
     });
 
     test('returns 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({});
 
@@ -248,7 +257,7 @@ describe('Account Routes', () => {
     });
 
     test('returns correct data structure', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({
           email: 'test@example.com',
@@ -275,7 +284,7 @@ describe('Account Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({
           email: 'test@example.com',
@@ -293,7 +302,7 @@ describe('Account Routes', () => {
         error: 'Failed to fetch account summary',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/account/summary')
         .send({
           email: 'test@example.com',

@@ -22,14 +22,23 @@ jest.mock('../../src/services/pluginInstallationService', () => ({
 }));
 
 describe('Email Routes (new)', () => {
-  let app;
+  let server;
   let mockEmailService;
   let mockPluginInstallationService;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     mockEmailService = require('../../src/services/emailService');
     mockPluginInstallationService = require('../../src/services/pluginInstallationService');
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -46,7 +55,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/waitlist', () => {
     test('sends waitlist welcome email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/waitlist')
         .send({
           email: 'test@example.com',
@@ -64,7 +73,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('returns 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/waitlist')
         .send({
           plugin: 'AltText AI',
@@ -76,7 +85,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('returns 400 when email format is invalid', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/waitlist')
         .send({
           email: 'invalid-email',
@@ -93,7 +102,7 @@ describe('Email Routes (new)', () => {
         error: 'Rate limit exceeded',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/waitlist')
         .send({
           email: 'test@example.com',
@@ -107,7 +116,7 @@ describe('Email Routes (new)', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendWaitlistWelcome.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/waitlist')
         .send({
           email: 'test@example.com',
@@ -122,7 +131,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/dashboard-welcome', () => {
     test('sends dashboard welcome email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/dashboard-welcome')
         .send({
           email: 'test@example.com',
@@ -136,7 +145,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('returns 400 when email is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/dashboard-welcome')
         .send({});
 
@@ -147,7 +156,7 @@ describe('Email Routes (new)', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendDashboardWelcome.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/dashboard-welcome')
         .send({
           email: 'test@example.com',
@@ -161,7 +170,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/plugin-signup', () => {
     test('sends plugin signup email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -187,7 +196,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('returns 400 when pluginName is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -201,7 +210,7 @@ describe('Email Routes (new)', () => {
     test('returns deduplication response when email is deduped', async () => {
       mockEmailService.sendPluginSignup.mockResolvedValue({ success: true, deduped: true });
       
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -214,7 +223,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('supports both plugin and pluginName parameters', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -239,7 +248,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('validates email format with Zod', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'invalid-email',
@@ -252,7 +261,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('accepts and passes metadata fields', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -287,7 +296,7 @@ describe('Email Routes (new)', () => {
       // Note: This test verifies the route accepts metadata
       // The actual installation recording happens inside emailService.sendPluginSignup
       // which is mocked here, so we verify the metadata is passed correctly
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin-signup')
         .send({
           email: 'test@example.com',
@@ -315,7 +324,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/license-activated', () => {
     test('requires authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license-activated')
         .send({
           email: 'test@example.com',
@@ -328,7 +337,7 @@ describe('Email Routes (new)', () => {
     test('sends license activated email with valid data', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license-activated')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -349,7 +358,7 @@ describe('Email Routes (new)', () => {
     test('returns 400 when planName is missing', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license-activated')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -363,7 +372,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/low-credit-warning', () => {
     test('sends low credit warning with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/low-credit-warning')
         .send({
           email: 'test@example.com',
@@ -381,7 +390,7 @@ describe('Email Routes (new)', () => {
     });
 
     test('returns 400 when remainingCredits is missing', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/low-credit-warning')
         .send({
           email: 'test@example.com',
@@ -395,7 +404,7 @@ describe('Email Routes (new)', () => {
 
   describe('POST /email/receipt', () => {
     test('requires authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .send({
           email: 'test@example.com',
@@ -409,7 +418,7 @@ describe('Email Routes (new)', () => {
     test('sends receipt email with valid data', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -432,7 +441,7 @@ describe('Email Routes (new)', () => {
     test('returns 400 when amount is invalid', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .set('Authorization', `Bearer ${token}`)
         .send({

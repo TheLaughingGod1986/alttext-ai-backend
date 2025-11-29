@@ -7,15 +7,24 @@ const { createTestServer } = require('../helpers/createTestServer');
 const { createTestToken } = require('../helpers/testHelpers');
 
 describe('Email Routes', () => {
-  let app;
+  let server;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   describe('POST /email/welcome', () => {
     test('sends welcome email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/welcome')
         .send({
           email: 'test@example.com',
@@ -32,7 +41,7 @@ describe('Email Routes', () => {
     });
 
     test('validates email format', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/welcome')
         .send({
           email: 'invalid-email',
@@ -45,7 +54,7 @@ describe('Email Routes', () => {
     });
 
     test('validates required email field', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/welcome')
         .send({
           name: 'Test User'
@@ -65,7 +74,7 @@ describe('Email Routes', () => {
 
   describe('POST /email/license/activated', () => {
     test('requires authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license/activated')
         .send({
           email: 'test@example.com',
@@ -81,7 +90,7 @@ describe('Email Routes', () => {
     test('sends license activated email with valid data', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license/activated')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -103,7 +112,7 @@ describe('Email Routes', () => {
     test('validates required fields', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/license/activated')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -118,7 +127,7 @@ describe('Email Routes', () => {
 
   describe('POST /email/credits/low', () => {
     test('sends low credit warning with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/credits/low')
         .send({
           email: 'test@example.com',
@@ -135,7 +144,7 @@ describe('Email Routes', () => {
     });
 
     test('validates used and limit are numbers', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/credits/low')
         .send({
           email: 'test@example.com',
@@ -148,7 +157,7 @@ describe('Email Routes', () => {
     });
 
     test('validates used does not exceed limit', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/credits/low')
         .send({
           email: 'test@example.com',
@@ -163,7 +172,7 @@ describe('Email Routes', () => {
 
   describe('POST /email/receipt', () => {
     test('requires authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .send({
           email: 'test@example.com',
@@ -179,7 +188,7 @@ describe('Email Routes', () => {
     test('sends receipt email with valid data', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -199,7 +208,7 @@ describe('Email Routes', () => {
     test('validates amount is positive', async () => {
       const token = createTestToken({ id: 1, email: 'test@example.com', plan: 'pro' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/receipt')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -215,7 +224,7 @@ describe('Email Routes', () => {
 
   describe('POST /email/plugin/signup', () => {
     test('sends plugin signup email with valid data', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin/signup')
         .send({
           email: 'test@example.com',
@@ -232,7 +241,7 @@ describe('Email Routes', () => {
     });
 
     test('validates email format', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/email/plugin/signup')
         .send({
           email: 'invalid-email',

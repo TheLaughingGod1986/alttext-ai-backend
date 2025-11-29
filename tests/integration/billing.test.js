@@ -7,26 +7,22 @@ const jestMock = require('jest-mock');
 const checkoutModule = require('../../src/stripe/checkout');
 const checkoutSpy = jest.spyOn(checkoutModule, 'createCheckoutSession').mockResolvedValue({ id: 'sess_123', url: 'https://stripe.test/checkout' });
 const portalSpy = jest.spyOn(checkoutModule, 'createCustomerPortalSession').mockResolvedValue({ id: 'portal_123', url: 'https://stripe.test/portal' });
-let app;
+let server;
 
 describe('Billing routes', () => {
   beforeAll(() => {
-    console.log('[billing.test] beforeAll: Creating test server...');
-    app = createTestServer();
-    console.log('[billing.test] beforeAll: createTestServer returned:', { 
-      type: typeof app, 
-      isNull: app === null, 
-      isUndefined: app === undefined,
-      hasListen: typeof app?.listen 
-    });
-    if (!app) {
-      throw new Error('Failed to create test server: createTestServer returned null');
-    }
-    if (typeof app.listen !== 'function') {
-      throw new Error('Failed to create test server: app is not an Express app');
-    }
-    console.log('[billing.test] beforeAll: Test server created successfully');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
   });
+  
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
+  });
+  
   beforeAll(() => {
     process.env.ALTTEXT_AI_STRIPE_PRICE_PRO = 'price_pro';
     process.env.FRONTEND_URL = 'https://app.test';
@@ -62,17 +58,7 @@ describe('Billing routes', () => {
   });
 
   test('returns plans', async () => {
-    console.log('[billing.test] returns plans test: app state:', { 
-      type: typeof app, 
-      isNull: app === null, 
-      isUndefined: app === undefined,
-      hasListen: typeof app?.listen 
-    });
-    // Ensure app is set - if it's null, the beforeAll should have failed
-    if (!app || typeof app.listen !== 'function') {
-      throw new Error(`app is invalid in test: type=${typeof app}, isNull=${app === null}, hasListen=${typeof app?.listen}`);
-    }
-    const res = await request(app).get('/billing/plans');
+    const res = await request(server).get('/billing/plans');
     expect(res.status).toBe(200);
     expect(res.body.plans).toBeDefined();
   });
@@ -83,7 +69,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({ priceId: 'price_pro' });
@@ -92,7 +78,7 @@ describe('Billing routes', () => {
   });
 
   test('checkout requires price id', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({});
@@ -106,7 +92,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/portal')
       .set(authHeader())
       .send({});
@@ -125,7 +111,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -141,7 +127,7 @@ describe('Billing routes', () => {
 
     checkoutSpy.mockRejectedValueOnce(new Error('Stripe unavailable'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({ priceId: 'price_pro' });
@@ -154,7 +140,7 @@ describe('Billing routes', () => {
   test('portal endpoint returns error when Stripe portal fails', async () => {
     portalSpy.mockRejectedValueOnce(new Error('Session expired'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/portal')
       .set(authHeader())
       .send({});
@@ -169,7 +155,7 @@ describe('Billing routes', () => {
       error: { message: 'not found' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -187,7 +173,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -207,7 +193,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -237,7 +223,7 @@ describe('Billing routes', () => {
       });
     }
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/info')
       .set(authHeader());
 
@@ -252,7 +238,7 @@ describe('Billing routes', () => {
       error: { message: 'DB unavailable', code: 'PGRST500' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/info')
       .set(authHeader());
 
@@ -270,7 +256,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/info')
       .set(authHeader());
 
@@ -289,7 +275,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -301,7 +287,7 @@ describe('Billing routes', () => {
   // Stripe edge case tests
 
   test('checkout rejects invalid price ID', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({ priceId: 'invalid_price_id' });
@@ -313,7 +299,7 @@ describe('Billing routes', () => {
   test('checkout handles invalid service parameter', async () => {
     process.env.SEO_AI_META_STRIPE_PRICE_PRO = 'seo_price_pro';
     
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({ priceId: 'seo_price_pro', service: 'invalid-service' });
@@ -329,7 +315,7 @@ describe('Billing routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .set(authHeader())
       .send({ price_id: 'price_pro' });
@@ -339,7 +325,7 @@ describe('Billing routes', () => {
   });
 
   test('checkout handles missing user authentication', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/billing/checkout')
       .send({ priceId: 'price_pro' });
 
@@ -367,7 +353,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -396,7 +382,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -425,7 +411,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -454,7 +440,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -483,7 +469,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader(10, 'bill@example.com', 'agency'));
 
@@ -513,7 +499,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader(10, 'bill@example.com', 'credits'));
 
@@ -552,7 +538,7 @@ describe('Billing routes', () => {
       }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -595,7 +581,7 @@ describe('Billing routes', () => {
       // No card property - this should make paymentMethod null in the route
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -633,7 +619,7 @@ describe('Billing routes', () => {
       cancel_at_period_end: false
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -662,7 +648,7 @@ describe('Billing routes', () => {
       default_payment_method: 'pm_test'
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/subscription')
       .set(authHeader());
 
@@ -697,7 +683,7 @@ describe('Billing routes', () => {
       stripeInstance.subscriptions.retrieve.mockRejectedValueOnce(rateLimitError);
     }
 
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/info')
       .set(authHeader());
 
@@ -707,7 +693,7 @@ describe('Billing routes', () => {
   });
 
   test('plans endpoint returns service-specific plans', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/plans?service=seo-ai-meta');
 
     expect(res.status).toBe(200);
@@ -717,7 +703,7 @@ describe('Billing routes', () => {
   });
 
   test('plans endpoint defaults to alttext-ai when invalid service', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/billing/plans?service=invalid-service');
 
     expect(res.status).toBe(200);
@@ -752,7 +738,7 @@ describe('Billing routes', () => {
       // Transition to active
       stripeMock.__transitionSubscription('sub_transition', 'active');
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 
@@ -784,7 +770,7 @@ describe('Billing routes', () => {
       // Transition to past_due (payment failure)
       stripeMock.__transitionSubscription('sub_past_due', 'past_due');
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 
@@ -816,7 +802,7 @@ describe('Billing routes', () => {
       // Transition to canceled
       stripeMock.__transitionSubscription('sub_canceled', 'canceled');
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 
@@ -854,7 +840,7 @@ describe('Billing routes', () => {
       });
 
       // First request
-      const res1 = await request(app)
+      const res1 = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 
@@ -865,7 +851,7 @@ describe('Billing routes', () => {
       stripeMock.__transitionSubscription('sub_persist', 'active');
 
       // Second request should reflect the transition
-      const res2 = await request(app)
+      const res2 = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 
@@ -953,7 +939,7 @@ describe('Billing routes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/billing/subscription')
         .set(authHeader());
 

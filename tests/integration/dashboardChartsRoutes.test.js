@@ -17,17 +17,26 @@ const dashboardChartsService = require('../../src/services/dashboardChartsServic
 const { generateToken } = require('../../auth/jwt');
 
 describe('Dashboard Charts Routes', () => {
-  let app;
+  let server;
   let authToken;
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     // Generate a test JWT token
     const testUser = {
       id: 'test-user-id',
       email: 'test@example.com',
     };
     authToken = generateToken(testUser);
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -43,7 +52,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getDailyUsage.mockResolvedValue(mockDailyUsage);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/daily')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -59,7 +68,7 @@ describe('Dashboard Charts Routes', () => {
     });
 
     it('should require authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/daily');
 
       expect(res.status).toBe(401);
@@ -68,7 +77,7 @@ describe('Dashboard Charts Routes', () => {
     it('should handle service errors gracefully', async () => {
       dashboardChartsService.getDailyUsage.mockRejectedValue(new Error('Service error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/daily')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -87,7 +96,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getMonthlyUsage.mockResolvedValue(mockMonthlyUsage);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/monthly')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -103,7 +112,7 @@ describe('Dashboard Charts Routes', () => {
     });
 
     it('should require authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/monthly');
 
       expect(res.status).toBe(401);
@@ -127,7 +136,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getRecentEvents.mockResolvedValue(mockEvents);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/events/recent')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -144,7 +153,7 @@ describe('Dashboard Charts Routes', () => {
     });
 
     it('should require authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/events/recent');
 
       expect(res.status).toBe(401);
@@ -159,7 +168,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getRecentEvents.mockResolvedValue(mockEvents);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/events/recent')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -186,7 +195,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getPluginActivity.mockResolvedValue(mockPlugins);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/plugins/activity')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -202,7 +211,7 @@ describe('Dashboard Charts Routes', () => {
     });
 
     it('should require authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/plugins/activity');
 
       expect(res.status).toBe(401);
@@ -219,7 +228,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getPluginActivity.mockResolvedValue(mockPlugins);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/plugins/activity')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -263,7 +272,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getDashboardCharts.mockResolvedValue(mockCharts);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/charts')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -287,7 +296,7 @@ describe('Dashboard Charts Routes', () => {
     });
 
     it('should require authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/charts');
 
       expect(res.status).toBe(401);
@@ -308,7 +317,7 @@ describe('Dashboard Charts Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/charts')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -343,7 +352,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getDashboardCharts.mockResolvedValue(mockCharts);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/charts')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -368,7 +377,7 @@ describe('Dashboard Charts Routes', () => {
     it('should return all chart arrays on exception', async () => {
       dashboardChartsService.getDashboardCharts.mockRejectedValue(new Error('Test error'));
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/charts')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -394,7 +403,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getDailyUsage.mockResolvedValue(mockDailyUsage);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/daily')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -408,7 +417,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getMonthlyUsage.mockResolvedValue(mockMonthlyUsage);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/usage/monthly')
         .set('Authorization', `Bearer ${authToken}`);
 
@@ -426,7 +435,7 @@ describe('Dashboard Charts Routes', () => {
 
       dashboardChartsService.getRecentEvents.mockResolvedValue(mockEvents);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/dashboard/events/recent')
         .set('Authorization', `Bearer ${authToken}`);
 

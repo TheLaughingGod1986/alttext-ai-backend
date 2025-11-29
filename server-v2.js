@@ -36,8 +36,30 @@ const billingService = require('./src/services/billingService'); // Billing serv
 const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
 const plansConfig = require('./src/config/plans'); // Plan configuration
 
-const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Sentry if available (module-level for process handlers)
+let Sentry = null;
+try {
+  if (process.env.SENTRY_DSN) {
+    Sentry = require('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+    });
+    console.log('✅ Sentry initialized for error tracking');
+  }
+} catch (error) {
+  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
+}
+
+/**
+ * Create and configure Express app instance
+ * This factory function allows creating fresh app instances for testing
+ */
+function createApp() {
+  const app = express();
 
 // Middleware
 app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
@@ -85,25 +107,9 @@ app.use('/credits/webhook', express.raw({ type: 'application/json' })); // Credi
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
 app.use(express.json({ limit: '2mb' }));
 
-// Request ID middleware (add early for tracing)
-const { requestIdMiddleware } = require('./src/middleware/requestId');
-app.use(requestIdMiddleware);
-
-// Initialize Sentry if available
-let Sentry = null;
-try {
-  if (process.env.SENTRY_DSN) {
-    Sentry = require('@sentry/node');
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV || 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-    });
-    console.log('✅ Sentry initialized for error tracking');
-  }
-} catch (error) {
-  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
-}
+  // Request ID middleware (add early for tracing)
+  const { requestIdMiddleware } = require('./src/middleware/requestId');
+  app.use(requestIdMiddleware);
 
 // Health check - MUST be before rate limiting to avoid 429 errors on health checks
 app.get('/health', async (req, res) => {
@@ -1141,7 +1147,9 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+// Production startup (when run directly)
 if (require.main === module) {
+  const app = createApp();
   app.listen(PORT, () => {
     console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
     console.log(`📅 Version: 2.0.0 (Monetization)`);
@@ -1157,37 +1165,30 @@ if (require.main === module) {
   });
 }
 
-// Global error handler (must be last middleware)
-const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
-app.use(notFoundHandler); // 404 handler
-app.use(errorHandler); // Error handler
+  // Global error handler (must be last middleware)
+  const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
+  app.use(notFoundHandler); // 404 handler
+  app.use(errorHandler); // Error handler
 
-// Capture unhandled errors with Sentry if available
-if (Sentry) {
-  app.use(Sentry.Handlers.errorHandler());
+  // Capture unhandled errors with Sentry if available
+  if (Sentry) {
+    app.use(Sentry.Handlers.errorHandler());
+  }
+
+  // Final validation
+  if (!app || typeof app.listen !== 'function') {
+    const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
+    console.error(error.message);
+    throw error;
+  }
+
+  return app;
 }
 
-// Export utility functions for partner API
-// Export app and utility functions
-// Ensure app exists before exporting
-if (!app) {
-  console.error('[server-v2] ERROR: app is null/undefined at export time!');
-  throw new Error('Express app was not initialized');
-}
+// Export factory function as default
+module.exports = createApp;
 
-// Export app and utility functions
-// Directly assign to app to ensure it's exported correctly
-if (typeof requestChatCompletion === 'function') {
-  app.requestChatCompletion = requestChatCompletion;
-}
-app.buildPrompt = buildPrompt;
-app.buildUserMessage = buildUserMessage;
-
-// Final check before export
-if (!app || typeof app.listen !== 'function') {
-  const error = new Error(`[server-v2] Invalid app at export: type=${typeof app}, hasListen=${typeof app?.listen}`);
-  console.error(error.message);
-  throw error;
-}
-
-module.exports = app;
+// Export helper functions for partner API
+module.exports.requestChatCompletion = requestChatCompletion;
+module.exports.buildPrompt = buildPrompt;
+module.exports.buildUserMessage = buildUserMessage;

@@ -12,13 +12,19 @@ jest.mock('../../src/services/emailService', () => ({
   sendPasswordReset: jest.fn(),
 }));
 
-let app;
+let server;
 
 describe('Auth routes', () => {
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
 
@@ -53,7 +59,7 @@ describe('Auth routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'new@example.com', password: 'Password123!' });
 
@@ -63,7 +69,7 @@ describe('Auth routes', () => {
   });
 
   test('register validation error', async () => {
-    const res = await request(app).post('/auth/register').send({ email: '' });
+    const res = await request(server).post('/auth/register').send({ email: '' });
     expect(res.status).toBe(400);
   });
 
@@ -74,7 +80,7 @@ describe('Auth routes', () => {
       error: { message: 'DB unavailable', code: 'PGRST500' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'fail@example.com', password: 'Password123!' });
 
@@ -90,7 +96,7 @@ describe('Auth routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/login')
       .send({ email: 'login@example.com', password: 'Password123!' });
 
@@ -105,7 +111,7 @@ describe('Auth routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/login')
       .send({ email: 'login@example.com', password: 'Wrong' });
 
@@ -119,7 +125,7 @@ describe('Auth routes', () => {
     });
 
     const token = generateToken({ id: 3, email: 'me@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .get('/auth/me')
       .set('Authorization', `Bearer ${token}`);
 
@@ -154,7 +160,7 @@ describe('Auth routes', () => {
     // Mock email failure
     emailService.sendDashboardWelcome.mockRejectedValueOnce(new Error('Email service unavailable'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'emailfail@example.com', password: 'Password123!' });
 
@@ -191,7 +197,7 @@ describe('Auth routes', () => {
       new Promise((resolve, reject) => setTimeout(() => reject(new Error('Email timeout')), 100))
     );
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'timeout@example.com', password: 'Password123!' });
 
@@ -203,7 +209,7 @@ describe('Auth routes', () => {
   // Additional auth route tests
 
   test('register rejects weak password', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'weak@example.com', password: 'short' });
 
@@ -217,7 +223,7 @@ describe('Auth routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'existing@example.com', password: 'Password123!' });
 
@@ -247,7 +253,7 @@ describe('Auth routes', () => {
     licenseServiceMock.createLicense.mockResolvedValueOnce(licenseResponse);
     licenseServiceMock.getLicenseSnapshot.mockResolvedValueOnce(snapshot);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'invalidservice@example.com', password: 'Password123!', service: 'invalid-service' });
 
@@ -269,7 +275,7 @@ describe('Auth routes', () => {
     // Mock license creation to fail
     licenseServiceMock.createLicense.mockRejectedValueOnce(new Error('License creation failed'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/register')
       .send({ email: 'nolicense@example.com', password: 'Password123!' });
 
@@ -288,7 +294,7 @@ describe('Auth routes', () => {
       error: null
     });
     
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/login')
       .send({ email: 'test@example.com' });
 
@@ -308,7 +314,7 @@ describe('Auth routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/login')
       .send({ email: 'nonexistent@example.com', password: 'Password123!' });
 
@@ -317,7 +323,7 @@ describe('Auth routes', () => {
   });
 
   test('me endpoint requires authentication', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .get('/auth/me');
 
     expect(res.status).toBe(401);
@@ -344,7 +350,7 @@ describe('Auth routes', () => {
     });
 
     const token = generateToken({ id: 999, email: 'missing@example.com', plan: 'free' });
-    const res = await request(app)
+    const res = await request(server)
       .get('/auth/me')
       .set('Authorization', `Bearer ${token}`);
 
@@ -365,7 +371,7 @@ describe('Auth routes', () => {
     });
 
     const token = generateToken({ id: 4, email: 'refresh@example.com', plan: 'pro' });
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/refresh')
       .set('Authorization', `Bearer ${token}`);
 
@@ -374,14 +380,14 @@ describe('Auth routes', () => {
   });
 
   test('refresh token requires authentication', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/refresh');
 
     expect(res.status).toBe(401);
   });
 
   test('forgot-password requires email', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({});
 
@@ -395,7 +401,7 @@ describe('Auth routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'nonexistent@example.com' });
 
@@ -414,7 +420,7 @@ describe('Auth routes', () => {
       error: null
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'ratelimited@example.com' });
 
@@ -435,7 +441,7 @@ describe('Auth routes', () => {
     supabaseMock.__queueResponse('password_reset_tokens', 'insert', { error: null });
     emailService.sendPasswordReset.mockResolvedValueOnce({ success: true });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'reset@example.com' });
 
@@ -445,7 +451,7 @@ describe('Auth routes', () => {
   });
 
   test('reset-password requires all fields', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'test@example.com' });
 
@@ -454,7 +460,7 @@ describe('Auth routes', () => {
   });
 
   test('reset-password rejects weak password', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'test@example.com', token: 'valid-token', newPassword: 'short' });
 
@@ -472,7 +478,7 @@ describe('Auth routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'test@example.com', token: 'invalid-token', newPassword: 'NewPassword123!' });
 
@@ -486,7 +492,7 @@ describe('Auth routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'nonexistent@example.com', token: 'valid-token', newPassword: 'NewPassword123!' });
 
@@ -507,7 +513,7 @@ describe('Auth routes', () => {
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'test@example.com', token: 'valid-token', password: 'NewPassword123!' });
 
@@ -528,7 +534,7 @@ describe('Auth routes', () => {
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
     supabaseMock.__queueResponse('password_reset_tokens', 'update', { error: null });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'reset@example.com', token: 'valid-token', newPassword: 'NewPassword123!' });
 
@@ -553,7 +559,7 @@ describe('Auth routes', () => {
     // Mock email failure
     emailService.sendPasswordReset.mockRejectedValueOnce(new Error('Email service unavailable'));
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'emailfail@example.com' });
 
@@ -580,7 +586,7 @@ describe('Auth routes', () => {
     rateLimitError.statusCode = 429;
     emailService.sendPasswordReset.mockRejectedValueOnce(rateLimitError);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'ratelimit@example.com' });
 
@@ -608,7 +614,7 @@ describe('Auth routes', () => {
     // sendPasswordReset will handle missing key gracefully
     emailService.sendPasswordReset.mockResolvedValueOnce({ success: false, error: 'Resend API key not configured' });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/forgot-password')
       .send({ email: 'nokey@example.com' });
 
@@ -632,7 +638,7 @@ describe('Auth routes', () => {
       error: { message: 'not found', code: 'PGRST116' }
     });
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/auth/reset-password')
       .send({ email: 'test@example.com', token: 'invalid-token', newPassword: 'NewPassword123!' });
 

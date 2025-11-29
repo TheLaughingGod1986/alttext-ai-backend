@@ -93,13 +93,22 @@ const creditsService = require('../../src/services/creditsService');
 const { supabase } = require('../../db/supabase-client');
 
 describe('Credits Routes', () => {
-  let app;
+  let server;
   let testToken;
   const testEmail = 'test@example.com';
 
   beforeAll(() => {
-    app = createTestServer();
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
     testToken = createTestToken({ id: 'test-user-id', email: testEmail });
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
+    }
   });
 
   beforeEach(() => {
@@ -132,7 +141,7 @@ describe('Credits Routes', () => {
 
   describe('POST /credits/create-payment', () => {
     it('should create payment session with packId', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/create-payment')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -148,7 +157,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/create-payment')
         .send({
           packId: 'pack_200',
@@ -159,7 +168,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 400 for missing packId', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/create-payment')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -172,7 +181,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 400 for invalid packId', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/create-payment')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -186,7 +195,7 @@ describe('Credits Routes', () => {
     });
 
     it('should use email from token if not provided', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/create-payment')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -201,7 +210,7 @@ describe('Credits Routes', () => {
       const packIds = ['pack_50', 'pack_200', 'pack_500', 'pack_1000'];
       
       for (const packId of packIds) {
-        const res = await request(app)
+        const res = await request(server)
           .post('/credits/create-payment')
           .set('Authorization', `Bearer ${testToken}`)
           .send({
@@ -240,7 +249,7 @@ describe('Credits Routes', () => {
       // Mock no existing transaction
       supabase.maybeSingle.mockResolvedValue({ data: null, error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -260,7 +269,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .send({
           sessionId: 'cs_test123',
@@ -270,7 +279,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 400 for missing sessionId', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({});
@@ -294,7 +303,7 @@ describe('Credits Routes', () => {
         },
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -313,7 +322,7 @@ describe('Credits Routes', () => {
         error: null,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -333,7 +342,7 @@ describe('Credits Routes', () => {
         error: 'Database error',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -348,7 +357,7 @@ describe('Credits Routes', () => {
 
   describe('GET /credits/packs', () => {
     it('should return available credit packs', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/credits/packs')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -366,7 +375,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/credits/packs');
 
       expect(res.status).toBe(401);
@@ -389,7 +398,7 @@ describe('Credits Routes', () => {
         url: 'https://checkout.stripe.com/test',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/checkout-session')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -403,7 +412,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/checkout-session')
         .send({
           packId: 'pack_500',
@@ -413,7 +422,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 400 for missing packId', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/checkout-session')
         .set('Authorization', `Bearer ${testToken}`)
         .send({});
@@ -424,7 +433,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 400 for invalid pack', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/checkout-session')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -470,7 +479,7 @@ describe('Credits Routes', () => {
       mockWebhooksConstructEvent.mockReturnValueOnce(mockEvent);
 
       const payload = JSON.stringify(mockEvent);
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/webhook')
         .set('stripe-signature', 'test_signature')
         .set('Content-Type', 'application/json')
@@ -494,7 +503,7 @@ describe('Credits Routes', () => {
       });
 
       const payload = JSON.stringify({ type: 'checkout.session.completed' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/webhook')
         .set('stripe-signature', 'invalid_signature')
         .set('Content-Type', 'application/json')
@@ -510,7 +519,7 @@ describe('Credits Routes', () => {
       getStripe.mockReturnValueOnce(null);
 
       const payload = JSON.stringify({ type: 'checkout.session.completed' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/webhook')
         .set('stripe-signature', 'test_signature')
         .set('Content-Type', 'application/json')
@@ -543,7 +552,7 @@ describe('Credits Routes', () => {
       mockWebhooksConstructEvent.mockReturnValueOnce(mockEvent);
 
       const payload = JSON.stringify(mockEvent);
-      const res = await request(app)
+      const res = await request(server)
         .post('/credits/webhook')
         .set('stripe-signature', 'test_signature')
         .set('Content-Type', 'application/json')
@@ -562,7 +571,7 @@ describe('Credits Routes', () => {
         balance: 250,
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/credits/balance')
         .set('Authorization', `Bearer ${testToken}`);
 
@@ -573,7 +582,7 @@ describe('Credits Routes', () => {
     });
 
     it('should return 401 without authentication', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/credits/balance');
 
       expect(res.status).toBe(401);
@@ -583,7 +592,7 @@ describe('Credits Routes', () => {
   describe('Credit Purchase Flow', () => {
     it('should complete purchase flow', async () => {
       // Step 1: Create payment
-      const createRes = await request(app)
+      const createRes = await request(server)
         .post('/credits/create-payment')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -611,7 +620,7 @@ describe('Credits Routes', () => {
       supabase.maybeSingle.mockResolvedValue({ data: null, error: null });
 
       // Step 3: Confirm payment
-      const confirmRes = await request(app)
+      const confirmRes = await request(server)
         .post('/credits/confirm')
         .set('Authorization', `Bearer ${testToken}`)
         .send({
@@ -628,7 +637,7 @@ describe('Credits Routes', () => {
         balance: 200,
       });
 
-      const balanceRes = await request(app)
+      const balanceRes = await request(server)
         .get('/credits/balance')
         .set('Authorization', `Bearer ${testToken}`);
 

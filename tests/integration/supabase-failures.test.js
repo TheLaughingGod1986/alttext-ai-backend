@@ -9,12 +9,18 @@ const supabaseMock = require('../mocks/supabase.mock');
 const { createTestToken } = require('../helpers/testHelpers');
 
 describe('PHASE 8: Supabase Failure Modes', () => {
-  let app;
+  let server;
 
   beforeAll(() => {
-    app = createTestServer();
-    if (!app) {
-      throw new Error('Failed to create test server');
+    const { createTestServer } = require('../helpers/createTestServer');
+    server = createTestServer();
+  });
+
+  afterAll((done) => {
+    if (server) {
+      server.close(done);
+    } else {
+      done();
     }
   });
 
@@ -37,7 +43,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       });
 
       const token = createTestToken({ id: 30, email: 'network@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .get('/auth/me')
         .set('Authorization', `Bearer ${token}`);
 
@@ -58,7 +64,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       });
 
       const token = createTestToken({ id: 31, email: 'timeout@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .get('/auth/me')
         .set('Authorization', `Bearer ${token}`);
 
@@ -76,7 +82,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       });
 
       const token = createTestToken({ id: 32, email: 'malformed@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .get('/auth/me')
         .set('Authorization', `Bearer ${token}`);
 
@@ -90,7 +96,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
         error: null
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/test-license');
 
       // Should handle unexpected format - may return 200 (with malformed data), 400, or 500
@@ -106,7 +112,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       });
 
       const token = createTestToken({ id: 33, email: 'null@example.com', plan: 'free' });
-      const res = await request(app)
+      const res = await request(server)
         .get('/auth/me')
         .set('Authorization', `Bearer ${token}`);
 
@@ -123,7 +129,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       supabaseMock.__queueResponse('organization_members', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('users', 'select', { data: [], error: null });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/license/info/test-license');
 
       // Should handle empty array gracefully - may return 404 or 200 with empty data
@@ -144,7 +150,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
         error: uniqueError
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'Duplicate Org',
@@ -168,7 +174,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
       });
 
       const token = createTestToken({ id: 34, email: 'fk@example.com', plan: 'agency' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/activate')
         .set('Authorization', `Bearer ${token}`)
         .send({
@@ -193,7 +199,7 @@ describe('PHASE 8: Supabase Failure Modes', () => {
         error: notNullError
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/license/generate')
         .send({
           name: 'Missing Field Org',
