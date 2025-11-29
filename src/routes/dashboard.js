@@ -137,6 +137,26 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const creditsResult = await creditsService.getBalanceByEmail(email);
     const creditsBalance = creditsResult.success ? (creditsResult.balance || 0) : 0;
 
+    // Get recent purchases (last 5 credit transactions of type 'purchase')
+    let recentPurchases = [];
+    try {
+      const transactionsResult = await creditsService.getTransactionsByEmail(email, 1, 5);
+      if (transactionsResult.success && transactionsResult.transactions) {
+        recentPurchases = transactionsResult.transactions
+          .filter(t => t.transaction_type === 'purchase')
+          .slice(0, 5)
+          .map(t => ({
+            id: t.id,
+            amount: t.amount,
+            created_at: t.created_at,
+            balance_after: t.balance_after,
+          }));
+      }
+    } catch (err) {
+      console.error('[Dashboard] Error fetching recent purchases:', err);
+      // Continue without recent purchases
+    }
+
     return res.status(200).json({
       ok: true,
       ...payload,
@@ -145,6 +165,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       quotaUsed,
       credits: {
         balance: creditsBalance,
+        recentPurchases: recentPurchases,
       },
     });
   } catch (err) {

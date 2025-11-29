@@ -1,10 +1,12 @@
 /**
  * Credits Service
  * Handles credit transactions: purchases, spending, refunds
- * All operations are atomic using database transactions
+ * Uses unified events table for credit calculations
+ * credits_balance column is kept as cached value for performance
  */
 
 const { supabase } = require('../../db/supabase-client');
+const eventService = require('./eventService');
 
 /**
  * Get or create unified identity by email
@@ -52,6 +54,7 @@ async function getOrCreateIdentity(email) {
 
 /**
  * Add credits to a user's account (from purchase)
+ * Logs event to unified events table and updates cached credits_balance
  * @param {string} identityId - Identity UUID
  * @param {number} amount - Number of credits to add
  * @param {string} stripePaymentIntentId - Stripe payment intent ID (optional)
@@ -63,60 +66,48 @@ async function addCredits(identityId, amount, stripePaymentIntentId = null) {
       return { success: false, error: 'Invalid parameters: identityId and positive amount required' };
     }
 
-    // Use a transaction-like approach with SELECT FOR UPDATE
-    // Since Supabase doesn't support explicit transactions in JS, we'll do it atomically
-    // First, get current balance
-    const { data: identity, error: fetchError } = await supabase
-      .from('identities')
-      .select('credits_balance')
-      .eq('id', identityId)
-      .single();
-
-    if (fetchError || !identity) {
-      return { success: false, error: 'Identity not found' };
-    }
-
-    const currentBalance = identity.credits_balance || 0;
-    const newBalance = currentBalance + amount;
-
-    // Update balance
-    const { error: updateError } = await supabase
-      .from('identities')
-      .update({ credits_balance: newBalance })
-      .eq('id', identityId);
-
-    if (updateError) {
-      console.error('[CreditsService] Error updating balance:', updateError);
-      return { success: false, error: updateError.message };
-    }
-
-    // Create transaction record
-    const transactionData = {
-      identity_id: identityId,
-      transaction_type: 'purchase',
-      amount: amount,
-      balance_after: newBalance,
-      stripe_payment_intent_id: stripePaymentIntentId,
-      metadata: stripePaymentIntentId ? { stripe_payment_intent_id: stripePaymentIntentId } : {},
+    // Log event to unified events table
+    const metadata = {
+      stripe_payment_intent_id: stripePaymentIntentId || null,
+      source: 'purchase',
     };
 
-    const { data: transaction, error: transactionError } = await supabase
-      .from('credits_transactions')
-      .insert(transactionData)
-      .select('id')
-      .single();
+    const eventResult = await eventService.logEvent(
+      identityId,
+      'credit_purchase',
+      amount, // Positive credits_delta
+      metadata
+    );
 
-    if (transactionError) {
-      console.error('[CreditsService] Error creating transaction record:', transactionError);
-      // Transaction record failed, but balance was updated
-      // Log error but don't fail the operation
+    if (!eventResult.success) {
+      console.error('[CreditsService] Error logging credit purchase event:', eventResult.error);
+      return { success: false, error: eventResult.error || 'Failed to log credit purchase' };
     }
 
-    console.log(`[CreditsService] Added ${amount} credits to identity ${identityId}. New balance: ${newBalance}`);
+    // Get updated balance from events (cache will be updated by eventService)
+    const balanceResult = await eventService.getCreditBalance(identityId);
+    
+    if (!balanceResult.success) {
+      console.error('[CreditsService] Error getting balance after purchase:', balanceResult.error);
+      // Event was logged, so return success with estimated balance
+      const { data: identity } = await supabase
+        .from('identities')
+        .select('credits_balance')
+        .eq('id', identityId)
+        .single();
+      
+      return {
+        success: true,
+        newBalance: (identity?.credits_balance || 0) + amount,
+        transactionId: eventResult.eventId,
+      };
+    }
+
+    console.log(`[CreditsService] Added ${amount} credits to identity ${identityId}. New balance: ${balanceResult.balance}`);
     return {
       success: true,
-      newBalance,
-      transactionId: transaction?.id || null,
+      newBalance: balanceResult.balance,
+      transactionId: eventResult.eventId,
     };
   } catch (error) {
     console.error('[CreditsService] Exception adding credits:', error);
@@ -126,6 +117,7 @@ async function addCredits(identityId, amount, stripePaymentIntentId = null) {
 
 /**
  * Spend credits from a user's account (on generation)
+ * Logs event to unified events table and updates cached credits_balance
  * @param {string} identityId - Identity UUID
  * @param {number} amount - Number of credits to spend (default: 1)
  * @param {Object} metadata - Additional metadata for transaction (optional)
@@ -137,18 +129,14 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
       return { success: false, error: 'Invalid parameters: identityId and positive amount required' };
     }
 
-    // Get current balance
-    const { data: identity, error: fetchError } = await supabase
-      .from('identities')
-      .select('credits_balance')
-      .eq('id', identityId)
-      .single();
-
-    if (fetchError || !identity) {
-      return { success: false, error: 'Identity not found' };
+    // Check current balance from events
+    const balanceResult = await eventService.getCreditBalance(identityId);
+    
+    if (!balanceResult.success) {
+      return { success: false, error: balanceResult.error || 'Failed to get balance' };
     }
 
-    const currentBalance = identity.credits_balance || 0;
+    const currentBalance = balanceResult.balance || 0;
 
     // Check if sufficient credits
     if (currentBalance < amount) {
@@ -160,44 +148,38 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
       };
     }
 
-    const newBalance = currentBalance - amount;
+    // Log event to unified events table
+    const eventResult = await eventService.logEvent(
+      identityId,
+      'credit_used',
+      -amount, // Negative credits_delta for usage
+      metadata || {}
+    );
 
-    // Update balance
-    const { error: updateError } = await supabase
-      .from('identities')
-      .update({ credits_balance: newBalance })
-      .eq('id', identityId);
-
-    if (updateError) {
-      console.error('[CreditsService] Error updating balance:', updateError);
-      return { success: false, error: updateError.message };
+    if (!eventResult.success) {
+      console.error('[CreditsService] Error logging credit usage event:', eventResult.error);
+      return { success: false, error: eventResult.error || 'Failed to log credit usage' };
     }
 
-    // Create transaction record
-    const transactionData = {
-      identity_id: identityId,
-      transaction_type: 'spend',
-      amount: amount,
-      balance_after: newBalance,
-      metadata: metadata || {},
-    };
-
-    const { data: transaction, error: transactionError } = await supabase
-      .from('credits_transactions')
-      .insert(transactionData)
-      .select('id')
-      .single();
-
-    if (transactionError) {
-      console.error('[CreditsService] Error creating transaction record:', transactionError);
-      // Transaction record failed, but balance was updated
+    // Get updated balance from events (cache will be updated by eventService)
+    const updatedBalanceResult = await eventService.getCreditBalance(identityId);
+    
+    if (!updatedBalanceResult.success) {
+      // Event was logged, calculate balance manually
+      const estimatedBalance = currentBalance - amount;
+      console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. Estimated balance: ${estimatedBalance}`);
+      return {
+        success: true,
+        remainingBalance: estimatedBalance,
+        transactionId: eventResult.eventId,
+      };
     }
 
-    console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. New balance: ${newBalance}`);
+    console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. New balance: ${updatedBalanceResult.balance}`);
     return {
       success: true,
-      remainingBalance: newBalance,
-      transactionId: transaction?.id || null,
+      remainingBalance: updatedBalanceResult.balance,
+      transactionId: eventResult.eventId,
     };
   } catch (error) {
     console.error('[CreditsService] Exception spending credits:', error);
@@ -207,6 +189,8 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
 
 /**
  * Get current credit balance for an identity
+ * Computes from events table: SUM(credits_delta WHERE credits_delta > 0) - SUM(credits_delta WHERE credits_delta < 0)
+ * Falls back to cached credits_balance if events query fails
  * @param {string} identityId - Identity UUID
  * @returns {Promise<Object>} Result with success status and balance
  */
@@ -216,6 +200,18 @@ async function getBalance(identityId) {
       return { success: false, error: 'identityId is required' };
     }
 
+    // Compute balance from events table (source of truth)
+    const balanceResult = await eventService.getCreditBalance(identityId);
+    
+    if (balanceResult.success) {
+      return {
+        success: true,
+        balance: balanceResult.balance || 0,
+      };
+    }
+
+    // Fallback to cached credits_balance if events query fails
+    console.warn('[CreditsService] Falling back to cached credits_balance:', balanceResult.error);
     const { data: identity, error } = await supabase
       .from('identities')
       .select('credits_balance')

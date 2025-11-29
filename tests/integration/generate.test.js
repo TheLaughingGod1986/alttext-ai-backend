@@ -7,11 +7,97 @@ jest.mock('axios', () => ({
   })
 }));
 
+// Mock subscription/credits/usage services used by checkSubscription middleware
+jest.mock('../../src/services/billingService', () => ({
+  getSubscriptionForEmail: jest.fn(async () => ({ success: true, subscription: null }))
+}));
+
+jest.mock('../../src/services/creditsService', () => ({
+  getOrCreateIdentity: jest.fn(async (email) => ({
+    success: true,
+    identityId: `${email || 'anon'}-identity`
+  })),
+  getBalance: jest.fn(async () => ({ success: true, balance: 5 })),
+  spendCredits: jest.fn(async () => ({ success: true, remainingBalance: 4 }))
+}));
+
+jest.mock('../../src/services/eventService', () => ({
+  logEvent: jest.fn(async () => ({ success: true, eventId: 'event_123' })),
+  getCreditBalance: jest.fn(async () => ({ success: true, balance: 5 })),
+  updateCreditsBalanceCache: jest.fn(async () => {}),
+  getEventRollup: jest.fn(async () => ({ success: true, rollup: {} }))
+}));
+
+jest.mock('../../src/services/usageService', () => ({
+  getUsageSummary: jest.fn(async () => ({
+    success: true,
+    usage: { monthlyImages: 0, dailyImages: 0 }
+  })),
+  recordSiteUsage: jest.fn(async () => ({ success: true }))
+}));
+
+jest.mock('../../src/services/siteService', () => {
+  const state = { used: 0, remaining: 50, plan: 'free', limit: 50 };
+  const resetState = (used = 0, limit = 50, plan = 'free') => {
+    state.used = used;
+    state.limit = limit;
+    state.remaining = Math.max(0, limit - used);
+    state.plan = plan;
+    state.resetDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  };
+  resetState();
+
+  const buildSite = (siteHash = 'test-site-hash') => ({
+    site_hash: siteHash,
+    token_limit: state.limit,
+    tokens_used: state.used,
+    tokens_remaining: state.remaining,
+    plan: state.plan,
+    reset_date: state.resetDate
+  });
+
+  return {
+    __setState: resetState,
+    getOrCreateSite: jest.fn(async (siteHash = 'test-site-hash') => buildSite(siteHash)),
+    checkSiteQuota: jest.fn(async (siteHash = 'test-site-hash') => ({
+      hasAccess: state.remaining > 0,
+      hasQuota: state.remaining > 0,
+      used: state.used,
+      limit: state.limit,
+      remaining: state.remaining,
+      plan: state.plan,
+      resetDate: state.resetDate,
+      site_hash: siteHash
+    })),
+    getSiteUsage: jest.fn(async (siteHash = 'test-site-hash') => ({
+      used: state.used,
+      limit: state.limit,
+      remaining: state.remaining,
+      plan: state.plan,
+      resetDate: state.resetDate,
+      site_hash: siteHash
+    })),
+    getSiteLicense: jest.fn(async (siteHash = 'test-site-hash') => ({
+      site_hash: siteHash,
+      plan: state.plan,
+      tokenLimit: state.limit,
+      tokensRemaining: state.remaining,
+      resetDate: state.resetDate
+    })),
+    deductSiteQuota: jest.fn(async (siteHash = 'test-site-hash', tokens = 1) => {
+      state.used += tokens;
+      state.remaining = Math.max(0, state.remaining - tokens);
+      return buildSite(siteHash);
+    })
+  };
+});
+
 const request = require('supertest');
 const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
 const axios = require('axios');
+const siteServiceMock = require('../../src/services/siteService');
 
 const app = createTestServer();
 
@@ -24,54 +110,9 @@ describe('Generate endpoint', () => {
     });
   }
 
-  // Helper function to mock site service queries
+  // Helper function to set site quota state for tests
   function mockSiteService(siteHash = 'test-site-hash', tokensUsed = 0, siteUrl = null) {
-    const resetDate = new Date();
-    resetDate.setMonth(resetDate.getMonth() + 1);
-    resetDate.setDate(1);
-    
-    const siteData = {
-      site_hash: siteHash,
-      site_url: siteUrl || null,
-      plan: 'free',
-      tokens_used: tokensUsed,
-      tokens_remaining: 50 - tokensUsed,
-      token_limit: 50,
-      reset_date: resetDate.toISOString()
-    };
-    
-    // 1. getOrCreateSite - first select (check if exists)
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: siteData,
-      error: null
-    });
-    // 2. checkSiteQuota -> getSiteUsage - second select
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: siteData,
-      error: null
-    });
-    // 3. getSiteUsage (line 284) - third select - EXTRA QUERY I MISSED!
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: siteData,
-      error: null
-    });
-    // 4. deductSiteQuota - fourth select (get site before update) - CRITICAL: must return site
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: siteData,
-      error: null
-    });
-    // 5. deductSiteQuota - update().select().single() returns updated site (uses 'select' method)
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: { ...siteData, tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1 },
-      error: null
-    });
-    // 6. deductSiteQuota - insert into usage_tracking
-    supabaseMock.__queueResponse('usage_tracking', 'insert', { error: null });
-    // 7. getSiteUsage after deduction (line 474) - final select
-    supabaseMock.__queueResponse('sites', 'select', {
-      data: { ...siteData, tokens_used: tokensUsed + 1, tokens_remaining: 50 - tokensUsed - 1 },
-      error: null
-    });
+    siteServiceMock.__setState(tokensUsed, 50, 'free');
   }
 
   beforeAll(() => {
@@ -88,6 +129,7 @@ describe('Generate endpoint', () => {
         usage: { total_tokens: 10 }
       }
     });
+    siteServiceMock.__setState(0, 50, 'free');
   });
 
   test('generates alt text with JWT auth', async () => {
@@ -820,4 +862,3 @@ describe('Generate endpoint', () => {
     });
   });
 });
-

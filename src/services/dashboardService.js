@@ -7,6 +7,8 @@
 const { supabase } = require('../../db/supabase-client');
 const usageService = require('./usageService');
 const analyticsService = require('./analyticsService');
+const eventService = require('./eventService');
+const creditsService = require('./creditsService');
 
 // In-memory cache for analytics data (5 minute TTL)
 const analyticsCache = new Map();
@@ -130,15 +132,19 @@ async function getAnalyticsData(email, timeRange = '30d') {
     startDate.setDate(startDate.getDate() - days);
     const startDateISO = startDate.toISOString();
 
-    // Fetch analytics events in parallel
+    // Get identity_id for querying events table
+    const identityResult = await creditsService.getOrCreateIdentity(emailLower);
+    const identityId = identityResult.success ? identityResult.identityId : null;
+
+    // Fetch data in parallel
     const [eventsResult, installationsResult] = await Promise.all([
-      // Analytics events for last N days
-      supabase
-        .from('analytics_events')
-        .select('event_name, created_at, plugin_slug, event_data')
-        .eq('email', emailLower)
+      // Unified events for last N days (if identity exists)
+      identityId ? supabase
+        .from('events')
+        .select('event_type, created_at, metadata')
+        .eq('identity_id', identityId)
         .gte('created_at', startDateISO)
-        .order('created_at', { ascending: true }),
+        .order('created_at', { ascending: true }) : Promise.resolve({ data: [], error: null }),
       
       // Plugin installations for activation rate
       supabase
@@ -153,9 +159,10 @@ async function getAnalyticsData(email, timeRange = '30d') {
     // Process time-series usage data (last 30 days plugin usage)
     const usageByDate = new Map();
     const altTextGenerations = events.filter(e => 
-      e.event_name === 'alt_text_generated' || 
-      e.event_name === 'generate_alt_text' ||
-      e.event_name === 'image_processed'
+      e.event_type === 'alttext_generated' || 
+      e.event_type === 'alt_text_generated' ||
+      e.event_type === 'generate_alt_text' ||
+      e.event_type === 'image_processed'
     );
 
     altTextGenerations.forEach(event => {

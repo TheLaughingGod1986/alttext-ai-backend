@@ -12,15 +12,17 @@ const { supabase } = require('../../db/supabase-client');
 const rateLimitStore = new Map();
 const RATE_LIMIT_CLEANUP_INTERVAL = 60 * 1000; // Clean up every minute
 
-// Clean up expired rate limit entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of rateLimitStore.entries()) {
-    if (value.resetAt < now) {
-      rateLimitStore.delete(key);
+// Clean up expired rate limit entries (skip in tests to avoid open handles)
+if (process.env.NODE_ENV !== 'test') {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of rateLimitStore.entries()) {
+      if (value.resetAt < now) {
+        rateLimitStore.delete(key);
+      }
     }
-  }
-}, RATE_LIMIT_CLEANUP_INTERVAL);
+  }, RATE_LIMIT_CLEANUP_INTERVAL);
+}
 
 /**
  * Generate a secure random API key
@@ -465,4 +467,3 @@ module.exports = {
   deactivateApiKey,
   rotateApiKey,
 };
-
