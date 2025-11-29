@@ -108,8 +108,8 @@ class StripeMock {
     };
 
     this.customers = {
-      create: jestMock.fn().mockResolvedValue({ id: 'cus_test' }),
-      retrieve: jestMock.fn().mockResolvedValue({ id: 'cus_test' })
+      create: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' }),
+      retrieve: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' })
     };
 
     this.paymentMethods = {

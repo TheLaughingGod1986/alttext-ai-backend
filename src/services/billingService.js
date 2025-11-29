@@ -307,15 +307,23 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
     }
 
     const customer = await stripe.customers.retrieve(customerId);
+    if (!customer) {
+      return { success: false, error: 'Customer not found' };
+    }
     const email = customer.email?.toLowerCase();
 
     if (!email) {
       return { success: false, error: 'Customer email not found' };
     }
 
+    // Validate subscription ID
+    if (!subscriptionId) {
+      return { success: false, error: 'Subscription ID is required' };
+    }
+
     // Determine plugin from metadata or subscription items
     const pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai'; // Default
-    const priceId = subscription.items.data[0]?.price?.id;
+    const priceId = subscription.items?.data?.[0]?.price?.id;
     const plan = 'pro'; // Will be determined from priceId mapping
 
     // Update or insert subscription
@@ -327,7 +335,7 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
       stripe_price_id: priceId,
       plan,
       status: subscription.status,
-      quantity: subscription.items.data[0]?.quantity || 1,
+      quantity: subscription.items?.data?.[0]?.quantity || 1,
       renews_at: subscription.current_period_end
         ? new Date(subscription.current_period_end * 1000).toISOString()
         : null,
