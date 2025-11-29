@@ -54,6 +54,401 @@ try {
   console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
 }
 
+// Helper functions (reused from Phase 1) - defined at module level for export
+function buildPrompt(imageData, context, regenerate = false) {
+  const lines = [
+    'Write accurate alternative text for the provided image.',
+    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
+    'If the image is a logo or icon, state the text or shape that appears.'
+  ];
+
+  if (regenerate) {
+    lines.push('This is a regeneration request - provide a fresh, alternative description using different wording while maintaining accuracy.');
+    lines.push('Use varied vocabulary and sentence structure to create a new but equally descriptive alt text.');
+  }
+
+  const contextLines = [];
+
+  if (imageData?.title) {
+    contextLines.push(`Media library title: ${imageData.title}`);
+  }
+  if (imageData?.caption) {
+    contextLines.push(`Attachment caption: ${imageData.caption}`);
+  }
+  if (context?.post_title) {
+    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
+  }
+  if (context?.filename || imageData?.filename) {
+    const filename = context?.filename || imageData?.filename;
+    contextLines.push(`Filename: ${filename}`);
+  }
+  if (imageData?.width && imageData?.height) {
+    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
+  }
+
+  if (contextLines.length > 0) {
+    lines.push('\nAdditional context:');
+    lines.push(...contextLines);
+  }
+
+  lines.push('\nReturn just the alt text.');
+  return lines.join('\n');
+}
+
+function buildUserMessage(prompt, imageData, options = {}) {
+  const allowImage = !options.forceTextOnly;
+  
+  // Use detail: high for better AI analysis and more accurate descriptions
+  // This uses more tokens (~170 vs 85) but provides much better quality
+  const imageUrlConfig = { detail: 'high' };
+
+  // Check for base64-encoded image (from frontend for localhost URLs)
+  // Support both 'base64' and 'image_base64' field names for compatibility
+  const base64Data = imageData?.base64 || imageData?.image_base64;
+  if (allowImage && base64Data && imageData?.mime_type) {
+    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: dataUrl, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  // Check for inline data URL
+  if (allowImage && imageData?.inline?.data_url) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.inline.data_url, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  // Check for public URL
+  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
+  if (hasUsableUrl) {
+    return {
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imageData.url, ...imageUrlConfig } }
+      ]
+    };
+  }
+
+  return {
+    role: 'user',
+    content: prompt
+  };
+}
+
+function getNextResetDate() {
+  const now = new Date();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return nextMonth.toISOString().split('T')[0];
+}
+
+function isLikelyPublicUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      return false;
+    }
+    const hostname = parsed.hostname.toLowerCase();
+
+    const privatePatterns = [
+      /^localhost$/,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[0-1])\./,
+      /^192\.168\./,
+      /\.local$/,
+      /\.test$/,
+      /\.internal$/
+    ];
+
+    if (privatePatterns.some(pattern => pattern.test(hostname))) {
+      return false;
+    }
+
+    if (protocol === 'http:') {
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function requestChatCompletion(messages, overrides = {}) {
+  const {
+    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    max_tokens = 100,
+    temperature = 0.2,
+    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
+  } = overrides;
+
+  if (!apiKey) {
+    throw new Error('Missing OpenAI API key');
+  }
+
+  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
+  console.log(`[OpenAI] Messages count: ${messages.length}`);
+  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model,
+        messages,
+        max_tokens,
+        temperature
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 75000 // 75 second timeout for OpenAI API calls (frontend waits 90s)
+      }
+    );
+    
+    console.log(`[OpenAI] Request successful, received response`);
+    const payload = response && response.data ? response.data : response || {};
+    return {
+      choices: payload?.choices || [],
+      usage: payload?.usage || null
+    };
+  } catch (error) {
+    console.error('[OpenAI] Request failed:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data
+    });
+    throw error;
+  }
+}
+
+function shouldDisableImageInput(error) {
+  const status = error?.response?.status;
+  if (!status || status >= 500) {
+    return false;
+  }
+
+  const message = error?.response?.data?.error?.message || '';
+  return (
+    status === 400 ||
+    status === 422 ||
+    /image_url/i.test(message) ||
+    /fetch/i.test(message) ||
+    /unable to load image/i.test(message)
+  );
+}
+
+function messageHasImage(message) {
+  if (!message || typeof message !== 'object') {
+    return false;
+  }
+  if (Array.isArray(message.content)) {
+    return message.content.some(part => part?.type === 'image_url');
+  }
+  return false;
+}
+
+async function reviewAltText(altText, imageData, context, apiKey = null) {
+  if (!altText || typeof altText !== 'string') {
+    return null;
+  }
+
+  const hasInline = Boolean(imageData?.inline?.data_url);
+  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
+
+  if (!hasInline && !hasPublicUrl) {
+    return null;
+  }
+
+    // Use provided API key or get review API key for the service
+    const service = imageData?.service || 'alttext-ai';
+    const effectiveApiKey = apiKey || getReviewApiKey(service);
+
+  const systemMessage = {
+    role: 'system',
+    content: 'You are an accessibility QA reviewer. When given an image and a candidate alternative text, you evaluate how well the text represents the image content. Respond strictly with a JSON object containing the fields: score (integer 0-100), status (one of: great, good, review, critical), grade (short human-readable label), summary (<=120 characters), and issues (array of short issue strings). Penalize hallucinations, missing key subjects, incorrect genders, colors, text, or context. Score 0 for placeholder or irrelevant descriptions.'
+  };
+
+  const prompt = buildReviewPrompt(altText, imageData, context);
+  const userMessage = buildUserMessage(prompt, imageData);
+
+  let response;
+  try {
+    response = await requestChatCompletion([
+      systemMessage,
+      userMessage
+    ], {
+      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      max_tokens: 220,
+      temperature: 0,
+      apiKey: effectiveApiKey
+    });
+  } catch (error) {
+    if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
+      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+      response = await requestChatCompletion([
+        systemMessage,
+        fallbackMessage
+      ], {
+        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        max_tokens: 220,
+        temperature: 0,
+        apiKey: effectiveApiKey
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  const content = response.choices[0].message.content.trim();
+  const parsed = parseReviewResponse(content);
+
+  if (!parsed) {
+    return null;
+  }
+
+  const score = clampScore(parsed.score);
+  const status = normalizeStatus(parsed.status, score);
+  const grade = parsed.grade || gradeFromStatus(status);
+  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
+  const issues = Array.isArray(parsed.issues)
+    ? parsed.issues
+        .filter(item => typeof item === 'string' && item.trim() !== '')
+        .map(item => item.trim())
+        .slice(0, 6)
+    : [];
+
+  return {
+    score,
+    status,
+    grade,
+    summary,
+    issues,
+    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    usage: response.usage
+  };
+}
+
+function buildReviewPrompt(altText, imageData, context) {
+  const lines = [
+    'Evaluate whether the provided alternative text accurately describes the attached image.',
+    'Respond ONLY with a JSON object containing these keys: score, status, grade, summary, issues.',
+    'Score rules: 100 is a precise, specific match including essential context and any visible text. 0 is completely wrong, irrelevant, or placeholder text.',
+    `Alt text candidate: "${altText}".`
+  ];
+
+  if (imageData?.title) {
+    lines.push(`Media library title: ${imageData.title}`);
+  }
+  if (imageData?.caption) {
+    lines.push(`Caption: ${imageData.caption}`);
+  }
+  if (context?.post_title) {
+    lines.push(`Appears on page: ${context.post_title}`);
+  }
+  if (imageData?.filename) {
+    lines.push(`Filename: ${imageData.filename}`);
+  }
+  if (imageData?.width && imageData?.height) {
+    lines.push(`Dimensions: ${imageData.width}x${imageData.height}px`);
+  }
+
+  lines.push('Remember: return valid JSON only, without markdown fencing.');
+  return lines.join('\n');
+}
+
+function parseReviewResponse(content) {
+  if (!content) {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  const directParse = tryParseJson(trimmed);
+  if (directParse) {
+    return directParse;
+  }
+
+  const match = trimmed.match(/\{[\s\S]*\}/);
+  if (match) {
+    return tryParseJson(match[0]);
+  }
+  return null;
+}
+
+function tryParseJson(payload) {
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    return null;
+  }
+}
+
+function clampScore(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+function normalizeStatus(status, score) {
+  const lookup = {
+    great: 'great',
+    excellent: 'great',
+    good: 'good',
+    ok: 'review',
+    needs_review: 'review',
+    review: 'review',
+    poor: 'critical',
+    critical: 'critical',
+    fail: 'critical'
+  };
+
+  if (typeof status === 'string') {
+    const key = status.toLowerCase().replace(/[^a-z]/g, '_');
+    if (lookup[key]) {
+      return lookup[key];
+    }
+  }
+
+  if (typeof score === 'number' && Number.isFinite(score)) {
+    if (score >= 90) return 'great';
+    if (score >= 75) return 'good';
+    if (score >= 55) return 'review';
+    return 'critical';
+  }
+
+  return 'review';
+}
+
+function gradeFromStatus(status) {
+  switch (status) {
+    case 'great':
+      return 'Excellent';
+    case 'good':
+      return 'Strong';
+    case 'review':
+      return 'Needs review';
+    default:
+      return 'Critical';
+  }
+}
+
 /**
  * Create and configure Express app instance
  * This factory function allows creating fresh app instances for testing
@@ -720,399 +1115,24 @@ app.post('/api/webhook/reset', async (req, res) => {
   }
 });
 
-// Helper functions (reused from Phase 1)
-function buildPrompt(imageData, context, regenerate = false) {
-  const lines = [
-    'Write accurate alternative text for the provided image.',
-    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
-    'If the image is a logo or icon, state the text or shape that appears.'
-  ];
+  // Global error handler (must be last middleware)
+  const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
+  app.use(notFoundHandler); // 404 handler
+  app.use(errorHandler); // Error handler
 
-  if (regenerate) {
-    lines.push('This is a regeneration request - provide a fresh, alternative description using different wording while maintaining accuracy.');
-    lines.push('Use varied vocabulary and sentence structure to create a new but equally descriptive alt text.');
+  // Capture unhandled errors with Sentry if available
+  if (Sentry) {
+    app.use(Sentry.Handlers.errorHandler());
   }
 
-  const contextLines = [];
-
-  if (imageData?.title) {
-    contextLines.push(`Media library title: ${imageData.title}`);
-  }
-  if (imageData?.caption) {
-    contextLines.push(`Attachment caption: ${imageData.caption}`);
-  }
-  if (context?.post_title) {
-    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
-  }
-  if (context?.filename || imageData?.filename) {
-    const filename = context?.filename || imageData?.filename;
-    contextLines.push(`Filename: ${filename}`);
-  }
-  if (imageData?.width && imageData?.height) {
-    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
-  }
-
-  if (contextLines.length > 0) {
-    lines.push('\nAdditional context:');
-    lines.push(...contextLines);
-  }
-
-  lines.push('\nReturn just the alt text.');
-  return lines.join('\n');
-}
-
-function buildUserMessage(prompt, imageData, options = {}) {
-  const allowImage = !options.forceTextOnly;
-  
-  // Use detail: high for better AI analysis and more accurate descriptions
-  // This uses more tokens (~170 vs 85) but provides much better quality
-  const imageUrlConfig = { detail: 'high' };
-
-  // Check for base64-encoded image (from frontend for localhost URLs)
-  // Support both 'base64' and 'image_base64' field names for compatibility
-  const base64Data = imageData?.base64 || imageData?.image_base64;
-  if (allowImage && base64Data && imageData?.mime_type) {
-    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: dataUrl, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  // Check for inline data URL
-  if (allowImage && imageData?.inline?.data_url) {
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.inline.data_url, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  // Check for public URL
-  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
-  if (hasUsableUrl) {
-    return {
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: imageData.url, ...imageUrlConfig } }
-      ]
-    };
-  }
-
-  return {
-    role: 'user',
-    content: prompt
-  };
-}
-
-function getNextResetDate() {
-  const now = new Date();
-  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return nextMonth.toISOString().split('T')[0];
-}
-
-function isLikelyPublicUrl(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl);
-    const protocol = parsed.protocol.toLowerCase();
-    if (protocol !== 'https:' && protocol !== 'http:') {
-      return false;
-    }
-    const hostname = parsed.hostname.toLowerCase();
-
-    const privatePatterns = [
-      /^localhost$/,
-      /^127\./,
-      /^10\./,
-      /^172\.(1[6-9]|2\d|3[0-1])\./,
-      /^192\.168\./,
-      /\.local$/,
-      /\.test$/,
-      /\.internal$/
-    ];
-
-    if (privatePatterns.some(pattern => pattern.test(hostname))) {
-      return false;
-    }
-
-    if (protocol === 'http:') {
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-async function requestChatCompletion(messages, overrides = {}) {
-  const {
-    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    max_tokens = 100,
-    temperature = 0.2,
-    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
-  } = overrides;
-
-  if (!apiKey) {
-    throw new Error('Missing OpenAI API key');
-  }
-
-  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
-  console.log(`[OpenAI] Messages count: ${messages.length}`);
-  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
-
-  try {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model,
-        messages,
-        max_tokens,
-        temperature
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 75000 // 75 second timeout for OpenAI API calls (frontend waits 90s)
-      }
-    );
-    
-    console.log(`[OpenAI] Request successful, received response`);
-    const payload = response && response.data ? response.data : response || {};
-    return {
-      choices: payload?.choices || [],
-      usage: payload?.usage || null
-    };
-  } catch (error) {
-    console.error('[OpenAI] Request failed:', {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data
-    });
+  // Final validation
+  if (!app || typeof app.listen !== 'function') {
+    const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
+    console.error(error.message);
     throw error;
   }
-}
 
-function shouldDisableImageInput(error) {
-  const status = error?.response?.status;
-  if (!status || status >= 500) {
-    return false;
-  }
-
-  const message = error?.response?.data?.error?.message || '';
-  return (
-    status === 400 ||
-    status === 422 ||
-    /image_url/i.test(message) ||
-    /fetch/i.test(message) ||
-    /unable to load image/i.test(message)
-  );
-}
-
-function messageHasImage(message) {
-  if (!message || typeof message !== 'object') {
-    return false;
-  }
-  if (Array.isArray(message.content)) {
-    return message.content.some(part => part?.type === 'image_url');
-  }
-  return false;
-}
-
-async function reviewAltText(altText, imageData, context, apiKey = null) {
-  if (!altText || typeof altText !== 'string') {
-    return null;
-  }
-
-  const hasInline = Boolean(imageData?.inline?.data_url);
-  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
-
-  if (!hasInline && !hasPublicUrl) {
-    return null;
-  }
-
-    // Use provided API key or get review API key for the service
-    const service = imageData?.service || 'alttext-ai';
-    const effectiveApiKey = apiKey || getReviewApiKey(service);
-
-  const systemMessage = {
-    role: 'system',
-    content: 'You are an accessibility QA reviewer. When given an image and a candidate alternative text, you evaluate how well the text represents the image content. Respond strictly with a JSON object containing the fields: score (integer 0-100), status (one of: great, good, review, critical), grade (short human-readable label), summary (<=120 characters), and issues (array of short issue strings). Penalize hallucinations, missing key subjects, incorrect genders, colors, text, or context. Score 0 for placeholder or irrelevant descriptions.'
-  };
-
-  const prompt = buildReviewPrompt(altText, imageData, context);
-  const userMessage = buildUserMessage(prompt, imageData);
-
-  let response;
-  try {
-    response = await requestChatCompletion([
-      systemMessage,
-      userMessage
-    ], {
-      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      max_tokens: 220,
-      temperature: 0,
-      apiKey: effectiveApiKey
-    });
-  } catch (error) {
-    if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-      response = await requestChatCompletion([
-        systemMessage,
-        fallbackMessage
-      ], {
-        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        max_tokens: 220,
-        temperature: 0,
-        apiKey: effectiveApiKey
-      });
-    } else {
-      throw error;
-    }
-  }
-
-  const content = response.choices[0].message.content.trim();
-  const parsed = parseReviewResponse(content);
-
-  if (!parsed) {
-    return null;
-  }
-
-  const score = clampScore(parsed.score);
-  const status = normalizeStatus(parsed.status, score);
-  const grade = parsed.grade || gradeFromStatus(status);
-  const summary = typeof parsed.summary === 'string' ? parsed.summary.trim() : '';
-  const issues = Array.isArray(parsed.issues)
-    ? parsed.issues
-        .filter(item => typeof item === 'string' && item.trim() !== '')
-        .map(item => item.trim())
-        .slice(0, 6)
-    : [];
-
-  return {
-    score,
-    status,
-    grade,
-    summary,
-    issues,
-    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    usage: response.usage
-  };
-}
-
-function buildReviewPrompt(altText, imageData, context) {
-  const lines = [
-    'Evaluate whether the provided alternative text accurately describes the attached image.',
-    'Respond ONLY with a JSON object containing these keys: score, status, grade, summary, issues.',
-    'Score rules: 100 is a precise, specific match including essential context and any visible text. 0 is completely wrong, irrelevant, or placeholder text.',
-    `Alt text candidate: "${altText}".`
-  ];
-
-  if (imageData?.title) {
-    lines.push(`Media library title: ${imageData.title}`);
-  }
-  if (imageData?.caption) {
-    lines.push(`Caption: ${imageData.caption}`);
-  }
-  if (context?.post_title) {
-    lines.push(`Appears on page: ${context.post_title}`);
-  }
-  if (imageData?.filename) {
-    lines.push(`Filename: ${imageData.filename}`);
-  }
-  if (imageData?.width && imageData?.height) {
-    lines.push(`Dimensions: ${imageData.width}x${imageData.height}px`);
-  }
-
-  lines.push('Remember: return valid JSON only, without markdown fencing.');
-  return lines.join('\n');
-}
-
-function parseReviewResponse(content) {
-  if (!content) {
-    return null;
-  }
-
-  const trimmed = content.trim();
-  const directParse = tryParseJson(trimmed);
-  if (directParse) {
-    return directParse;
-  }
-
-  const match = trimmed.match(/\{[\s\S]*\}/);
-  if (match) {
-    return tryParseJson(match[0]);
-  }
-  return null;
-}
-
-function tryParseJson(payload) {
-  try {
-    return JSON.parse(payload);
-  } catch (error) {
-    return null;
-  }
-}
-
-function clampScore(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-  return Math.min(100, Math.max(0, Math.round(numeric)));
-}
-
-function normalizeStatus(status, score) {
-  const lookup = {
-    great: 'great',
-    excellent: 'great',
-    good: 'good',
-    ok: 'review',
-    needs_review: 'review',
-    review: 'review',
-    poor: 'critical',
-    critical: 'critical',
-    fail: 'critical'
-  };
-
-  if (typeof status === 'string') {
-    const key = status.toLowerCase().replace(/[^a-z]/g, '_');
-    if (lookup[key]) {
-      return lookup[key];
-    }
-  }
-
-  if (typeof score === 'number' && Number.isFinite(score)) {
-    if (score >= 90) return 'great';
-    if (score >= 75) return 'good';
-    if (score >= 55) return 'review';
-    return 'critical';
-  }
-
-  return 'review';
-}
-
-function gradeFromStatus(status) {
-  switch (status) {
-    case 'great':
-      return 'Excellent';
-    case 'good':
-      return 'Strong';
-    case 'review':
-      return 'Needs review';
-    default:
-      return 'Critical';
-  }
+  return app;
 }
 
 // Error handling for uncaught exceptions
@@ -1163,26 +1183,6 @@ if (require.main === module) {
     console.log('SIGTERM received, shutting down gracefully...');
     process.exit(0);
   });
-}
-
-  // Global error handler (must be last middleware)
-  const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
-  app.use(notFoundHandler); // 404 handler
-  app.use(errorHandler); // Error handler
-
-  // Capture unhandled errors with Sentry if available
-  if (Sentry) {
-    app.use(Sentry.Handlers.errorHandler());
-  }
-
-  // Final validation
-  if (!app || typeof app.listen !== 'function') {
-    const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
-    console.error(error.message);
-    throw error;
-  }
-
-  return app;
 }
 
 // Export factory function as default
