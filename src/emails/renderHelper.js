@@ -30,9 +30,15 @@ let WelcomeEmail, LicenseActivatedEmail, LowCreditWarningEmail, ReceiptEmail,
     LicenseKeyEmail, PasswordResetEmail;
 
 try {
-  // Try to require TSX files (will work if ts-node is registered)
-  // or compiled JS versions
-  const emails = require('./index');
+  // Try to load compiled templates from dist/ first (production build)
+  let emails;
+  try {
+    emails = require('./dist');
+  } catch (distError) {
+    // Fall back to index.ts/index.js if dist doesn't exist (development)
+    emails = require('./index');
+  }
+  
   WelcomeEmail = emails.WelcomeEmail || emails.WelcomeEmailDefault;
   LicenseActivatedEmail = emails.LicenseActivatedEmail || emails.LicenseActivatedEmailDefault;
   LowCreditWarningEmail = emails.LowCreditWarningEmail || emails.LowCreditWarningEmailDefault;
