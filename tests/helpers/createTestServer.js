@@ -10,6 +10,20 @@ jest.mock('express-rate-limit', () => {
   });
 });
 
+/**
+ * Mock db/supabase-client globally for all tests
+ * This prevents the real Supabase client from loading, which causes
+ * dependency errors with @supabase/storage-js in test environment
+ * Must be at top level for Jest hoisting
+ */
+jest.mock('../../db/supabase-client', () => {
+  // Ensure NODE_ENV is test before requiring the mock
+  if (process.env.NODE_ENV !== 'test') {
+    process.env.NODE_ENV = 'test';
+  }
+  return require('../mocks/supabase.mock');
+});
+
 let listenPatched = false;
 
 /** 
@@ -17,9 +31,19 @@ let listenPatched = false;
  * Clears module cache to ensure clean state
  */
 function createTestServer() {
-  // Ensure NODE_ENV is set to test
+  // Ensure NODE_ENV is set to test BEFORE any modules are loaded
+  // This must happen first to ensure mocks are used
   if (process.env.NODE_ENV !== 'test') {
     process.env.NODE_ENV = 'test';
+  }
+  
+  // Mock Supabase client BEFORE loading server-v2 to prevent dependency errors
+  // The db/supabase-client.js will use the mock when NODE_ENV=test
+  // But we need to ensure the mock is loaded first
+  try {
+    require('../mocks/supabase.mock');
+  } catch (e) {
+    // Mock might already be loaded, ignore
   }
   
   // Ensure Supertest binds to localhost instead of 0.0.0.0 (blocked in sandbox)
@@ -77,6 +101,14 @@ function createTestServer() {
     const serverPath = require.resolve('../../server-v2');
     delete require.cache[serverPath];
     
+    // Clear the supabase-client cache to ensure mock is used
+    try {
+      const supabasePath = require.resolve('../../db/supabase-client');
+      delete require.cache[supabasePath];
+    } catch (e) {
+      // Ignore if not found
+    }
+    
     const app = require('../../server-v2');
     
     // Debug logging
@@ -102,12 +134,14 @@ function createTestServer() {
     return app;
   } catch (error) {
     console.error('[createTestServer] Error loading server-v2:', error.message);
+    console.error('[createTestServer] Error name:', error.name);
     if (error.stack) {
       const stackLines = error.stack.split('\n');
-      console.error('[createTestServer] Stack (first 15 lines):');
-      stackLines.slice(0, 15).forEach(line => console.error('  ', line));
+      console.error('[createTestServer] Stack (first 20 lines):');
+      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
     }
-    throw error;
+    // Re-throw with more context
+    throw new Error(`Failed to create test server: ${error.message}. This is likely due to a dependency issue with @supabase/storage-js. Original error: ${error.name}`);
   }
 }
 
