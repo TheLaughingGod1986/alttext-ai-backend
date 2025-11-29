@@ -18,6 +18,14 @@ services:
       - key: DATABASE_URL
         sync: false
         # Format: postgresql://user:pass@host:5432/dbname
+      
+      # Supabase (Required for production)
+      - key: SUPABASE_URL
+        sync: false
+        # Format: https://your-project.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+        # Your Supabase service role key
 
       # JWT Authentication
       - key: JWT_SECRET
@@ -29,6 +37,13 @@ services:
       # OpenAI API
       - key: OPENAI_API_KEY
         sync: false
+        # Fallback key used if service-specific keys are not set
+      - key: ALTTEXT_OPENAI_API_KEY
+        sync: false
+        # Primary API key for alttext-ai service
+      - key: SEO_META_OPENAI_API_KEY
+        sync: false
+        # Primary API key for seo-ai-meta service
       - key: OPENAI_MODEL
         value: gpt-4o-mini
       - key: OPENAI_REVIEW_API_KEY
@@ -53,7 +68,27 @@ services:
       - key: FRONTEND_URL
         sync: false
         # Your WordPress site URL for CORS
+      - key: FRONTEND_DASHBOARD_URL
+        sync: false
+        # Dashboard URL for CORS (optional, falls back to FRONTEND_URL)
+
+      # Email (Required for email functionality)
+      - key: RESEND_API_KEY
+        sync: false
+        # Resend API key for sending emails
+      - key: EMAIL_FROM
+        sync: false
+        # Format: "Name <email@domain.com>"
+      - key: EMAIL_BRAND_NAME
+        sync: false
+        # Brand name for emails (optional)
+      - key: RESEND_FROM_EMAIL
+        sync: false
+        # Legacy support (optional, use EMAIL_FROM instead)
 
       # Optional
       - key: WEBHOOK_SECRET
         generateValue: true
+      - key: SENTRY_DSN
+        sync: false
+        # Sentry DSN for error tracking (optional)
