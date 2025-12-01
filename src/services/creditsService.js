@@ -237,6 +237,7 @@ async function getBalance(identityId) {
 
 /**
  * Get transaction history for an identity
+ * Uses unified events table instead of credits_transactions
  * @param {string} identityId - Identity UUID
  * @param {number} page - Page number (default: 1)
  * @param {number} limit - Items per page (default: 50)
@@ -250,17 +251,20 @@ async function getTransactionHistory(identityId, page = 1, limit = 50) {
 
     const skip = (page - 1) * limit;
 
+    // Query unified events table for credit-related events
     const [transactionsResult, countResult] = await Promise.all([
       supabase
-        .from('credits_transactions')
-        .select('*')
+        .from('events')
+        .select('id, event_type, credits_delta, metadata, created_at')
         .eq('identity_id', identityId)
+        .in('event_type', ['credit_purchase', 'credit_used', 'credit_refund'])
         .order('created_at', { ascending: false })
         .range(skip, skip + limit - 1),
       supabase
-        .from('credits_transactions')
+        .from('events')
         .select('*', { count: 'exact', head: true })
-        .eq('identity_id', identityId),
+        .eq('identity_id', identityId)
+        .in('event_type', ['credit_purchase', 'credit_used', 'credit_refund']),
     ]);
 
     if (transactionsResult.error) {
@@ -268,7 +272,17 @@ async function getTransactionHistory(identityId, page = 1, limit = 50) {
       return { success: false, error: transactionsResult.error.message, transactions: [] };
     }
 
-    const transactions = transactionsResult.data || [];
+    // Transform events to transaction format for backward compatibility
+    const transactions = (transactionsResult.data || []).map(event => ({
+      id: event.id,
+      identity_id: identityId,
+      amount: event.credits_delta,
+      type: event.event_type === 'credit_purchase' ? 'purchase' : 
+            event.event_type === 'credit_refund' ? 'refund' : 'usage',
+      metadata: event.metadata || {},
+      created_at: event.created_at,
+    }));
+
     const totalCount = countResult.count || 0;
 
     return {
