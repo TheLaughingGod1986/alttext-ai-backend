@@ -19,8 +19,29 @@ async function requireSubscription(req, res, next) {
     // Extract email from authenticated request
     const email = req.user?.email;
 
+    // Check for site-based authentication (X-Site-Hash)
+    // Sites can have quota even without user authentication (free tier)
+    if (!email && req.site && req.siteUsage) {
+      // Site-based access - check if site has quota available
+      const remaining = req.siteUsage.remaining || 0;
+      const limit = req.siteUsage.limit || 0;
+      
+      if (remaining > 0 || limit > 0) {
+        // Site has quota available - allow access
+        return next();
+      }
+      
+      // Site has no quota - deny access
+      return res.status(403).json({
+        ok: false,
+        code: errorCodes.NO_ACCESS,
+        reason: errorCodes.REASONS.NO_CREDITS,
+        message: 'No credits remaining for this site. Please upgrade or wait for monthly reset.',
+      });
+    }
+
     if (!email) {
-      // No email in token - authentication required
+      // No email in token and no site-based auth - authentication required
       return res.status(401).json({
         ok: false,
         code: errorCodes.NO_ACCESS,
