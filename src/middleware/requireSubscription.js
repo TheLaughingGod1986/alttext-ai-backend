@@ -26,7 +26,8 @@ async function requireSubscription(req, res, next) {
       const remaining = req.siteUsage.remaining || 0;
       const limit = req.siteUsage.limit || 0;
       
-      if (remaining > 0 || limit > 0) {
+      // Only allow if there's remaining quota (not just if limit exists)
+      if (remaining > 0) {
         // Site has quota available - allow access
         return next();
       }
