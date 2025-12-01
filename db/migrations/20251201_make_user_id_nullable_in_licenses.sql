@@ -57,20 +57,19 @@ BEGIN
       RAISE NOTICE '✅ Added user_id column (users table not found, skipping FK)';
     END IF;
   END IF;
-
-  -- Verify the change
-  SELECT 
-    'VERIFICATION' as check_type,
-    CASE 
-      WHEN EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'licenses' 
-        AND (column_name = 'user_id' OR column_name = 'userId')
-        AND is_nullable = 'YES'
-      ) THEN '✅ licenses.user_id is nullable'
-      ELSE '❌ licenses.user_id is NOT nullable'
-    END as user_id_nullable_check;
-
 END $$;
+
+-- Verify the change (outside DO block)
+SELECT 
+  'VERIFICATION' as check_type,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'licenses' 
+      AND (column_name = 'user_id' OR column_name = 'userId')
+      AND is_nullable = 'YES'
+    ) THEN '✅ licenses.user_id is nullable'
+    ELSE '❌ licenses.user_id is NOT nullable'
+  END as user_id_nullable_check;
 
