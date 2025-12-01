@@ -26,6 +26,14 @@ async function requireSubscription(req, res, next) {
       const remaining = req.siteUsage.remaining || 0;
       const limit = req.siteUsage.limit || 0;
       
+      // Debug logging
+      console.log('[RequireSubscription] Site-based auth:', {
+        siteHash: req.site?.site_hash,
+        remaining,
+        limit,
+        hasQuota: remaining > 0
+      });
+      
       // Only allow if there's remaining quota (not just if limit exists)
       if (remaining > 0) {
         // Site has quota available - allow access
@@ -38,6 +46,17 @@ async function requireSubscription(req, res, next) {
         code: errorCodes.NO_ACCESS,
         reason: errorCodes.REASONS.NO_CREDITS,
         message: 'No credits remaining for this site. Please upgrade or wait for monthly reset.',
+      });
+    }
+
+    // Debug logging for missing site info
+    if (!email && (!req.site || !req.siteUsage)) {
+      const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+      console.log('[RequireSubscription] Missing site info:', {
+        hasSite: !!req.site,
+        hasSiteUsage: !!req.siteUsage,
+        siteHash,
+        authMethod: req.authMethod
       });
     }
 
