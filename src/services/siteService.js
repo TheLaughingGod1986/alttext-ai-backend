@@ -39,59 +39,66 @@ function getTokenLimit(plan, service = 'alttext-ai') {
  */
 async function getOrCreateSite(siteHash, siteUrl = null) {
   try {
-    // Try to get existing site
-    const { data: existingSite, error: getError } = await supabase
-      .from('sites')
-      .select('*')
-      .eq('site_hash', siteHash)
-      .single();
-
-    if (!getError && existingSite) {
-      // Update site_url if provided and different
-      if (siteUrl && existingSite.site_url !== siteUrl) {
-        const { data: updatedSite, error: updateError } = await supabase
-          .from('sites')
-          .update({
-            site_url: siteUrl,
-            updated_at: new Date().toISOString()
-          })
-          .eq('site_hash', siteHash)
-          .select()
-          .single();
-
-        if (!updateError && updatedSite) {
-          return updatedSite;
-        }
-      }
-      return existingSite;
-    }
-
-    // Create new site with default free plan
+    // Use upsert to atomically get or create site
+    // This prevents race conditions when multiple requests try to create the same site
     const now = new Date();
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const resetDate = nextMonth.toISOString().split('T')[0];
 
-    const { data: newSite, error: createError } = await supabase
+    const siteData = {
+      site_hash: siteHash,
+      site_url: siteUrl,
+      plan: 'free',
+      token_limit: 50,
+      tokens_used: 0,
+      tokens_remaining: 50,
+      reset_date: resetDate,
+      updated_at: now.toISOString()
+    };
+
+    // Only set created_at if this is a new site (upsert won't overwrite existing created_at)
+    // Use upsert with ON CONFLICT to handle existing sites gracefully
+    const { data: site, error: upsertError } = await supabase
       .from('sites')
-      .insert({
-        site_hash: siteHash,
-        site_url: siteUrl,
-        plan: 'free',
-        token_limit: 50,
-        tokens_used: 0,
-        tokens_remaining: 50,
-        reset_date: resetDate,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
+      .upsert(siteData, {
+        onConflict: 'site_hash',
+        ignoreDuplicates: false
       })
       .select()
       .single();
 
-    if (createError) {
-      throw new Error(`Failed to create site: ${createError.message}`);
+    if (upsertError) {
+      // If upsert fails, try to get existing site
+      const { data: existingSite, error: getError } = await supabase
+        .from('sites')
+        .select('*')
+        .eq('site_hash', siteHash)
+        .single();
+
+      if (!getError && existingSite) {
+        // Update site_url if provided and different
+        if (siteUrl && existingSite.site_url !== siteUrl) {
+          const { data: updatedSite, error: updateError } = await supabase
+            .from('sites')
+            .update({
+              site_url: siteUrl,
+              updated_at: now.toISOString()
+            })
+            .eq('site_hash', siteHash)
+            .select()
+            .single();
+
+          if (!updateError && updatedSite) {
+            return updatedSite;
+          }
+        }
+        return existingSite;
+      }
+      
+      throw new Error(`Failed to get or create site: ${upsertError.message}`);
     }
 
-    return newSite;
+    return site;
   } catch (error) {
     console.error('[SiteService] Error in getOrCreateSite:', error);
     throw error;
