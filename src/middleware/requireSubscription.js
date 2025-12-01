@@ -51,7 +51,7 @@ async function requireSubscription(req, res, next) {
 
     // Debug logging for missing site info
     if (!email && (!req.site || !req.siteUsage)) {
-      const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+      const siteHash = req.headers?.['x-site-hash'] || req.body?.siteHash;
       console.log('[RequireSubscription] Missing site info:', {
         hasSite: !!req.site,
         hasSiteUsage: !!req.siteUsage,
