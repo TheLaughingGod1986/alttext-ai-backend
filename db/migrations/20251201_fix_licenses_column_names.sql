@@ -142,18 +142,128 @@ BEGIN
 END $$;
 
 -- ============================================
--- STEP 6: Recreate indexes with correct column names
+-- STEP 6: Fix license_key column
+-- ============================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'license_key'
+  ) THEN
+    RAISE NOTICE '✅ licenses.license_key column already exists';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'licenseKey'
+  ) THEN
+    ALTER TABLE licenses RENAME COLUMN "licenseKey" TO license_key;
+    RAISE NOTICE '✅ Renamed licenses.licenseKey to license_key';
+  ELSE
+    ALTER TABLE licenses ADD COLUMN license_key VARCHAR(255) UNIQUE NOT NULL;
+    RAISE NOTICE '✅ Added license_key column to licenses table';
+  END IF;
+END $$;
+
+-- ============================================
+-- STEP 7: Fix auto_attach_status column
+-- ============================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'auto_attach_status'
+  ) THEN
+    RAISE NOTICE '✅ licenses.auto_attach_status column already exists';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'autoAttachStatus'
+  ) THEN
+    ALTER TABLE licenses RENAME COLUMN "autoAttachStatus" TO auto_attach_status;
+    RAISE NOTICE '✅ Renamed licenses.autoAttachStatus to auto_attach_status';
+  ELSE
+    ALTER TABLE licenses ADD COLUMN auto_attach_status VARCHAR(50) DEFAULT 'manual';
+    RAISE NOTICE '✅ Added auto_attach_status column to licenses table';
+  END IF;
+END $$;
+
+-- ============================================
+-- STEP 8: Fix created_at column
+-- ============================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'created_at'
+  ) THEN
+    RAISE NOTICE '✅ licenses.created_at column already exists';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'createdAt'
+  ) THEN
+    ALTER TABLE licenses RENAME COLUMN "createdAt" TO created_at;
+    RAISE NOTICE '✅ Renamed licenses.createdAt to created_at';
+  ELSE
+    ALTER TABLE licenses ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+    RAISE NOTICE '✅ Added created_at column to licenses table';
+  END IF;
+END $$;
+
+-- ============================================
+-- STEP 9: Fix updated_at column
+-- ============================================
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'updated_at'
+  ) THEN
+    RAISE NOTICE '✅ licenses.updated_at column already exists';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'licenses' 
+    AND column_name = 'updatedAt'
+  ) THEN
+    ALTER TABLE licenses RENAME COLUMN "updatedAt" TO updated_at;
+    RAISE NOTICE '✅ Renamed licenses.updatedAt to updated_at';
+  ELSE
+    ALTER TABLE licenses ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL;
+    RAISE NOTICE '✅ Added updated_at column to licenses table';
+  END IF;
+END $$;
+
+-- ============================================
+-- STEP 10: Recreate indexes with correct column names
 -- ============================================
 
 -- Drop old indexes if they exist (with camelCase names)
 DROP INDEX IF EXISTS idx_licenses_site_hash;
 DROP INDEX IF EXISTS licenses_site_hash_idx;
+DROP INDEX IF EXISTS idx_licenses_license_key;
 
--- Create index for site_hash
+-- Create indexes with correct column names
 CREATE INDEX IF NOT EXISTS idx_licenses_site_hash ON licenses(site_hash);
+CREATE INDEX IF NOT EXISTS idx_licenses_license_key ON licenses(license_key);
 
 -- ============================================
--- STEP 7: Verify all columns exist
+-- STEP 11: Verify all columns exist
 -- ============================================
 
 SELECT 
@@ -202,5 +312,41 @@ SELECT
       AND column_name = 'tokens_remaining'
     ) THEN '✅ licenses.tokens_remaining exists'
     ELSE '❌ licenses.tokens_remaining MISSING'
-  END as tokens_remaining_check;
+  END as tokens_remaining_check,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'licenses' 
+      AND column_name = 'license_key'
+    ) THEN '✅ licenses.license_key exists'
+    ELSE '❌ licenses.license_key MISSING'
+  END as license_key_check,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'licenses' 
+      AND column_name = 'auto_attach_status'
+    ) THEN '✅ licenses.auto_attach_status exists'
+    ELSE '❌ licenses.auto_attach_status MISSING'
+  END as auto_attach_status_check,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'licenses' 
+      AND column_name = 'created_at'
+    ) THEN '✅ licenses.created_at exists'
+    ELSE '❌ licenses.created_at MISSING'
+  END as created_at_check,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'licenses' 
+      AND column_name = 'updated_at'
+    ) THEN '✅ licenses.updated_at exists'
+    ELSE '❌ licenses.updated_at MISSING'
+  END as updated_at_check;
 
