@@ -75,19 +75,71 @@ BEGIN
   END IF;
 END $$;
 
--- Ensure unique constraint exists for (user_email, plugin_slug)
+-- Ensure plugin_slug column exists
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints 
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' 
     AND table_name = 'subscriptions' 
-    AND constraint_name = 'subscriptions_email_plugin_unique'
+    AND column_name = 'plugin_slug'
   ) THEN
-    CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_email_plugin_unique 
-    ON subscriptions(user_email, plugin_slug) 
-    WHERE user_email IS NOT NULL;
-    RAISE NOTICE '✅ Created unique constraint on (user_email, plugin_slug)';
+    RAISE NOTICE '✅ subscriptions.plugin_slug column already exists';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'subscriptions' 
+    AND column_name = 'pluginSlug'
+  ) THEN
+    -- Rename camelCase to snake_case
+    ALTER TABLE subscriptions RENAME COLUMN "pluginSlug" TO plugin_slug;
+    RAISE NOTICE '✅ Renamed subscriptions.pluginSlug to plugin_slug';
+  ELSE
+    -- Column doesn't exist, create it
+    ALTER TABLE subscriptions ADD COLUMN plugin_slug TEXT NOT NULL DEFAULT 'alttext-ai';
+    RAISE NOTICE '✅ Added plugin_slug column to subscriptions table';
+  END IF;
+END $$;
+
+-- Create index for plugin_slug if it doesn't exist
+CREATE INDEX IF NOT EXISTS subscriptions_plugin_idx ON subscriptions(plugin_slug);
+
+-- Ensure unique constraint exists for (user_email, plugin_slug)
+-- Only create if both columns exist
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'subscriptions' 
+    AND column_name = 'user_email'
+  ) AND EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'subscriptions' 
+    AND column_name = 'plugin_slug'
+  ) THEN
+    -- Both columns exist, create unique index if it doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE table_schema = 'public' 
+      AND table_name = 'subscriptions' 
+      AND constraint_name = 'subscriptions_email_plugin_unique'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM pg_indexes 
+      WHERE schemaname = 'public' 
+      AND tablename = 'subscriptions' 
+      AND indexname = 'subscriptions_email_plugin_unique'
+    ) THEN
+      CREATE UNIQUE INDEX subscriptions_email_plugin_unique 
+      ON subscriptions(user_email, plugin_slug) 
+      WHERE user_email IS NOT NULL;
+      RAISE NOTICE '✅ Created unique constraint on (user_email, plugin_slug)';
+    ELSE
+      RAISE NOTICE '✅ Unique constraint on (user_email, plugin_slug) already exists';
+    END IF;
+  ELSE
+    RAISE NOTICE '⚠️  Cannot create unique constraint - missing user_email or plugin_slug';
   END IF;
 END $$;
 
@@ -95,7 +147,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS subscriptions_email_idx ON subscriptions(user_email);
 
 -- ============================================
--- STEP 3: Verify both columns exist
+-- STEP 3: Verify all columns exist
 -- ============================================
 
 SELECT 
@@ -117,5 +169,14 @@ SELECT
       AND column_name = 'user_email'
     ) THEN '✅ subscriptions.user_email exists'
     ELSE '❌ subscriptions.user_email MISSING'
-  END as subscriptions_user_email_check;
+  END as subscriptions_user_email_check,
+  CASE 
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'subscriptions' 
+      AND column_name = 'plugin_slug'
+    ) THEN '✅ subscriptions.plugin_slug exists'
+    ELSE '❌ subscriptions.plugin_slug MISSING'
+  END as subscriptions_plugin_slug_check;
 
