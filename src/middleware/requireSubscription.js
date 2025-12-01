@@ -19,9 +19,10 @@ async function requireSubscription(req, res, next) {
     // Extract email from authenticated request
     const email = req.user?.email;
 
-    // Check for site-based authentication (X-Site-Hash)
-    // Sites can have quota even without user authentication (free tier)
-    if (!email && req.site && req.siteUsage) {
+    // PRIORITY: Check for site-based authentication FIRST (even if email exists)
+    // Site-based quota takes precedence for free tier users
+    // This allows free tier sites to work even when user has JWT token but no subscription
+    if (req.site && req.siteUsage) {
       // Site-based access - check if site has quota available
       const remaining = req.siteUsage.remaining || 0;
       const limit = req.siteUsage.limit || 0;
@@ -31,12 +32,13 @@ async function requireSubscription(req, res, next) {
         siteHash: req.site?.site_hash,
         remaining,
         limit,
-        hasQuota: remaining > 0
+        hasQuota: remaining > 0,
+        hasEmail: !!email
       });
       
       // Only allow if there's remaining quota (not just if limit exists)
       if (remaining > 0) {
-        // Site has quota available - allow access
+        // Site has quota available - allow access (even if user has no subscription)
         return next();
       }
       
@@ -50,13 +52,14 @@ async function requireSubscription(req, res, next) {
     }
 
     // Debug logging for missing site info
-    if (!email && (!req.site || !req.siteUsage)) {
+    if (!req.site || !req.siteUsage) {
       const siteHash = req.headers?.['x-site-hash'] || req.body?.siteHash;
       console.log('[RequireSubscription] Missing site info:', {
         hasSite: !!req.site,
         hasSiteUsage: !!req.siteUsage,
         siteHash,
-        authMethod: req.authMethod
+        authMethod: req.authMethod,
+        hasEmail: !!email
       });
     }
 
