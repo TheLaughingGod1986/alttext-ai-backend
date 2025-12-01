@@ -1,0 +1,159 @@
+{
+  "usedTables": [
+    "credits",
+    "licenses",
+    "password_reset_tokens",
+    "subscriptions",
+    "usage_logs",
+    "users"
+  ],
+  "unusedTables": [
+    "generation_requests",
+    "license_sites",
+    "queue_jobs",
+    "sessions"
+  ],
+  "tableUsage": {
+    "credits": {
+      "used": true,
+      "files": [
+        "routes/usage.js",
+        "scripts/check-credits.js",
+        "scripts/daily-rollup.js",
+        "scripts/reset-all-credits.js"
+      ],
+      "operations": {
+        "select": 16,
+        "insert": 8,
+        "update": 14,
+        "delete": 0
+      }
+    },
+    "generation_requests": {
+      "used": false,
+      "files": [],
+      "operations": {
+        "select": 0,
+        "insert": 0,
+        "update": 0,
+        "delete": 0
+      }
+    },
+    "license_sites": {
+      "used": false,
+      "files": [],
+      "operations": {
+        "select": 0,
+        "insert": 0,
+        "update": 0,
+        "delete": 0
+      }
+    },
+    "licenses": {
+      "used": true,
+      "files": [
+        "routes/licenses.js",
+        "routes/usage.js",
+        "src/services/siteService.js",
+        "src/stripe/webhooks.js",
+        "services/licenseService.js",
+        "scripts/execute-migration-via-supabase.js",
+        "scripts/run-migration-supabase.js",
+        "scripts/run-migration.js"
+      ],
+      "operations": {
+        "select": 28,
+        "insert": 18,
+        "update": 22,
+        "delete": 2
+      }
+    },
+    "password_reset_tokens": {
+      "used": true,
+      "files": [
+        "auth/routes.js"
+      ],
+      "operations": {
+        "select": 20,
+        "insert": 20,
+        "update": 20,
+        "delete": 0
+      }
+    },
+    "queue_jobs": {
+      "used": false,
+      "files": [],
+      "operations": {
+        "select": 0,
+        "insert": 0,
+        "update": 0,
+        "delete": 0
+      }
+    },
+    "sessions": {
+      "used": false,
+      "files": [],
+      "operations": {
+        "select": 0,
+        "insert": 0,
+        "update": 0,
+        "delete": 0
+      }
+    },
+    "subscriptions": {
+      "used": true,
+      "files": [
+        "src/services/billingService.js",
+        "src/services/dashboardChartsService.js",
+        "src/services/dashboardService.js"
+      ],
+      "operations": {
+        "select": 27,
+        "insert": 0,
+        "update": 20,
+        "delete": 20
+      }
+    },
+    "usage_logs": {
+      "used": true,
+      "files": [
+        "routes/billing.js",
+        "routes/organization.js",
+        "routes/usage.js",
+        "src/services/usageService.js",
+        "src/services/userAccountService.js",
+        "scripts/check-credits.js",
+        "scripts/reset-usage-logs.js"
+      ],
+      "operations": {
+        "select": 28,
+        "insert": 17,
+        "update": 15,
+        "delete": 8
+      }
+    },
+    "users": {
+      "used": true,
+      "files": [
+        "routes/billing.js",
+        "routes/license.js",
+        "routes/licenses.js",
+        "routes/organization.js",
+        "routes/usage.js",
+        "src/services/usageService.js",
+        "src/services/userAccountService.js",
+        "src/stripe/checkout.js",
+        "src/stripe/webhooks.js",
+        "services/licenseService.js",
+        "auth/routes.js",
+        "db/supabase-client.js"
+      ],
+      "operations": {
+        "select": 86,
+        "insert": 68,
+        "update": 74,
+        "delete": 10
+      }
+    }
+  }
+}
