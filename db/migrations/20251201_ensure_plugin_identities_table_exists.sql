@@ -9,15 +9,30 @@ CREATE TABLE IF NOT EXISTS plugin_identities (
   email TEXT NOT NULL,
   plugin_slug TEXT NOT NULL,
   site_url TEXT,
+  jwt_version INTEGER DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  last_seen_at TIMESTAMPTZ DEFAULT NOW(),
-  CONSTRAINT plugin_identities_email_plugin_unique UNIQUE (email, plugin_slug)
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT plugin_identities_email_ck CHECK (email <> '')
 );
 
+-- Add unique constraint on (email, plugin_slug) if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'plugin_identities_email_plugin_unique' 
+    AND conrelid = 'public.plugin_identities'::regclass
+  ) THEN
+    ALTER TABLE plugin_identities 
+    ADD CONSTRAINT plugin_identities_email_plugin_unique 
+    UNIQUE (email, plugin_slug);
+    RAISE NOTICE '✅ Added unique constraint on (email, plugin_slug)';
+  END IF;
+END $$;
+
 -- Create indexes for efficient queries
-CREATE INDEX IF NOT EXISTS idx_plugin_identities_email ON plugin_identities (email);
-CREATE INDEX IF NOT EXISTS idx_plugin_identities_plugin_slug ON plugin_identities (plugin_slug);
-CREATE INDEX IF NOT EXISTS idx_plugin_identities_email_plugin ON plugin_identities (email, plugin_slug);
+CREATE INDEX IF NOT EXISTS plugin_identities_email_idx ON plugin_identities (email);
+CREATE INDEX IF NOT EXISTS plugin_identities_email_plugin_idx ON plugin_identities (email, plugin_slug);
 
 -- Verify the table was created
 SELECT 
