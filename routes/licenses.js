@@ -110,9 +110,9 @@ router.post('/auto-attach', async (req, res) => {
         license: {
           licenseKey: licenseKey, // REQUIRED
           plan: license.plan || 'free',
-          tokenLimit: license.token_limit || 50,
-          tokensRemaining: license.tokens_remaining !== undefined ? license.tokens_remaining : usage.remaining,
-          tokensUsed: license.tokens_used !== undefined ? license.tokens_used : usage.used,
+          tokenLimit: Number(license.token_limit) || 50,
+          tokensRemaining: Number(license.tokens_remaining !== undefined ? license.tokens_remaining : usage.remaining),
+          tokensUsed: Number(license.tokens_used !== undefined ? license.tokens_used : usage.used),
           resetDate: resetDate,
           reset_timestamp: resetTimestamp,
           autoAttachStatus: license.auto_attach_status || 'attached',
@@ -126,9 +126,9 @@ router.post('/auto-attach', async (req, res) => {
         },
         organization: {
           plan: usage.plan,
-          tokenLimit: usage.limit,
-          tokensRemaining: usage.remaining,
-          tokensUsed: usage.used,
+          tokenLimit: Number(usage.limit),
+          tokensRemaining: Number(usage.remaining),
+          tokensUsed: Number(usage.used),
           resetDate: resetDate
         }
       }
