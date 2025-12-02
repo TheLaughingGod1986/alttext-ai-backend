@@ -63,18 +63,34 @@ if (process.env.NODE_ENV === 'test') {
     __clearInsertedData: mock.__clearInsertedData
   };
 } else {
-  // Validate required environment variables
-  if (!process.env.SUPABASE_URL) {
-    throw new Error('SUPABASE_URL environment variable is required');
+  // Helper function to create mock supabase exports
+  function createMockExports() {
+    const mockSupabase = {
+      from: () => ({
+        select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) }) }),
+        insert: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) }),
+        update: () => ({ eq: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) })
+      })
+    };
+    return {
+      supabase: mockSupabase,
+      handleSupabaseError: (error, context) => { if (error) throw error; },
+      handleSupabaseResponse: ({ data, error }, context) => { if (error) throw error; return data; },
+      detectSchemaError: () => null
+    };
   }
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
-  }
-
-  if (!createClient) {
-    throw new Error('@supabase/supabase-js could not be loaded. Check dependencies.');
-  }
+  // Check if Supabase can be loaded - if not, use mock
+  if (!createClient || !process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!createClient) {
+      logger.warn('@supabase/supabase-js could not be loaded. Server will run with limited functionality.');
+    } else if (!process.env.SUPABASE_URL) {
+      logger.warn('SUPABASE_URL environment variable is not set. Server will run with limited functionality.');
+    } else if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      logger.warn('SUPABASE_SERVICE_ROLE_KEY environment variable is not set. Server will run with limited functionality.');
+    }
+    module.exports = createMockExports();
+  } else {
 
   // Create Supabase client with service role key for server-side operations
   // This bypasses Row Level Security (RLS) policies - use with caution
@@ -229,10 +245,11 @@ if (process.env.NODE_ENV === 'test') {
     return data;
   }
 
-  module.exports = {
-    supabase,
-    handleSupabaseError,
-    handleSupabaseResponse,
-    detectSchemaError
-  };
+    module.exports = {
+      supabase,
+      handleSupabaseError,
+      handleSupabaseResponse,
+      detectSchemaError
+    };
+  }
 }
