@@ -9,15 +9,37 @@ const { optionalAuth, authenticateToken } = require('../auth/jwt');
 const siteService = require('../src/services/siteService');
 const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
+const { rateLimitByIp } = require('../src/middleware/rateLimiter');
 
 const router = express.Router();
+
+// Simple in-memory cache for /usage responses
+// Key: siteHash, Value: { data, timestamp }
+const usageCache = new Map();
+const USAGE_CACHE_TTL = 3000; // 3 seconds - short cache to reduce duplicate requests
+
+function getCachedUsage(siteHash) {
+  const cached = usageCache.get(siteHash);
+  if (cached && Date.now() - cached.timestamp < USAGE_CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedUsage(siteHash, data) {
+  usageCache.set(siteHash, {
+    data,
+    timestamp: Date.now()
+  });
+}
 
 /**
  * Get site's current usage and plan info
  * CRITICAL: Tracks usage by X-Site-Hash, NOT by X-WP-User-ID
  * All users on the same site (same X-Site-Hash) must receive the same usage
  */
-router.get('/', optionalAuth, async (req, res) => {
+// Rate limit /usage: 60 requests per 15 minutes per IP (exempts authenticated requests)
+router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. Limit: 60 requests per 15 minutes.'), optionalAuth, async (req, res) => {
   try {
     // X-Site-Hash is REQUIRED for quota tracking
     const siteHash = req.headers['x-site-hash'];
@@ -28,6 +50,12 @@ router.get('/', optionalAuth, async (req, res) => {
         error: 'X-Site-Hash header is required',
         code: 'MISSING_SITE_HASH'
       });
+    }
+
+    // Check cache first (3 second TTL to reduce duplicate requests)
+    const cached = getCachedUsage(siteHash);
+    if (cached) {
+      return res.json(cached);
     }
 
     // Get site URL from header (optional)
@@ -183,6 +211,9 @@ router.get('/', optionalAuth, async (req, res) => {
       // Site has license key but license not found - still include it
       response.data.licenseKey = site.license_key;
     }
+
+    // Cache response for 3 seconds to reduce duplicate requests
+    setCachedUsage(siteHash, response);
 
     res.json(response);
 

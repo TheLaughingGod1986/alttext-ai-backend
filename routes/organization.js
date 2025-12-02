@@ -226,12 +226,22 @@ router.get('/:orgId/usage', async (req, res) => {
     const orgId = parseInt(req.params.orgId);
 
     // Check if user is a member
+    // Handle missing table gracefully (PGRST205 = table not found)
     const { data: membership, error: membershipError } = await supabase
       .from('organization_members')
       .select('id')
       .eq('organizationId', orgId)
       .eq('userId', req.user.id)
       .single();
+
+    // Handle missing table error gracefully
+    if (membershipError && (membershipError.code === 'PGRST205' || membershipError.message?.includes('Could not find the table'))) {
+      logger.warn('organization_members table not found for usage check', { error: membershipError.message });
+      return res.status(403).json({
+        success: false,
+        error: 'You do not have access to this organization'
+      });
+    }
 
     if (membershipError || !membership) {
       return res.status(403).json({
