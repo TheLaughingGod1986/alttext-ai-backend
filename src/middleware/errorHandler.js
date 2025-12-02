@@ -7,14 +7,90 @@
 const errorCodes = require('../constants/errorCodes');
 const logger = require('../utils/logger');
 
-// Safely import detectSchemaError - it may not be available in all environments
-let detectSchemaError;
-try {
-  const supabaseClient = require('../../db/supabase-client');
-  detectSchemaError = supabaseClient.detectSchemaError;
-} catch (error) {
-  // If import fails, define a no-op function
-  detectSchemaError = () => null;
+/**
+ * Detect if an error is a database schema error
+ * This is a simplified version to avoid importing supabase-client
+ * which may have dependency issues in some environments
+ */
+function detectSchemaError(error) {
+  if (!error || !error.message) {
+    return null;
+  }
+
+  const message = error.message.toLowerCase();
+  const code = error.code || '';
+
+  // Common schema error patterns
+  const schemaErrorPatterns = [
+    {
+      pattern: /relation\s+"?(\w+)"?\s+does not exist/i,
+      type: 'missing_table',
+      extract: (msg) => {
+        const match = msg.match(/relation\s+"?(\w+)"?\s+does not exist/i);
+        return match ? match[1] : null;
+      }
+    },
+    {
+      pattern: /column\s+"?(\w+)"?\s+does not exist/i,
+      type: 'missing_column',
+      extract: (msg) => {
+        const match = msg.match(/column\s+"?(\w+)"?\s+does not exist/i);
+        return match ? match[1] : null;
+      }
+    },
+    {
+      pattern: /permission denied for (?:table|relation)\s+"?(\w+)"?/i,
+      type: 'permission_denied',
+      extract: (msg) => {
+        const match = msg.match(/permission denied for (?:table|relation)\s+"?(\w+)"?/i);
+        return match ? match[1] : null;
+      }
+    },
+    {
+      pattern: /syntax error/i,
+      type: 'syntax_error',
+      extract: () => null
+    }
+  ];
+
+  for (const pattern of schemaErrorPatterns) {
+    if (pattern.pattern.test(message)) {
+      const resource = pattern.extract ? pattern.extract(message) : null;
+      return {
+        isSchemaError: true,
+        type: pattern.type,
+        resource,
+        originalMessage: error.message,
+        code: code || 'SCHEMA_ERROR',
+        hint: error.hint || null
+      };
+    }
+  }
+
+  // Check for specific PostgreSQL error codes
+  if (code === '42P01') { // undefined_table
+    return {
+      isSchemaError: true,
+      type: 'missing_table',
+      resource: null,
+      originalMessage: error.message,
+      code: 'UNDEFINED_TABLE',
+      hint: error.hint || null
+    };
+  }
+
+  if (code === '42703') { // undefined_column
+    return {
+      isSchemaError: true,
+      type: 'missing_column',
+      resource: null,
+      originalMessage: error.message,
+      code: 'UNDEFINED_COLUMN',
+      hint: error.hint || null
+    };
+  }
+
+  return null;
 }
 
 /**
