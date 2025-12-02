@@ -1,7 +1,7 @@
 {
-  "name": "alttext-ai-api",
+  "name": "opptiai-backend",
   "version": "1.0.0",
-  "description": "Proxy API for AltText AI WordPress plugin",
+  "description": "Backend API for OpptiAI services",
   "main": "server-v2.js",
   "scripts": {
     "start": "node server-v2.js",
@@ -15,12 +15,13 @@
     "email:build": "tsc src/emails/*.tsx --jsx react --outDir src/emails/dist --module commonjs --esModuleInterop --skipLibCheck || true"
   },
   "keywords": [
-    "alttext",
+    "opptiai",
+    "oppti",
     "api",
     "openai",
     "wordpress"
   ],
-  "author": "AltText AI",
+  "author": "OpptiAI",
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/claude-code": "^2.0.55",

@@ -45,7 +45,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
 
     if (!user) {
       logger.error('User not found in database', { userId: userId });
-      throw new Error('User not found');
+      throw new Error(`User lookup failed: User not found for userId ${userId}`);
     }
 
     logger.info('User found', { id: user.id, email: user.email, hasStripeCustomer: !!user.stripe_customer_id });

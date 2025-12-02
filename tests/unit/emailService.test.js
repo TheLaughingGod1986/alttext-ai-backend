@@ -67,6 +67,16 @@ describe('emailService (new)', () => {
         html: '<p>Plugin</p>',
         text: 'Plugin',
       }),
+      passwordResetEmail: jest.fn().mockReturnValue({
+        subject: 'Password Reset',
+        html: '<p>Reset</p>',
+        text: 'Reset',
+      }),
+      usageSummaryEmail: jest.fn().mockReturnValue({
+        subject: 'Usage Summary',
+        html: '<p>Summary</p>',
+        text: 'Summary',
+      }),
     };
     jest.mock('../../src/emails/templates', () => mockTemplates);
   });

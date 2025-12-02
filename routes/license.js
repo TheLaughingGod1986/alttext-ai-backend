@@ -50,7 +50,10 @@ router.post('/activate', async (req, res) => {
 
     // Validate required fields
     if (!licenseKey || !siteHash) {
-      return httpErrors.missingField(res, 'License key and site hash');
+      return res.status(400).json({
+        success: false,
+        error: 'License key and site hash are required'
+      });
     }
 
     // Find organization by license key
@@ -61,7 +64,10 @@ router.post('/activate', async (req, res) => {
       .single();
 
     if (orgError || !organization) {
-      return httpErrors.notFound(res, 'License key');
+      return res.status(404).json({
+        success: false,
+        error: 'Invalid license key'
+      });
     }
 
     // Get active sites for organization
@@ -81,7 +87,10 @@ router.post('/activate', async (req, res) => {
     if (site) {
       // Site exists - check if it belongs to this organization
       if (site.organizationId !== organization.id) {
-        return httpErrors.forbidden(res, 'This site is already registered to a different organization', 'SITE_ALREADY_REGISTERED');
+        return res.status(403).json({
+          success: false,
+          error: 'This site is already registered to a different organization'
+        });
       }
 
       // Reactivate if inactive and update info
@@ -127,7 +136,10 @@ router.post('/activate', async (req, res) => {
     const activeSiteCount = activeSites.length;
     const maxSites = organization.max_sites || organization.maxSites || 1;
     if (activeSiteCount >= maxSites) {
-      return httpErrors.forbidden(res, `Site limit reached. This license allows ${maxSites} active site(s). Please deactivate an existing site first.`, 'SITE_LIMIT_REACHED');
+      return res.status(403).json({
+        success: false,
+        error: `Site limit reached. This license allows ${maxSites} active site(s). Please deactivate an existing site first.`
+      });
     }
 
     // Create new site
@@ -148,6 +160,9 @@ router.post('/activate', async (req, res) => {
       .single();
 
     if (createError) throw createError;
+    if (!newSite) {
+      throw new Error('Failed to create site: insert returned no data');
+    }
 
     res.json({
       success: true,
@@ -156,9 +171,9 @@ router.post('/activate', async (req, res) => {
         id: organization.id,
         name: organization.name,
         plan: organization.plan,
-        tokensRemaining: organization.tokensRemaining,
+        tokensRemaining: organization.tokens_remaining !== undefined ? organization.tokens_remaining : (organization.tokensRemaining !== undefined ? organization.tokensRemaining : 0),
           maxSites: organization.max_sites || organization.maxSites,
-        resetDate: organization.resetDate
+        resetDate: organization.reset_date || organization.resetDate
       },
       site: {
         id: newSite.id,
@@ -170,7 +185,10 @@ router.post('/activate', async (req, res) => {
 
   } catch (error) {
     logger.error('Error activating license:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to activate license', { code: 'LICENSE_ACTIVATION_ERROR' });
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to activate license'
+    });
   }
 });
 
@@ -325,7 +343,10 @@ router.get('/info/:licenseKey', async (req, res) => {
       .single();
 
     if (orgError || !organization) {
-      return httpErrors.notFound(res, 'License');
+      return res.status(404).json({
+        success: false,
+        error: 'License not found'
+      });
     }
 
     // Get active sites
@@ -373,7 +394,10 @@ router.get('/info/:licenseKey', async (req, res) => {
 
   } catch (error) {
     logger.error('Error fetching license info:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to fetch license information', { code: 'LICENSE_INFO_ERROR' });
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch license information'
+    });
   }
 });
 

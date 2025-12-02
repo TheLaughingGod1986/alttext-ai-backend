@@ -29,21 +29,26 @@ jest.mock('stripe', () => {
   return jest.fn(() => mockStripeInstance);
 });
 
+// Mock loadEnv before any other imports
+const mockGetEnv = jest.fn((key, defaultValue) => {
+  const env = {
+    'ALTTEXT_AI_STRIPE_PRICE_CREDITS': 'price_credits',
+    'ALTTEXT_AI_STRIPE_PRICE_PRO': 'price_pro',
+    'ALTTEXT_AI_STRIPE_PRICE_AGENCY': 'price_agency',
+    'SEO_AI_META_STRIPE_PRICE_PRO': 'seo_price_pro',
+    'SEO_AI_META_STRIPE_PRICE_AGENCY': 'seo_price_agency',
+  };
+  return env[key] || defaultValue;
+});
+
+const mockRequireEnv = jest.fn((key) => {
+  if (key === 'STRIPE_SECRET_KEY') return 'sk_test_123';
+  return 'test-value';
+});
+
 jest.mock('../../config/loadEnv', () => ({
-  requireEnv: jest.fn((key) => {
-    if (key === 'STRIPE_SECRET_KEY') return 'sk_test_123';
-    return 'test-value';
-  }),
-  getEnv: jest.fn((key, defaultValue) => {
-    const env = {
-      'ALTTEXT_AI_STRIPE_PRICE_CREDITS': 'price_credits',
-      'ALTTEXT_AI_STRIPE_PRICE_PRO': 'price_pro',
-      'ALTTEXT_AI_STRIPE_PRICE_AGENCY': 'price_agency',
-      'SEO_AI_META_STRIPE_PRICE_PRO': 'seo_price_pro',
-      'SEO_AI_META_STRIPE_PRICE_AGENCY': 'seo_price_agency',
-    };
-    return env[key] || defaultValue;
-  }),
+  requireEnv: mockRequireEnv,
+  getEnv: mockGetEnv,
 }));
 
 const supabaseMock = require('../mocks/supabase.mock');
@@ -63,8 +68,22 @@ describe('Stripe Checkout', () => {
     mockStripeInstance.checkout.sessions.create.mockClear();
     mockStripeInstance.billingPortal.sessions.create.mockClear();
 
+    // Reset getEnv mock to ensure it returns correct values
+    mockGetEnv.mockImplementation((key, defaultValue) => {
+      const env = {
+        'ALTTEXT_AI_STRIPE_PRICE_CREDITS': 'price_credits',
+        'ALTTEXT_AI_STRIPE_PRICE_PRO': 'price_pro',
+        'ALTTEXT_AI_STRIPE_PRICE_AGENCY': 'price_agency',
+        'SEO_AI_META_STRIPE_PRICE_PRO': 'seo_price_pro',
+        'SEO_AI_META_STRIPE_PRICE_AGENCY': 'seo_price_agency',
+      };
+      return env[key] || defaultValue;
+    });
+
     // Clear module cache to get fresh instance
-    jest.resetModules();
+    // Note: Don't reset modules here as it breaks the supabase mock
+    // The mock is set up at the top level and should persist
+    delete require.cache[require.resolve('../../src/stripe/checkout')];
     checkoutModule = require('../../src/stripe/checkout');
   });
 
@@ -117,7 +136,7 @@ describe('Stripe Checkout', () => {
         },
       });
 
-      expect(result).toHaveProperty('sessionId', 'session_123');
+      expect(result).toHaveProperty('id', 'session_123');
       expect(result).toHaveProperty('url', 'https://checkout.stripe.com/session_123');
     });
 

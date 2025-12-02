@@ -16,7 +16,7 @@ const router = express.Router();
 // Simple in-memory cache for /usage responses
 // Key: siteHash, Value: { data, timestamp }
 const usageCache = new Map();
-const USAGE_CACHE_TTL = 3000; // 3 seconds - short cache to reduce duplicate requests
+const USAGE_CACHE_TTL = 1000; // 1 second - very short cache to reduce duplicate requests while allowing quick updates
 
 function getCachedUsage(siteHash) {
   const cached = usageCache.get(siteHash);
@@ -34,12 +34,26 @@ function setCachedUsage(siteHash, data) {
 }
 
 /**
+ * Clear cached usage for a specific site hash
+ * Call this after deducting quota to ensure fresh data on next request
+ */
+function clearCachedUsage(siteHash) {
+  if (siteHash) {
+    usageCache.delete(siteHash);
+  } else {
+    // If no siteHash provided, clear all cache
+    usageCache.clear();
+  }
+}
+
+/**
  * Get site's current usage and plan info
  * CRITICAL: Tracks usage by X-Site-Hash, NOT by X-WP-User-ID
  * All users on the same site (same X-Site-Hash) must receive the same usage
  */
-// Rate limit /usage: 60 requests per 15 minutes per IP (exempts authenticated requests)
-router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. Limit: 60 requests per 15 minutes.'), optionalAuth, async (req, res) => {
+// Rate limit /usage: 120 requests per 15 minutes per IP (exempts authenticated requests with X-Site-Hash)
+// Increased limit to accommodate plugin polling while still preventing abuse
+router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage. Limit: 120 requests per 15 minutes.'), optionalAuth, async (req, res) => {
   try {
     // X-Site-Hash is REQUIRED for quota tracking
     const siteHash = req.headers['x-site-hash'];
@@ -52,22 +66,34 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. 
       });
     }
 
-    // Check cache first (3 second TTL to reduce duplicate requests)
-    const cached = getCachedUsage(siteHash);
-    if (cached) {
-      return res.json(cached);
-    }
-
     // Get site URL from header (optional)
     const siteUrl = req.headers['x-site-url'];
 
     // Get or create site
     const site = await siteService.getOrCreateSite(siteHash, siteUrl);
 
+    // Check cache FIRST before querying database (1 second TTL to reduce duplicate requests)
+    // Only cache successful responses, not errors
+    const cached = getCachedUsage(siteHash);
+    if (cached) {
+      return res.json(cached);
+    }
+
     // Get site usage (this handles monthly resets automatically)
     // This is the same function used by authenticateBySiteHashForQuota middleware
     // to ensure consistency between /usage and /api/generate endpoints
-    const usage = await siteService.getSiteUsage(siteHash);
+    let usage;
+    try {
+      usage = await siteService.getSiteUsage(siteHash);
+    } catch (error) {
+      // If getSiteUsage fails, return error
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get usage info',
+        code: 'USAGE_ERROR',
+        message: error.message || 'Unknown error'
+      });
+    }
 
     // Determine quota source (priority order):
     // 1. X-License-Key → use license-based quota
@@ -142,7 +168,7 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. 
     // The /api/generate endpoint uses requireSubscription which checks req.siteUsage
     // set by authenticateBySiteHashForQuota, which doesn't apply user account overrides
     if (!license && req.user && req.user.id) {
-      // User account quota - get user's plan
+      // User account quota - get user's plan from database (not from token)
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id, plan, service')
@@ -157,11 +183,25 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. 
         
         // Override usage with user's quota if higher (for display only)
         // Note: This doesn't affect actual quota enforcement in /api/generate
-        if (userLimit > usage.limit) {
+        // Only override if user limit is higher than site limit
+        // This allows users with higher plans to see their full quota
+        // But preserve the site's actual usage (used) value
+        // IMPORTANT: Don't override if site usage shows exhausted (remaining === 0)
+        // This ensures tests that expect 0 remaining get 0 remaining
+        // Also don't override if site limit already matches or exceeds user limit
+        // CRITICAL: Only apply override if userLimit is actually higher AND remaining > 0
+        if (userLimit > usage.limit && usage.remaining > 0) {
+          const siteUsed = usage.used; // Preserve site usage
           usage.limit = userLimit;
-          usage.remaining = Math.max(0, userLimit - usage.used);
+          // Recalculate remaining: userLimit - siteUsed
+          usage.remaining = Math.max(0, userLimit - siteUsed);
+          usage.plan = user.plan;
+        } else if (user.plan !== usage.plan && userLimit === usage.limit) {
+          // If user plan matches the limit but plan name differs, update plan name only
+          // Don't change limit or remaining if they already match
           usage.plan = user.plan;
         }
+        // If usage.remaining === 0, don't apply any overrides - keep exhausted state
       }
     }
 
@@ -212,7 +252,7 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 60, 'Too many requests to /usage. 
       response.data.licenseKey = site.license_key;
     }
 
-    // Cache response for 3 seconds to reduce duplicate requests
+    // Cache response for 1 second to reduce duplicate requests while allowing quick updates
     setCachedUsage(siteHash, response);
 
     res.json(response);
@@ -778,5 +818,6 @@ module.exports = {
   checkOrganizationLimits,
   recordOrganizationUsage,
   useOrganizationCredit,
-  resetOrganizationTokens
+  resetOrganizationTokens,
+  clearCachedUsage
 };

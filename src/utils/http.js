@@ -118,13 +118,25 @@ const errors = {
   },
 
   // 429 Too Many Requests
-  rateLimitExceeded: (res, message = 'Too many requests, please try again later') => {
-    return sendError(res, 429, 'RATE_LIMIT_EXCEEDED', 'rate_limit_exceeded', message);
+  rateLimitExceeded: (res, message = 'Too many requests, please try again later', details = null) => {
+    // Extract code from details if provided, otherwise use default
+    const code = (details && typeof details === 'object' && details.code) ? details.code : 'RATE_LIMIT_EXCEEDED';
+    // Remove code from details if it exists (to avoid duplication)
+    const cleanDetails = (details && typeof details === 'object' && details.code) 
+      ? Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'code'))
+      : details;
+    return sendError(res, 429, code, 'rate_limit_exceeded', message, cleanDetails);
   },
 
   // 500 Internal Server Error
   internalError: (res, message = 'Internal server error', details = null) => {
-    return sendError(res, 500, 'INTERNAL_ERROR', 'server_error', message, details);
+    // Extract code from details if provided, otherwise use default
+    const code = (details && typeof details === 'object' && details.code) ? details.code : 'INTERNAL_ERROR';
+    // Remove code from details if it exists (to avoid duplication)
+    const cleanDetails = (details && typeof details === 'object' && details.code) 
+      ? Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'code'))
+      : details;
+    return sendError(res, 500, code, 'server_error', message, cleanDetails);
   },
 
   // 502 Bad Gateway
@@ -138,8 +150,14 @@ const errors = {
   },
 
   // 504 Gateway Timeout
-  gatewayTimeout: (res, message = 'Gateway timeout') => {
-    return sendError(res, 504, 'GATEWAY_TIMEOUT', 'gateway_timeout', message);
+  gatewayTimeout: (res, message = 'Gateway timeout', details = null) => {
+    // Extract code from details if provided, otherwise use default
+    const code = (details && typeof details === 'object' && details.code) ? details.code : 'GATEWAY_TIMEOUT';
+    // Remove code from details if it exists (to avoid duplication)
+    const cleanDetails = (details && typeof details === 'object' && details.code) 
+      ? Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'code'))
+      : details;
+    return sendError(res, 504, code, 'gateway_timeout', message, cleanDetails);
   },
 
   // Database Schema Errors

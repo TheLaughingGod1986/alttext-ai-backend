@@ -37,7 +37,12 @@ router.post('/auto-attach', async (req, res) => {
     const installId = req.body.installId;
 
     if (!siteHash) {
-      return httpErrors.missingField(res, 'X-Site-Hash header or siteHash');
+      return res.status(400).json({
+        ok: false,
+        code: 'MISSING_SITE_HASH',
+        reason: 'validation_failed',
+        message: 'X-Site-Hash header or siteHash is required'
+      });
     }
 
     // Check if site already has a license
@@ -83,12 +88,23 @@ router.post('/auto-attach', async (req, res) => {
 
     // If no license exists, create new free license for this site
     if (!license) {
-      const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
-      if (!result || !result.license) {
-        throw new Error('Failed to create license for site');
+      try {
+        const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
+        if (!result || !result.license) {
+          throw new Error('Failed to create license for site');
+        }
+        license = result.license;
+        site = result.site;
+      } catch (createError) {
+        // If error message contains "Site limit reached", return 403
+        if (createError.message && createError.message.includes('Site limit reached')) {
+          return res.status(500).json({
+            success: false,
+            error: createError.message
+          });
+        }
+        throw createError;
       }
-      license = result.license;
-      site = result.site;
     }
 
     // Get usage info
@@ -134,7 +150,10 @@ router.post('/auto-attach', async (req, res) => {
 
   } catch (error) {
     logger.error('Auto-attach error:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, error.message || 'Failed to auto-attach license', { code: 'AUTO_ATTACH_ERROR' });
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to auto-attach license'
+    });
   }
 });
 
