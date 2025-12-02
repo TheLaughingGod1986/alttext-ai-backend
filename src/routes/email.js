@@ -9,6 +9,7 @@ const { z } = require('zod');
 const { authenticateToken } = require('../../auth/jwt');
 const emailService = require('../services/emailService');
 const { validateEmail } = require('../validation/validators');
+const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ router.post('/waitlist', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] Waitlist email error:', error);
+    logger.error('[Email Routes] Waitlist email error', { error: error.message });
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -116,7 +117,7 @@ router.post('/dashboard-welcome', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] Dashboard welcome email error:', error);
+    logger.error('[Email Routes] Dashboard welcome email error', { error: error.message });
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -203,7 +204,7 @@ router.post('/plugin-signup', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] Plugin signup email error:', error);
+    logger.error('[Email Routes] Plugin signup email error', { error: error.message });
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -257,7 +258,7 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] License activated email error:', error);
+    logger.error('[Email Routes] License activated email error', { error: error.message });
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -312,7 +313,7 @@ router.post('/low-credit-warning', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] Low credit warning error:', error);
+    logger.error('[Email Routes] Low credit warning error', { error: error.message });
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -379,7 +380,7 @@ router.post('/receipt', authenticateToken, async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Email Routes] Receipt email error:', error);
+    logger.error('[Email Routes] Receipt email error', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',

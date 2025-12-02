@@ -4,18 +4,20 @@
  * Uses Resend client and React Email templates with HTML fallback
  */
 
+const { getEnv } = require('../../config/loadEnv');
 const { sendEmail } = require('../utils/resendClient');
 const { billingFromEmail } = require('../emails/emailConfig');
 const { hasRecentEvent, hasRecentEventForPlugin, logEvent } = require('./emailEventService');
 const { recordInstallation } = require('./pluginInstallationService');
 const analyticsService = require('./analyticsService');
+const logger = require('../utils/logger');
 
 // Try to load React Email render helper (may fail if templates not compiled)
 let emailRenderHelper = null;
 try {
   emailRenderHelper = require('../emails/renderHelper');
 } catch (error) {
-  console.warn('[EmailService] React Email templates not available, using HTML templates');
+  logger.warn('[EmailService] React Email templates not available, using HTML templates');
 }
 
 // Fallback to HTML templates if React Email is not available
@@ -44,7 +46,7 @@ async function sendWaitlistWelcome({ email, plugin, source }) {
   // Check for recent event (de-duplication)
   const hasRecent = await hasRecentEvent({ email, eventType, windowMinutes: 60 });
   if (hasRecent) {
-    console.log(`[EmailService] Waitlist welcome email deduped for ${email} (recent event exists)`);
+    logger.info(`[EmailService] Waitlist welcome email deduped for ${email}`, { email, reason: 'recent event exists' });
     await logEvent({
       email,
       pluginSlug: plugin,
@@ -88,11 +90,11 @@ async function sendWaitlistWelcome({ email, plugin, source }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send waitlist welcome email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send waitlist welcome email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Waitlist welcome email sent to ${email}`);
+    logger.info(`[EmailService] Waitlist welcome email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -104,7 +106,7 @@ async function sendWaitlistWelcome({ email, plugin, source }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending waitlist welcome email:`, error);
+    logger.error(`[EmailService] Exception sending waitlist welcome email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -121,7 +123,7 @@ async function sendDashboardWelcome({ email }) {
   // Check for recent event (de-duplication)
   const hasRecent = await hasRecentEvent({ email, eventType, windowMinutes: 60 });
   if (hasRecent) {
-    console.log(`[EmailService] Dashboard welcome email deduped for ${email} (recent event exists)`);
+    logger.info(`[EmailService] Dashboard welcome email deduped for ${email}`, { email, reason: 'recent event exists' });
     await logEvent({
       email,
       eventType,
@@ -143,7 +145,7 @@ async function sendDashboardWelcome({ email }) {
           subject = `Welcome to ${emailRenderHelper.getBrandName()}! 🎉`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -178,7 +180,7 @@ async function sendDashboardWelcome({ email }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send dashboard welcome email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send dashboard welcome email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
@@ -190,7 +192,7 @@ async function sendDashboardWelcome({ email }) {
       eventData: { success: result.success },
     });
 
-    console.log(`[EmailService] Dashboard welcome email sent to ${email}`);
+    logger.info(`[EmailService] Dashboard welcome email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -201,8 +203,129 @@ async function sendDashboardWelcome({ email }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending dashboard welcome email:`, error);
+    logger.error(`[EmailService] Exception sending dashboard welcome email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
+  }
+}
+
+/**
+ * Send license issued email (with license key)
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.name] - Recipient name
+ * @param {string} params.licenseKey - License key to include in email
+ * @param {string} params.plan - Plan name (pro, agency, free)
+ * @param {number} [params.tokenLimit] - Token limit
+ * @param {number} [params.tokensRemaining] - Tokens remaining
+ * @param {string} [params.siteUrl] - Site URL where license is attached
+ * @param {boolean} [params.isAttached] - Whether license is already attached
+ * @returns {Promise<Object>} Result with success and optional error
+ */
+async function sendLicenseIssuedEmail({ email, name, licenseKey, plan = 'free', tokenLimit = 50, tokensRemaining = 50, siteUrl = null, isAttached = false }) {
+  const eventType = 'license_issued';
+  
+  try {
+    // Try React Email template first, fallback to HTML
+    let html, text, subject;
+    if (emailRenderHelper && emailRenderHelper.renderLicenseIssuedEmail) {
+      try {
+        const rendered = await emailRenderHelper.renderLicenseIssuedEmail({
+          name: name || email.split('@')[0],
+          licenseKey,
+          plan: plan.toLowerCase(),
+          tokenLimit,
+          tokensRemaining,
+          siteUrl,
+          isAttached,
+        });
+        if (rendered) {
+          html = rendered.html;
+          text = rendered.text;
+          const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+          subject = `🎉 Your AltText AI ${planName} License Key`;
+        }
+      } catch (error) {
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
+      }
+    }
+    
+    // Fallback to HTML template (use licenseActivated template as base, but we need licenseKey)
+    if (!html) {
+      // For now, use licenseActivated template and add licenseKey info
+      const template = licenseActivatedEmail({ email, planName: plan, siteUrl });
+      html = template.html;
+      text = template.text;
+      const planName = plan.charAt(0).toUpperCase() + plan.slice(1);
+      subject = `🎉 Your AltText AI ${planName} License Key`;
+      
+      // Inject license key into HTML (simple approach)
+      html = html.replace('</h1>', `</h1><div style="background: #f6f8fa; border: 2px solid #667eea; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; font-family: 'Courier New', monospace; font-size: 16px; font-weight: bold; color: #667eea; word-break: break-all;">${licenseKey}</div>`);
+      text = `${text}\n\nYour License Key: ${licenseKey}`;
+    }
+
+    const tags = [
+      { name: 'event', value: 'license_issued' },
+      { name: 'plan', value: plan.toLowerCase() },
+    ];
+
+    if (siteUrl) {
+      tags.push({ name: 'site_url', value: siteUrl });
+    }
+
+    const result = await sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+      tags,
+    });
+
+    // Log event (success or failure)
+    await logEvent({
+      email,
+      eventType,
+      context: { plan, licenseKey, siteUrl, isAttached },
+      success: result.success,
+      emailId: result.id,
+      errorMessage: result.success ? null : result.error,
+    });
+
+    if (!result.success) {
+      logger.error(`[EmailService] Failed to send license issued email`, { email, error: result.error });
+      return { success: false, error: result.error };
+    }
+
+    logger.info(`[EmailService] License issued email sent`, { email });
+    return { success: true, email_id: result.id, emailId: result.id };
+  } catch (error) {
+    // Log exception
+    await logEvent({
+      email,
+      eventType,
+      context: { plan, licenseKey, siteUrl, isAttached },
+      success: false,
+      errorMessage: error.message,
+    });
+    logger.error(`[EmailService] Exception sending license issued email`, { email, error: error.message });
+    return { success: false, error: error.message || 'Failed to send email' };
+  }
+}
+
+/**
+ * Send welcome email (compatibility wrapper)
+ * @param {Object} params - Email parameters
+ * @param {string} params.email - Recipient email
+ * @param {string} [params.name] - Recipient name
+ * @param {string} [params.plugin] - Plugin name
+ * @param {Object} [params.metadata] - Additional metadata
+ * @returns {Promise<Object>} Result with success and optional error
+ */
+async function sendWelcomeEmail({ email, name, plugin, metadata = {} }) {
+  // Map to sendWaitlistWelcome if plugin provided, otherwise sendDashboardWelcome
+  if (plugin) {
+    return sendWaitlistWelcome({ email, plugin, source: metadata.source || 'plugin' });
+  } else {
+    return sendDashboardWelcome({ email });
   }
 }
 
@@ -244,7 +367,7 @@ async function sendLicenseActivated({ email, planName, siteUrl }) {
           subject = `${planName} License Activated - ${emailRenderHelper.getBrandName()}`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -284,11 +407,11 @@ async function sendLicenseActivated({ email, planName, siteUrl }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send license activated email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send license activated email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] License activated email sent to ${email}`);
+    logger.info(`[EmailService] License activated email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -299,7 +422,7 @@ async function sendLicenseActivated({ email, planName, siteUrl }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending license activated email:`, error);
+    logger.error(`[EmailService] Exception sending license activated email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -338,7 +461,7 @@ async function sendLowCreditWarning({ email, siteUrl, remainingCredits, pluginNa
           subject = `Low Credits Warning - ${emailRenderHelper.getBrandName()}`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -381,11 +504,11 @@ async function sendLowCreditWarning({ email, siteUrl, remainingCredits, pluginNa
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send low credit warning to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send low credit warning`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Low credit warning sent to ${email}`);
+    logger.info(`[EmailService] Low credit warning sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -397,7 +520,7 @@ async function sendLowCreditWarning({ email, siteUrl, remainingCredits, pluginNa
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending low credit warning:`, error);
+    logger.error(`[EmailService] Exception sending low credit warning`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -432,7 +555,7 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
           subject = `Receipt for ${planName} - ${emailRenderHelper.getBrandName()}`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -470,11 +593,11 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send receipt email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send receipt email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Receipt email sent to ${email}`);
+    logger.info(`[EmailService] Receipt email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -485,7 +608,7 @@ async function sendReceipt({ email, amount, planName, invoiceUrl }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending receipt email:`, error);
+    logger.error(`[EmailService] Exception sending receipt email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -510,7 +633,7 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
   });
   
   if (hasRecent) {
-    console.log(`[EmailService] Plugin signup email deduped for ${email} with plugin ${pluginName} (recent event exists)`);
+    logger.info(`[EmailService] Plugin signup email deduped`, { email, pluginName, reason: 'recent event exists' });
     await logEvent({
       email,
       pluginSlug: pluginName,
@@ -536,7 +659,7 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
           subject = `Welcome to ${pluginName}! 🎉`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -586,7 +709,7 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send plugin signup email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send plugin signup email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
@@ -602,11 +725,11 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
       timezone: meta?.timezone,
       installSource: meta?.installSource || 'plugin',
     }).catch(err => {
-      console.error('[EmailService] Failed to record plugin installation (non-critical):', err);
+      logger.error('[EmailService] Failed to record plugin installation (non-critical)', { error: err.message });
       // Don't throw - installation recording failure shouldn't break email sending
     });
 
-    console.log(`[EmailService] Plugin signup email sent to ${email}`);
+    logger.info(`[EmailService] Plugin signup email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -618,7 +741,7 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending plugin signup email:`, error);
+    logger.error(`[EmailService] Exception sending plugin signup email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -633,11 +756,11 @@ async function sendPluginSignup({ email, pluginName, siteUrl, meta = {} }) {
  */
 async function subscribe({ email, name, metadata = {} }) {
   const { Resend } = require('resend');
-  const audienceId = process.env.RESEND_AUDIENCE_ID;
-  const apiKey = process.env.RESEND_API_KEY;
+  const audienceId = getEnv('RESEND_AUDIENCE_ID');
+  const apiKey = getEnv('RESEND_API_KEY');
 
   if (!apiKey || !audienceId) {
-    console.warn('[EmailService] Resend not configured - subscriber not added to audience');
+    logger.warn('[EmailService] Resend not configured - subscriber not added to audience');
     return {
       success: false,
       error: 'Email service not configured',
@@ -647,7 +770,7 @@ async function subscribe({ email, name, metadata = {} }) {
 
   try {
     const resend = new Resend(apiKey);
-    console.log(`[EmailService] Subscribing ${email} to audience ${audienceId}`);
+    logger.info(`[EmailService] Subscribing to audience`, { email, audienceId });
 
     // Create contact in Resend audience
     const contact = await resend.contacts.create({
@@ -657,7 +780,7 @@ async function subscribe({ email, name, metadata = {} }) {
       unsubscribed: false,
     });
 
-    console.log(`✅ Subscriber added to Resend: ${email} (contact ID: ${contact.id})`);
+    logger.info(`Subscriber added to Resend`, { email, contactId: contact.id });
 
     return {
       success: true,
@@ -666,11 +789,11 @@ async function subscribe({ email, name, metadata = {} }) {
       message: 'Subscriber added successfully',
     };
   } catch (error) {
-    console.error('[EmailService] Subscribe error:', error);
+    logger.error('[EmailService] Subscribe error', { email, error: error.message });
 
     // Handle duplicate contact gracefully
     if (error.message && (error.message.includes('already exists') || error.message.includes('duplicate'))) {
-      console.log(`ℹ️  Contact ${email} already exists in audience`);
+      logger.info(`Contact already exists in audience`, { email });
       return {
         success: true,
         message: 'Contact already exists',
@@ -709,7 +832,7 @@ async function sendPasswordReset({ email, resetUrl }) {
           subject = `Reset Your ${emailRenderHelper.getBrandName()} Password`;
         }
       } catch (error) {
-        console.warn('[EmailService] Failed to render React Email template, using HTML fallback:', error.message);
+        logger.warn('[EmailService] Failed to render React Email template, using HTML fallback', { error: error.message });
       }
     }
     
@@ -744,11 +867,11 @@ async function sendPasswordReset({ email, resetUrl }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send password reset email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send password reset email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Password reset email sent to ${email}`);
+    logger.info(`[EmailService] Password reset email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -759,7 +882,7 @@ async function sendPasswordReset({ email, resetUrl }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending password reset email:`, error);
+    logger.error(`[EmailService] Exception sending password reset email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -805,11 +928,11 @@ async function sendUsageSummary({ email, pluginName, stats = {} }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send usage summary email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send usage summary email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Usage summary email sent to ${email}`);
+    logger.info(`[EmailService] Usage summary email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -821,7 +944,7 @@ async function sendUsageSummary({ email, pluginName, stats = {} }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending usage summary email:`, error);
+    logger.error(`[EmailService] Exception sending usage summary email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -840,7 +963,7 @@ async function sendMagicLink({ email, token, redirectUrl }) {
   // Check for recent event (de-duplication)
   const hasRecent = await hasRecentEvent({ email, eventType, windowMinutes: 5 });
   if (hasRecent) {
-    console.log(`[EmailService] Magic link email deduped for ${email} (recent event exists)`);
+    logger.info(`[EmailService] Magic link email deduped`, { email, reason: 'recent event exists' });
     await logEvent({
       email,
       eventType,
@@ -852,9 +975,9 @@ async function sendMagicLink({ email, token, redirectUrl }) {
 
   try {
     // Build magic link URL
-    const baseUrl = process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const baseUrl = getEnv('FRONTEND_DASHBOARD_URL') || getEnv('FRONTEND_URL', 'http://localhost:3000');
     const verifyUrl = `${baseUrl}/auth/verify?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${redirectUrl ? `&redirect=${encodeURIComponent(redirectUrl)}` : ''}`;
-    const brandName = process.env.EMAIL_BRAND_NAME || 'AltText AI';
+    const brandName = getEnv('EMAIL_BRAND_NAME', 'AltText AI');
 
     // Simple HTML email template for magic link
     const html = `
@@ -904,11 +1027,11 @@ async function sendMagicLink({ email, token, redirectUrl }) {
     });
 
     if (!result.success) {
-      console.error(`[EmailService] Failed to send magic link email to ${email}:`, result.error);
+      logger.error(`[EmailService] Failed to send magic link email`, { email, error: result.error });
       return { success: false, error: result.error };
     }
 
-    console.log(`[EmailService] Magic link email sent to ${email}`);
+    logger.info(`[EmailService] Magic link email sent`, { email });
     return { success: true, emailId: result.id };
   } catch (error) {
     // Log exception
@@ -919,7 +1042,7 @@ async function sendMagicLink({ email, token, redirectUrl }) {
       success: false,
       errorMessage: error.message,
     });
-    console.error(`[EmailService] Exception sending magic link email:`, error);
+    logger.error(`[EmailService] Exception sending magic link email`, { email, error: error.message });
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
@@ -928,6 +1051,8 @@ module.exports = {
   sendWaitlistWelcome,
   sendDashboardWelcome,
   sendLicenseActivated,
+  sendLicenseIssuedEmail, // Added for compatibility with old service
+  sendWelcomeEmail, // Added for compatibility with old service
   sendLowCreditWarning,
   sendReceipt,
   sendPluginSignup,

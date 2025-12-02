@@ -1,8 +1,8 @@
-jest.mock('../../services/emailService', () => ({
+jest.mock('../../src/services/emailService', () => ({
   sendLicenseIssuedEmail: jest.fn().mockResolvedValue({ success: true })
 }));
 
-const licenseService = jest.requireActual('../../services/licenseService');
+const licenseService = jest.requireActual('../../src/services/licenseService');
 const supabaseMock = require('../mocks/supabase.mock');
 
 describe('licenseService', () => {
@@ -202,7 +202,7 @@ describe('licenseService', () => {
   });
 
   test('createLicense continues when email sending fails', async () => {
-    const emailService = require('../../services/emailService');
+    const emailService = require('../../src/services/emailService');
     emailService.sendLicenseIssuedEmail.mockRejectedValueOnce(new Error('Email service down'));
 
     supabaseMock.__queueResponse('licenses', 'select', {

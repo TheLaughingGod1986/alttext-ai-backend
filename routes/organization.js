@@ -5,6 +5,8 @@
 
 const express = require('express');
 const { supabase } = require('../db/supabase-client');
+const logger = require('../src/utils/logger');
+const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -14,10 +16,7 @@ const router = express.Router();
 async function getMyOrganizations(req, res) {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     // Get memberships
@@ -26,11 +25,21 @@ async function getMyOrganizations(req, res) {
       .select('organizationId, role')
       .eq('userId', req.user.id);
 
-    if (membershipsError) throw membershipsError;
+    // Handle table not found error gracefully (PGRST205)
+    if (membershipsError) {
+      if (membershipsError.code === 'PGRST205' || membershipsError.message?.includes('Could not find the table')) {
+        logger.warn('organization_members table not found, returning empty array', { error: membershipsError.message });
+        return res.status(200).json({
+          ok: true,
+          organizations: []
+        });
+      }
+      throw membershipsError;
+    }
 
     if (!memberships || memberships.length === 0) {
-      return res.json({
-        success: true,
+      return res.status(200).json({
+        ok: true,
         organizations: []
       });
     }
@@ -72,11 +81,31 @@ async function getMyOrganizations(req, res) {
 
     if (usersError) throw usersError;
 
-    // Format response
+    // Format response (optimized: use Maps for O(1) lookups instead of O(n) filters)
     const userMap = new Map((users || []).map(u => [u.id, u.email]));
+    
+    // Pre-build maps for O(1) lookups instead of filtering in loop
+    const sitesByOrgId = new Map();
+    (allSites || []).forEach(site => {
+      const orgId = site.organizationId;
+      if (!sitesByOrgId.has(orgId)) {
+        sitesByOrgId.set(orgId, []);
+      }
+      sitesByOrgId.get(orgId).push(site);
+    });
+    
+    const membersByOrgId = new Map();
+    (allMembers || []).forEach(member => {
+      const orgId = member.organizationId;
+      if (!membersByOrgId.has(orgId)) {
+        membersByOrgId.set(orgId, []);
+      }
+      membersByOrgId.get(orgId).push(member);
+    });
+    
     const formattedOrgs = (organizations || []).map(org => {
-      const orgSites = (allSites || []).filter(s => s.organizationId === org.id);
-      const orgMembers = (allMembers || []).filter(m => m.organizationId === org.id);
+      const orgSites = sitesByOrgId.get(org.id) || [];
+      const orgMembers = membersByOrgId.get(org.id) || [];
       
       return {
         ...org,
@@ -89,16 +118,22 @@ async function getMyOrganizations(req, res) {
       };
     });
 
-    return res.json({
-      success: true,
+    return res.status(200).json({
+      ok: true,
       organizations: formattedOrgs
     });
   } catch (error) {
-    console.error('Error fetching organizations:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to fetch organizations'
-    });
+    logger.error('Error fetching organizations:', { error: error.message, code: error.code });
+    
+    // Handle table not found errors gracefully
+    if (error.code === 'PGRST205' || error.message?.includes('Could not find the table')) {
+      return res.status(200).json({
+        ok: true,
+        organizations: []
+      });
+    }
+    
+    return httpErrors.internalError(res, 'Failed to fetch organizations', { code: 'ORGANIZATIONS_FETCH_ERROR' });
   }
 }
 
@@ -126,10 +161,7 @@ router.get('/my-organizations', getMyOrganizations);
 router.get('/:orgId/sites', async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -157,8 +189,8 @@ router.get('/:orgId/sites', async (req, res) => {
 
     if (sitesError) throw sitesError;
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      ok: true,
       sites: (sites || []).map(s => ({
         id: s.id,
         siteUrl: s.siteUrl,
@@ -174,11 +206,8 @@ router.get('/:orgId/sites', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching sites:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch sites'
-    });
+    logger.error('Error fetching sites:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to fetch sites', { code: 'SITES_FETCH_ERROR' });
   }
 });
 
@@ -191,10 +220,7 @@ router.get('/:orgId/sites', async (req, res) => {
 router.get('/:orgId/usage', async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -245,8 +271,8 @@ router.get('/:orgId/usage', async (req, res) => {
       usageByDay[day] = (usageByDay[day] || 0) + (log.used || 0);
     });
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      ok: true,
       usage: {
         tokensRemaining: organization.tokens_remaining !== undefined ? organization.tokens_remaining : (organization.tokensRemaining !== undefined ? organization.tokensRemaining : 0),
         tokensUsed: totalUsed,
@@ -265,11 +291,8 @@ router.get('/:orgId/usage', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching usage:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch usage'
-    });
+    logger.error('Error fetching usage:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to fetch usage', { code: 'USAGE_FETCH_ERROR' });
   }
 });
 
@@ -288,10 +311,7 @@ router.get('/:orgId/usage', async (req, res) => {
 router.post('/:orgId/invite', async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -306,10 +326,7 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only owners and admins can invite members'
-      });
+      return httpErrors.forbidden(res, 'Only owners and admins can invite members', 'INSUFFICIENT_PERMISSIONS');
     }
 
     // Find the user to invite
@@ -320,10 +337,7 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (userError || !invitedUser) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found. They need to create an account first.'
-      });
+      return httpErrors.notFound(res, 'User not found. They need to create an account first.');
     }
 
     // Check if already a member
@@ -335,10 +349,7 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (existingMembership) {
-      return res.status(400).json({
-        success: false,
-        error: 'User is already a member of this organization'
-      });
+      return httpErrors.conflict(res, 'User is already a member of this organization', 'ALREADY_MEMBER');
     }
 
     // Create membership
@@ -352,17 +363,14 @@ router.post('/:orgId/invite', async (req, res) => {
 
     if (createError) throw createError;
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      ok: true,
       message: `${email} has been added to the organization`
     });
 
   } catch (error) {
-    console.error('Error inviting member:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to invite member'
-    });
+    logger.error('Error inviting member:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to invite member', { code: 'INVITE_MEMBER_ERROR' });
   }
 });
 
@@ -375,10 +383,7 @@ router.post('/:orgId/invite', async (req, res) => {
 router.delete('/:orgId/members/:userId', async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -393,10 +398,7 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
       .single();
 
     if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Only owners and admins can remove members'
-      });
+      return httpErrors.forbidden(res, 'Only owners and admins can remove members', 'INSUFFICIENT_PERMISSIONS');
     }
 
     // Don't allow removing the owner
@@ -408,10 +410,7 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
       .single();
 
     if (memberToRemove?.role === 'owner') {
-      return res.status(403).json({
-        success: false,
-        error: 'Cannot remove the organization owner'
-      });
+      return httpErrors.forbidden(res, 'Cannot remove the organization owner', 'CANNOT_REMOVE_OWNER');
     }
 
     // Remove the member
@@ -423,17 +422,14 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
 
     if (deleteError) throw deleteError;
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      ok: true,
       message: 'Member removed successfully'
     });
 
   } catch (error) {
-    console.error('Error removing member:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to remove member'
-    });
+    logger.error('Error removing member:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to remove member', { code: 'REMOVE_MEMBER_ERROR' });
   }
 });
 
@@ -446,10 +442,7 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
 router.get('/:orgId/members', async (req, res) => {
   try {
     if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required'
-      });
+      return httpErrors.authenticationRequired(res, 'Authentication required');
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -485,11 +478,11 @@ router.get('/:orgId/members', async (req, res) => {
 
     if (usersError) throw usersError;
 
-    // Build user map
+    // Build user map (optimized: single pass O(n) instead of multiple lookups)
     const userMap = new Map((users || []).map(u => [u.id, u]));
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      ok: true,
       members: (members || []).map(m => ({
         userId: m.userId,
         email: userMap.get(m.userId)?.email || null,
@@ -499,11 +492,8 @@ router.get('/:orgId/members', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching members:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch members'
-    });
+    logger.error('Error fetching members:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to fetch members', { code: 'MEMBERS_FETCH_ERROR' });
   }
 });
 

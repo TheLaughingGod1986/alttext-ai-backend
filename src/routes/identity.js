@@ -50,7 +50,7 @@ router.post('/sync', async (req, res) => {
       version,
       wpVersion,
       phpVersion,
-    });
+        });
 
     if (!syncResult.success) {
       return res.status(500).json({

@@ -6,8 +6,9 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { authenticateToken } = require('../auth/jwt');
-const emailService = require('../services/emailService');
+const emailService = require('../src/services/emailService');
 const { validateEmailRequest } = require('../src/validation/email');
+const logger = require('../src/utils/logger');
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ router.post('/welcome', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    console.error('[Email Routes] Welcome email error:', error);
+    logger.error('[Email Routes] Welcome email error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -138,7 +139,7 @@ router.post('/license/activated', authenticateToken, async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    console.error('[Email Routes] License activated email error:', error);
+    logger.error('[Email Routes] License activated email error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -196,7 +197,7 @@ router.post('/credits/low', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    console.error('[Email Routes] Low credit warning error:', error);
+    logger.error('[Email Routes] Low credit warning error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -258,7 +259,7 @@ router.post('/receipt', authenticateToken, async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    console.error('[Email Routes] Receipt email error:', error);
+    logger.error('[Email Routes] Receipt email error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -314,7 +315,7 @@ router.post('/plugin/signup', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    console.error('[Email Routes] Plugin signup email error:', error);
+    logger.error('[Email Routes] Plugin signup email error:', { error: error.message });
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',

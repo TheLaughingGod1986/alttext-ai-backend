@@ -1,6 +1,12 @@
 /**
- * Billing routes for Stripe integration
+ * Billing routes for Stripe integration (LEGACY)
  * SECURITY: All routes require authentication and validate user ownership
+ * 
+ * NOTE: This file contains legacy routes. New routes are in src/routes/billing.js
+ * Legacy routes are kept for backward compatibility but should be migrated to new routes:
+ * - /billing/checkout → /billing/create-checkout
+ * - /billing/portal → /billing/create-portal
+ * - /billing/subscription → /billing/subscriptions (POST) or /billing/subscription-status (GET)
  */
 
 const express = require('express');
@@ -9,6 +15,7 @@ const { supabase } = require('../db/supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 const { createCheckoutSession, createCustomerPortalSession } = require('../src/stripe/checkout');
 const { webhookMiddleware, webhookHandler, testWebhook } = require('../src/stripe/webhooks');
+const logger = require('../src/utils/logger');
 
 const router = express.Router();
 
@@ -28,7 +35,7 @@ const billingRateLimiter = rateLimit({
 router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res) => {
   try {
     // Log user info for debugging
-    console.log('[Billing Security] Checkout request received:', {
+    logger.info('[Billing Security] Checkout request received', {
       userId: req.user?.id,
       userIdType: typeof req.user?.id,
       userEmail: req.user?.email,
@@ -37,7 +44,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     });
 
     if (!req.user || !req.user.id) {
-      console.warn('[Billing Security] Unauthenticated checkout attempt');
+      logger.warn('[Billing Security] Unauthenticated checkout attempt');
       return res.status(401).json({
         error: 'User authentication required',
         code: 'AUTHENTICATION_REQUIRED'
@@ -52,7 +59,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
       const requestedEmail = email.toLowerCase();
       
       if (authenticatedEmail !== requestedEmail) {
-        console.error('[Billing Security] Email mismatch in checkout:', {
+        logger.error('[Billing Security] Email mismatch in checkout', {
           authenticated: authenticatedEmail,
           requested: requestedEmail,
           userId: req.user.id,
@@ -94,7 +101,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     const pricesToCheck = servicePrices;
 
     if (!pricesToCheck.includes(actualPriceId)) {
-      console.warn('[Billing Security] Invalid price ID attempted:', {
+      logger.warn('[Billing Security] Invalid price ID attempted', {
         userId: req.user.id,
         userEmail: req.user.email,
         priceId: actualPriceId,
@@ -110,7 +117,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     }
 
     // SECURITY: Log all checkout session creation attempts
-    console.log('[Billing Security] Creating checkout session:', {
+    logger.info('[Billing Security] Creating checkout session', {
       userId: req.user.id,
       userEmail: req.user.email,
       priceId: actualPriceId,
@@ -129,7 +136,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     ) || { id: 'mock-session', url: successUrl || `${process.env.FRONTEND_URL}/success` };
 
     // SECURITY: Log successful checkout session creation
-    console.log('[Billing Security] Checkout session created successfully:', {
+    logger.info('[Billing Security] Checkout session created successfully', {
       sessionId: session.id,
       userId: req.user.id,
       userEmail: req.user.email,
@@ -144,9 +151,8 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     });
 
   } catch (error) {
-    console.error('Checkout error:', error);
-    console.error('Error details:', {
-      message: error.message,
+    logger.error('Checkout error', { 
+      error: error.message,
       stack: error.stack,
       type: error.type,
       code: error.code
@@ -210,7 +216,7 @@ router.get('/info', authenticateToken, async (req, res) => {
         const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
         subscription = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
       } catch (error) {
-        console.warn('Failed to fetch subscription from Stripe:', error.message);
+        logger.warn('Failed to fetch subscription from Stripe', { error: error.message });
       }
     }
 
@@ -227,7 +233,7 @@ router.get('/info', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Billing info error:', error);
+    logger.error('Billing info error', { error: error.message });
     res.status(500).json({
       error: 'Failed to get billing info',
       code: 'BILLING_INFO_ERROR'
@@ -357,7 +363,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
       });
 
     } catch (stripeError) {
-      console.error('Stripe subscription fetch error:', stripeError);
+      logger.error('Stripe subscription fetch error', { error: stripeError.message });
       
       // If Stripe fails, return basic info from database
       res.json({
@@ -378,7 +384,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Subscription info error:', error);
+    logger.error('Subscription info error', { error: error.message });
     res.status(500).json({
       error: 'Failed to get subscription information',
       code: 'SUBSCRIPTION_INFO_ERROR'
@@ -407,7 +413,7 @@ router.post('/webhook/test', authenticateToken, async (req, res) => {
   try {
     await testWebhook(req, res);
   } catch (error) {
-    console.error('Test webhook error:', error);
+    logger.error('Test webhook error', { error: error.message });
     res.status(500).json({
       ok: false,
       code: 'WEBHOOK_ERROR',
@@ -548,7 +554,7 @@ router.get('/plans', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Plans error:', error);
+    logger.error('Plans error', { error: error.message });
     res.status(500).json({
       error: 'Failed to get plans',
       code: 'PLANS_ERROR'

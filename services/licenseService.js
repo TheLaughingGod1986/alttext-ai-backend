@@ -5,7 +5,7 @@
 
 const { supabase } = require('../db/supabase-client');
 const { randomUUID } = require('crypto');
-const emailService = require('./emailService');
+const emailService = require('../src/services/emailService');
 
 /**
  * Service-specific plan limits

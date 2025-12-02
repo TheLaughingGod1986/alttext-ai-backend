@@ -4,9 +4,11 @@
 
 const express = require('express');
 const { supabase } = require('../db/supabase-client');
+const logger = require('../src/utils/logger');
 const { dualAuthenticate, combinedAuth } = require('../src/middleware/dual-auth');
-const licenseService = require('../services/licenseService');
+const licenseService = require('../src/services/licenseService');
 const siteService = require('../src/services/siteService');
+const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -35,11 +37,7 @@ router.post('/auto-attach', async (req, res) => {
     const installId = req.body.installId;
 
     if (!siteHash) {
-      return res.status(400).json({
-        success: false,
-        error: 'X-Site-Hash header or siteHash in body is required',
-        code: 'MISSING_SITE_HASH'
-      });
+      return httpErrors.missingField(res, 'X-Site-Hash header or siteHash');
     }
 
     // Check if site already has a license
@@ -135,12 +133,8 @@ router.post('/auto-attach', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Auto-attach error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to auto-attach license',
-      code: 'AUTO_ATTACH_ERROR'
-    });
+    logger.error('Auto-attach error:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, error.message || 'Failed to auto-attach license', { code: 'AUTO_ATTACH_ERROR' });
   }
 });
 
@@ -358,7 +352,7 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Get license sites error:', error);
+    logger.error('Get license sites error:', { error: error.message });
     res.status(500).json({
       success: false,
       error: 'Failed to fetch license sites',
@@ -513,7 +507,7 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Disconnect site error:', error);
+    logger.error('Disconnect site error:', { error: error.message });
     res.status(500).json({
       success: false,
       error: 'Failed to disconnect site',

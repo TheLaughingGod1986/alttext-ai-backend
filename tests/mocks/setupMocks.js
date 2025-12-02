@@ -13,7 +13,9 @@ if (process.env.NODE_ENV !== 'test') {
 // module initialization issues.
 jest.mock('stripe', () => require('./stripe.mock'));
 jest.mock('resend', () => require('./resend.mock'));
-jest.mock('../../services/licenseService', () => require('./licenseService.mock'));
+jest.mock('../../src/services/licenseService', () => require('./licenseService.mock'));
+// auth/email.js is deprecated - use src/services/emailService instead
+// Keeping mock for backward compatibility with tests that still reference it
 jest.mock('../../auth/email', () => mockAuthEmail);
 
 afterEach(() => {

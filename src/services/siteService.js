@@ -6,6 +6,7 @@
 
 const { supabase } = require('../../db/supabase-client');
 const { randomUUID } = require('crypto');
+const logger = require('../utils/logger');
 
 /**
  * Service-specific plan limits
@@ -100,7 +101,7 @@ async function getOrCreateSite(siteHash, siteUrl = null) {
 
     return site;
   } catch (error) {
-    console.error('[SiteService] Error in getOrCreateSite:', error);
+    logger.error('[SiteService] Error in getOrCreateSite', { error: error.message });
     throw error;
   }
 }
@@ -170,7 +171,7 @@ async function getSiteUsage(siteHash) {
       resetTimestamp
     };
   } catch (error) {
-    console.error('[SiteService] Error in getSiteUsage:', error);
+    logger.error('[SiteService] Error in getSiteUsage', { error: error.message });
     throw error;
   }
 }
@@ -189,7 +190,7 @@ async function checkSiteQuota(siteHash) {
       ...usage
     };
   } catch (error) {
-    console.error('[SiteService] Error in checkSiteQuota:', error);
+    logger.error('[SiteService] Error in checkSiteQuota', { error: error.message });
     return {
       hasAccess: false,
       hasQuota: false,
@@ -267,7 +268,7 @@ async function deductSiteQuota(siteHash, tokens = 1) {
 
     return updatedSite;
   } catch (error) {
-    console.error('[SiteService] Error in deductSiteQuota:', error);
+    logger.error('[SiteService] Error in deductSiteQuota', { error: error.message });
     throw error;
   }
 }

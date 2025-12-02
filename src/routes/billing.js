@@ -6,6 +6,8 @@
 const express = require('express');
 const { authenticateToken } = require('../../auth/jwt');
 const billingService = require('../services/billingService');
+const { errors: httpErrors } = require('../utils/http');
+const logger = require('../utils/logger');
 // Optional: creditsService may not exist in all environments
 let creditsService;
 try {
@@ -85,7 +87,7 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
       return res.status(403).json({
         ok: false,
         error: 'You can only create checkout sessions for your own email address',
@@ -135,7 +137,7 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
       url: session.url,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error creating checkout:', error);
+    logger.error('[Billing Routes] Error creating checkout', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to create checkout session',
@@ -174,7 +176,7 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
       return res.status(403).json({
         ok: false,
         error: 'You can only access the billing portal for your own email address',
@@ -211,7 +213,7 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
       url: session.url,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error creating portal:', error);
+    logger.error('[Billing Routes] Error creating portal', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to create portal session',
@@ -250,7 +252,7 @@ router.post('/subscriptions', billingRateLimiter, authenticateToken, async (req,
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
       return res.status(403).json({
         ok: false,
         error: 'You can only view subscriptions for your own email address',
@@ -272,7 +274,7 @@ router.post('/subscriptions', billingRateLimiter, authenticateToken, async (req,
       subscriptions: result.subscriptions || [],
     });
   } catch (error) {
-    console.error('[Billing Routes] Error fetching subscriptions:', error);
+    logger.error('[Billing Routes] Error fetching subscriptions', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to fetch subscriptions',
@@ -337,7 +339,7 @@ router.get('/subscription-status', billingRateLimiter, authenticateToken, async 
       unlimited: subscriptionCheck.tier === 'agency',
     });
   } catch (error) {
-    console.error('[Billing Routes] Error fetching subscription status:', error);
+    logger.error('[Billing Routes] Error fetching subscription status', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to fetch subscription status',
@@ -376,7 +378,7 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
       return res.status(403).json({
         ok: false,
         error: 'You can only purchase credits for your own email address',
@@ -439,7 +441,7 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
       sessionId: session.id,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error creating credit checkout:', error);
+    logger.error('[Billing Routes] Error creating credit checkout', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to create credit checkout session',
@@ -487,7 +489,7 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
       const identityEmail = identity.email.toLowerCase();
       
       if (authenticatedEmail !== identityEmail) {
-        console.warn(`[Billing Security] Email mismatch for credit spend: authenticated=${authenticatedEmail}, identity=${identityEmail}, identityId=${identityId}`);
+        logger.warn('[Billing Security] Email mismatch for credit spend', { authenticated: authenticatedEmail, identity: identityEmail, identityId });
         return res.status(403).json({
           ok: false,
           error: 'You can only spend credits for your own account',
@@ -525,7 +527,7 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
       transactionId: result.transactionId,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error spending credits:', error);
+    logger.error('[Billing Routes] Error spending credits', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to spend credits',
@@ -582,7 +584,7 @@ router.get('/credits/balance', billingRateLimiter, authenticateToken, async (req
       identityId: identityResult.identityId,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error getting credit balance:', error);
+    logger.error('[Billing Routes] Error getting credit balance', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to get credit balance',
@@ -650,7 +652,7 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
       pagination: historyResult.pagination,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error getting credit transactions:', error);
+    logger.error('[Billing Routes] Error getting credit transactions', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to get credit transactions',
@@ -692,7 +694,7 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
           });
           invoices = stripeInvoices.data || [];
         } catch (stripeError) {
-          console.error('[Billing Routes] Error fetching Stripe invoices:', stripeError);
+          logger.error('[Billing Routes] Error fetching Stripe invoices', { error: stripeError.message });
         }
       }
     }
@@ -708,7 +710,7 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
           }
         }
       } catch (transError) {
-        console.error('[Billing Routes] Error fetching transactions:', transError);
+        logger.error('[Billing Routes] Error fetching transactions', { error: transError.message });
       }
     }
 
@@ -718,7 +720,7 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
       transactions: transactions,
     });
   } catch (error) {
-    console.error('[Billing Routes] Error getting billing history:', error);
+    logger.error('[Billing Routes] Error getting billing history', { error: error.message });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to get billing history',

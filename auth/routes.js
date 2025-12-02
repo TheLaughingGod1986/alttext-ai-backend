@@ -7,9 +7,10 @@ const crypto = require('crypto');
 const { supabase } = require('../db/supabase-client');
 const { generateToken, hashPassword, comparePassword, authenticateToken, generateRefreshToken, verifyRefreshToken, REFRESH_TOKEN_EXPIRES_IN } = require('./jwt');
 const emailService = require('../src/services/emailService');
-const licenseService = require('../services/licenseService');
+const licenseService = require('../src/services/licenseService');
 const { getOrCreateIdentity } = require('../src/services/identityService');
 const billingService = require('../src/services/billingService');
+const { rateLimitByUser } = require('../src/middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -445,7 +446,9 @@ router.post('/verify', async (req, res) => {
  * Get current user info
  * Returns full profile from identities table with subscription and installations
  */
-router.get('/me', authenticateToken, async (req, res) => {
+// Rate limit /auth/me: 30 requests per 15 minutes per authenticated user
+// This prevents abuse while allowing legitimate authenticated requests
+router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /auth/me. Limit: 30 requests per 15 minutes.'), authenticateToken, async (req, res) => {
   try {
     const email = req.user.email;
     if (!email) {
