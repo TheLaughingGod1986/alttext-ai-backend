@@ -9,12 +9,9 @@ const { supabase } = require('../db/supabase-client');
 const router = express.Router();
 
 /**
- * GET /api/organization/my-organizations
- * Get all organizations the authenticated user belongs to
- *
- * Requires JWT authentication
+ * Shared handler for getting user organizations
  */
-router.get('/my-organizations', async (req, res) => {
+async function getMyOrganizations(req, res) {
   try {
     if (!req.user) {
       return res.status(401).json({
@@ -75,43 +72,50 @@ router.get('/my-organizations', async (req, res) => {
 
     if (usersError) throw usersError;
 
-    // Build user map
+    // Format response
     const userMap = new Map((users || []).map(u => [u.id, u.email]));
-
-    // Build response
-    const formattedOrganizations = organizations.map(org => {
-      const membership = memberships.find(m => m.organizationId === org.id);
-      const activeSites = (allSites || []).filter(s => s.organizationId === org.id);
+    const formattedOrgs = (organizations || []).map(org => {
+      const orgSites = (allSites || []).filter(s => s.organizationId === org.id);
       const orgMembers = (allMembers || []).filter(m => m.organizationId === org.id);
-
-      // Map snake_case database fields to camelCase for API response
+      
       return {
-        id: org.id,
-        name: org.name,
-        licenseKey: membership?.role === 'owner' ? (org.license_key || org.licenseKey) : undefined, // Only owners see license key
-        plan: org.plan,
-        maxSites: org.max_sites || org.maxSites,
-        tokensRemaining: org.tokens_remaining !== undefined ? org.tokens_remaining : (org.tokensRemaining !== undefined ? org.tokensRemaining : 0),
-        resetDate: org.reset_date || org.resetDate,
-        myRole: membership?.role,
-        activeSites: activeSites.length,
-        memberCount: orgMembers.length
+        ...org,
+        activeSites: orgSites.length,
+        members: orgMembers.map(m => ({
+          userId: m.userId,
+          email: userMap.get(m.userId) || null,
+          role: m.role
+        }))
       };
     });
 
-    res.json({
+    return res.json({
       success: true,
-      organizations: formattedOrganizations
+      organizations: formattedOrgs
     });
-
   } catch (error) {
     console.error('Error fetching organizations:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch organizations'
     });
   }
-});
+}
+
+/**
+ * GET /organizations
+ * Get all organizations the authenticated user belongs to
+ * Alias for /api/organization/my-organizations
+ */
+router.get('/organizations', getMyOrganizations);
+
+/**
+ * GET /api/organization/my-organizations
+ * Get all organizations the authenticated user belongs to
+ *
+ * Requires JWT authentication
+ */
+router.get('/my-organizations', getMyOrganizations);
 
 /**
  * GET /api/organization/:orgId/sites
@@ -503,4 +507,7 @@ router.get('/:orgId/members', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  getMyOrganizations, // Export handler for use in root-level route
+};

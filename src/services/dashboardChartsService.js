@@ -357,7 +357,7 @@ async function getSubscriptionHistory(email) {
     // Query subscriptions table
     const { data: subscriptions, error } = await supabase
       .from('subscriptions')
-      .select('plan, status, created_at, updated_at, canceled_at')
+      .select('plan, status, created_at, updated_at, cancelled_at')
       .eq('user_email', emailLower)
       .order('created_at', { ascending: true });
 
@@ -409,8 +409,8 @@ async function getSubscriptionHistory(email) {
       }
 
       // Cancelled event
-      if (sub.canceled_at) {
-        const canceledDate = new Date(sub.canceled_at).toISOString().split('T')[0];
+      if (sub.cancelled_at) {
+        const canceledDate = new Date(sub.cancelled_at).toISOString().split('T')[0];
         events.push({
           date: canceledDate,
           plan: plan,
@@ -438,9 +438,9 @@ async function getInstallActivity(email) {
   try {
     const emailLower = email.toLowerCase();
 
-    // Query plugin_installations
+    // Query plugin_identities (plugin_installations table doesn't exist)
     const { data: installations, error } = await supabase
-      .from('plugin_installations')
+      .from('plugin_identities')
       .select('plugin_slug, created_at')
       .eq('email', emailLower)
       .order('created_at', { ascending: true });
@@ -599,12 +599,12 @@ async function getPluginActivity(email) {
   try {
     const emailLower = email.toLowerCase();
 
-    // Query plugin_installations
+    // Query plugin_identities (plugin_installations table doesn't exist)
     const { data: installations, error } = await supabase
-      .from('plugin_installations')
-      .select('plugin_slug, last_seen_at, site_url')
+      .from('plugin_identities')
+      .select('plugin_slug, updated_at, site_url')
       .eq('email', emailLower)
-      .order('last_seen_at', { ascending: false });
+      .order('updated_at', { ascending: false });
 
     if (error) {
       console.error('[DashboardChartsService] Error fetching plugin activity:', error);
@@ -612,9 +612,10 @@ async function getPluginActivity(email) {
     }
 
     // Format to match spec
+    // Map updated_at to last_seen_at for API compatibility (plugin_identities uses updated_at)
     return (installations || []).map((installation) => ({
       plugin_slug: installation.plugin_slug,
-      last_seen_at: installation.last_seen_at,
+      last_seen_at: installation.updated_at || installation.last_seen_at,
       site_url: installation.site_url || null,
     }));
   } catch (err) {

@@ -588,7 +588,10 @@ const { webhookMiddleware, webhookHandler } = require('./src/stripe/webhooks');
 app.post('/stripe/webhook', webhookMiddleware, webhookHandler);
 app.use('/api/licenses', licensesRoutes);
 app.use('/api/license', licenseRoutes);
-app.use('/api/organization', authenticateToken, organizationRoutes);
+const { router: organizationRouter, getMyOrganizations } = require('./routes/organization');
+app.use('/api/organization', authenticateToken, organizationRouter);
+// Add /organizations route at root level (alias for /api/organization/my-organizations)
+app.get('/organizations', authenticateToken, getMyOrganizations);
 app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
 app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
 app.use('/waitlist', waitlistRoutes); // Waitlist routes

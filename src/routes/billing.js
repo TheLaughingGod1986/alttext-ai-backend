@@ -660,5 +660,73 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
   }
 });
 
+/**
+ * GET /billing/history
+ * Get billing history (invoices and transactions) for the authenticated user
+ */
+router.get('/history', billingRateLimiter, authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
+    }
+
+    // Get subscription to find Stripe customer ID
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    
+    let invoices = [];
+    let transactions = [];
+
+    // Get invoices from Stripe if customer exists
+    if (subscriptionResult.success && subscriptionResult.subscription?.stripe_customer_id) {
+      const stripe = getStripe();
+      if (stripe) {
+        try {
+          const stripeInvoices = await stripe.invoices.list({
+            customer: subscriptionResult.subscription.stripe_customer_id,
+            limit: 100,
+          });
+          invoices = stripeInvoices.data || [];
+        } catch (stripeError) {
+          console.error('[Billing Routes] Error fetching Stripe invoices:', stripeError);
+        }
+      }
+    }
+
+    // Get credit transactions
+    if (creditsService) {
+      try {
+        const identityResult = await creditsService.getOrCreateIdentity(email);
+        if (identityResult.success && identityResult.identityId) {
+          const historyResult = await creditsService.getTransactionHistory(identityResult.identityId, 1, 100);
+          if (historyResult.success) {
+            transactions = historyResult.transactions || [];
+          }
+        }
+      } catch (transError) {
+        console.error('[Billing Routes] Error fetching transactions:', transError);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      invoices: invoices,
+      transactions: transactions,
+    });
+  } catch (error) {
+    console.error('[Billing Routes] Error getting billing history:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to get billing history',
+      invoices: [],
+      transactions: [],
+    });
+  }
+});
+
 module.exports = router;
 

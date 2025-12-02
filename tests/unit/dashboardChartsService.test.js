@@ -229,7 +229,7 @@ describe('Dashboard Charts Service', () => {
             status: 'active',
             created_at: new Date(Date.now() - 86400000 * 30).toISOString(),
             updated_at: new Date().toISOString(),
-            canceled_at: null,
+            cancelled_at: null,
           },
         ],
         error: null,
@@ -249,7 +249,7 @@ describe('Dashboard Charts Service', () => {
 
   describe('getInstallActivity', () => {
     it('should return install activity by date and plugin', async () => {
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: [
           {
             plugin_slug: 'alttext-ai',
@@ -418,17 +418,17 @@ describe('Dashboard Charts Service', () => {
       const mockInstallations = [
         {
           plugin_slug: 'alttext-ai',
-          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           site_url: 'https://example.com',
         },
         {
           plugin_slug: 'seo-ai-meta',
-          last_seen_at: new Date(Date.now() - 86400000).toISOString(),
+          updated_at: new Date(Date.now() - 86400000).toISOString(),
           site_url: 'https://test.com',
         },
       ];
 
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: mockInstallations,
         error: null,
       });
@@ -444,7 +444,7 @@ describe('Dashboard Charts Service', () => {
     });
 
     it('should return empty array when no installations found', async () => {
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: [],
         error: null,
       });
@@ -459,12 +459,12 @@ describe('Dashboard Charts Service', () => {
       const mockInstallations = [
         {
           plugin_slug: 'alttext-ai',
-          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
           site_url: null,
         },
       ];
 
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: mockInstallations,
         error: null,
       });
@@ -475,7 +475,7 @@ describe('Dashboard Charts Service', () => {
     });
 
     it('should return empty array on database error', async () => {
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: null,
         error: { message: 'Database error' },
       });
@@ -509,7 +509,7 @@ describe('Dashboard Charts Service', () => {
         error: null,
       });
 
-      supabaseMock.__queueResponse('plugin_installations', 'select', {
+      supabaseMock.__queueResponse('plugin_identities', 'select', {
         data: [],
         error: null,
       });
@@ -574,7 +574,7 @@ describe('Dashboard Charts Service', () => {
       supabaseMock.__queueResponse('usage_logs', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('credits_transactions', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('subscriptions', 'select', { data: [], error: null });
-      supabaseMock.__queueResponse('plugin_installations', 'select', { data: [], error: null });
+      supabaseMock.__queueResponse('plugin_identities', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('analytics_events', 'select', { data: [], error: null });
       supabaseMock.__queueResponse('identities', 'select', { data: [{ credits_balance: 0 }], error: null });
 

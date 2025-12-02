@@ -314,6 +314,255 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * GET /me/licenses
+ * Get all licenses for the authenticated user
+ */
+router.get('/me/licenses', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
+    }
+
+    // Get licenses linked to user_id first
+    let licenses = [];
+    const { data: userLicenses, error: userLicensesError } = await supabase
+      .from('licenses')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (!userLicensesError && userLicenses) {
+      licenses = userLicenses;
+    }
+
+    // Also get licenses from sites linked to user's email via plugin_identities
+    const { data: identities, error: identityError } = await supabase
+      .from('plugin_identities')
+      .select('site_url')
+      .eq('email', email.toLowerCase());
+
+    if (!identityError && identities && identities.length > 0) {
+      const siteUrls = identities.map(i => i.site_url).filter(Boolean);
+      if (siteUrls.length > 0) {
+        const { data: sites, error: sitesError } = await supabase
+          .from('sites')
+          .select('license_key')
+          .in('site_url', siteUrls)
+          .not('license_key', 'is', null);
+
+        if (!sitesError && sites && sites.length > 0) {
+          const licenseKeys = [...new Set(sites.map(s => s.license_key).filter(Boolean))];
+          if (licenseKeys.length > 0) {
+            const { data: siteLicenses, error: siteLicensesError } = await supabase
+              .from('licenses')
+              .select('*')
+              .in('license_key', licenseKeys)
+              .order('created_at', { ascending: false });
+
+            if (!siteLicensesError && siteLicenses) {
+              // Merge and deduplicate by license_key
+              const existingKeys = new Set(licenses.map(l => l.license_key));
+              const newLicenses = siteLicenses.filter(l => !existingKeys.has(l.license_key));
+              licenses = [...licenses, ...newLicenses];
+            }
+          }
+        }
+      }
+    }
+
+    const error = userLicensesError || identityError;
+
+    if (error) {
+      console.error('[Dashboard] Error fetching licenses:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch licenses',
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      licenses: licenses || [],
+    });
+  } catch (err) {
+    console.error('[Dashboard] GET /me/licenses error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load licenses',
+    });
+  }
+});
+
+/**
+ * GET /me/sites
+ * Get all sites for the authenticated user
+ */
+router.get('/me/sites', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
+    }
+
+    // Get sites linked to user via plugin_identities
+    const { data: identities, error: identityError } = await supabase
+      .from('plugin_identities')
+      .select('site_url')
+      .eq('email', email.toLowerCase());
+
+    if (identityError) {
+      console.error('[Dashboard] Error fetching identities:', identityError);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch sites',
+      });
+    }
+
+    // Get unique site URLs and fetch site data
+    const siteUrls = [...new Set((identities || []).map(i => i.site_url).filter(Boolean))];
+    
+    let sites = [];
+    if (siteUrls.length > 0) {
+      const { data: sitesData, error: sitesError } = await supabase
+        .from('sites')
+        .select('*')
+        .in('site_url', siteUrls)
+        .order('created_at', { ascending: false });
+
+      if (sitesError) {
+        console.error('[Dashboard] Error fetching sites:', sitesError);
+      } else {
+        sites = sitesData || [];
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      sites: sites,
+    });
+  } catch (err) {
+    console.error('[Dashboard] GET /me/sites error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load sites',
+    });
+  }
+});
+
+/**
+ * GET /me/subscriptions
+ * Get all subscriptions for the authenticated user
+ */
+router.get('/me/subscriptions', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
+    }
+
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    
+    if (!subscriptionResult.success) {
+      return res.status(200).json({
+        ok: true,
+        subscriptions: [],
+      });
+    }
+
+    // Get all subscriptions for this email
+    const { data: subscriptions, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_email', email.toLowerCase())
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Dashboard] Error fetching subscriptions:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch subscriptions',
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      subscriptions: subscriptions || [],
+    });
+  } catch (err) {
+    console.error('[Dashboard] GET /me/subscriptions error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load subscriptions',
+    });
+  }
+});
+
+/**
+ * GET /me/invoices
+ * Get all invoices for the authenticated user
+ */
+router.get('/me/invoices', authenticateToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    
+    if (!email) {
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
+    }
+
+    // Get Stripe customer ID from subscription
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    
+    if (!subscriptionResult.success || !subscriptionResult.subscription?.stripe_customer_id) {
+      return res.status(200).json({
+        ok: true,
+        invoices: [],
+      });
+    }
+
+    const stripe = require('../utils/stripeClient').getStripe();
+    if (!stripe) {
+      return res.status(200).json({
+        ok: true,
+        invoices: [],
+      });
+    }
+
+    // Fetch invoices from Stripe
+    const invoices = await stripe.invoices.list({
+      customer: subscriptionResult.subscription.stripe_customer_id,
+      limit: 100,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      invoices: invoices.data || [],
+    });
+  } catch (err) {
+    console.error('[Dashboard] GET /me/invoices error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load invoices',
+    });
+  }
+});
+
 module.exports = {
   router,
   clearCachedDashboard, // Export for use in other routes that update dashboard data
