@@ -10,7 +10,24 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
-const { supabase } = require('./db/supabase-client');
+
+// Safely import supabase - handle dependency loading issues
+let supabase;
+try {
+  const supabaseClient = require('./db/supabase-client');
+  supabase = supabaseClient.supabase;
+} catch (error) {
+  const logger = require('./src/utils/logger');
+  logger.error('Failed to load Supabase client:', error.message);
+  // Create a mock supabase object to prevent crashes
+  supabase = {
+    from: () => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) }) }),
+      insert: () => ({ select: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) }),
+      update: () => ({ eq: () => Promise.resolve({ data: null, error: { message: 'Supabase not available' } }) })
+    })
+  };
+}
 const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./src/middleware/dual-auth');
 const requireSubscription = require('./src/middleware/requireSubscription');
