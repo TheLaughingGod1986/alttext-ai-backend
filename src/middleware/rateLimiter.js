@@ -36,12 +36,28 @@ function createRateLimiter(options = {}) {
 
 /**
  * Rate limiter by IP address
+ * Skips rate limiting for authenticated requests (JWT, site hash, or license key)
+ * This allows authenticated requests to bypass IP-based rate limiting
  */
 function rateLimitByIp(windowMs = 15 * 60 * 1000, max = 100, message) {
   return createRateLimiter({
     windowMs,
     max,
     message: message || `Too many requests from this IP. Limit: ${max} requests per ${windowMs / 1000 / 60} minutes.`,
+    skip: (req) => {
+      // Skip rate limiting if request has authentication headers (runs before auth middleware)
+      const hasJWT = req.headers['authorization'] && req.headers['authorization'].startsWith('Bearer ');
+      const hasSiteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+      const hasLicenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
+      
+      // Skip rate limiting for authenticated requests
+      // Note: This runs before authentication middleware, so we check headers directly
+      if (hasJWT || hasSiteHash || hasLicenseKey) {
+        return true; // Skip rate limiting
+      }
+      
+      return false; // Apply rate limiting
+    },
   });
 }
 
