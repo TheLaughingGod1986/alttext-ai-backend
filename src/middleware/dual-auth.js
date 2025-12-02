@@ -267,6 +267,18 @@ async function authenticateBySiteHashForQuota(req, res, next) {
     // Get license if exists
     const license = await siteService.getSiteLicense(siteHash);
 
+    // Debug logging for site and license
+    console.log('[AuthenticateBySiteHashForQuota] Site authentication:', {
+      siteHash: siteHash.substring(0, 8) + '...',
+      siteId: site?.id,
+      siteLicenseKey: site?.license_key ? `${site.license_key.substring(0, 8)}...` : 'none',
+      hasLicense: !!license,
+      licenseKey: license?.license_key ? `${license.license_key.substring(0, 8)}...` : 'none',
+      quotaRemaining: usage?.remaining || 0,
+      quotaLimit: usage?.limit || 0,
+      plan: usage?.plan || 'unknown'
+    });
+
     // Set request properties
     req.site = site;
     req.siteUsage = usage;
@@ -310,6 +322,18 @@ async function combinedAuth(req, res, next) {
   const jwtToken = authHeader && authHeader.split(' ')[1];
   const licenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+
+  // Debug logging for request authentication
+  console.log('[CombinedAuth] Request authentication:', {
+    hasJWT: !!jwtToken,
+    hasLicenseKey: !!licenseKey,
+    licenseKeySource: req.headers['x-license-key'] ? 'header-X-License-Key' : (req.body?.licenseKey ? 'body-licenseKey' : 'none'),
+    licenseKeyPreview: licenseKey ? `${licenseKey.substring(0, 8)}...${licenseKey.substring(licenseKey.length - 4)}` : 'none',
+    hasSiteHash: !!siteHash,
+    siteHash: siteHash || 'none',
+    path: req.path,
+    method: req.method
+  });
 
   // If JWT or license key is provided, authenticate with that first
   if (jwtToken || licenseKey) {
