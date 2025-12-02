@@ -681,34 +681,12 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
       }
     }
     
-    // Check quota by site_hash (CRITICAL: Track by site, not by user)
-    // This is a secondary check for site-based quota (for non-authenticated requests)
-    const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
+    // Site and quota are already validated by requireSubscription middleware
+    // Use req.siteUsage which was set by combinedAuth/authenticateBySiteHashForQuota
+    // No need to re-check quota - middleware already validated access
     
-    // Get or create site
-    await siteService.getOrCreateSite(siteHash, siteUrl);
-    
-    // Check site quota (only if user is not authenticated, or as a fallback)
-    const quotaCheck = await siteService.checkSiteQuota(siteHash);
-    
-    if (!quotaCheck.hasQuota) {
-      console.log(`[Generate] Quota exceeded for site ${siteHash}: ${quotaCheck.used}/${quotaCheck.limit}`);
-      return res.status(429).json({
-        ok: false,
-        code: 'NO_ACCESS',
-        reason: 'plan_limit',
-        message: 'Quota exceeded',
-        usage: {
-          used: quotaCheck.used,
-          limit: quotaCheck.limit,
-          plan: quotaCheck.plan,
-          resetDate: quotaCheck.resetDate || getNextResetDate(),
-        },
-      });
-    }
-    
-    // Get site usage for response
-    const siteUsage = await siteService.getSiteUsage(siteHash);
+    // Get site usage from middleware-set value, or fetch if not set (fallback)
+    const siteUsage = req.siteUsage || await siteService.getSiteUsage(siteHash);
     
     // Prepare limits object for compatibility with existing code
     const limits = {
