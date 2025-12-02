@@ -14,6 +14,26 @@ const { rateLimitByUser } = require('../src/middleware/rateLimiter');
 
 const router = express.Router();
 
+// Simple in-memory cache for /auth/me responses
+// Key: user email, Value: { data, timestamp }
+const authMeCache = new Map();
+const AUTH_ME_CACHE_TTL = 5000; // 5 seconds - short cache to reduce duplicate requests
+
+function getCachedAuthMe(email) {
+  const cached = authMeCache.get(email);
+  if (cached && Date.now() - cached.timestamp < AUTH_ME_CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedAuthMe(email, data) {
+  authMeCache.set(email, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
 /**
  * Generate a secure random token for password reset
  */
@@ -459,6 +479,13 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
     }
 
     const emailLower = email.toLowerCase();
+    
+    // Check cache first (5 second TTL to reduce duplicate requests during plugin initialization)
+    const cached = getCachedAuthMe(emailLower);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const identityId = req.user.identityId || req.user.id;
 
     // Fetch all data in parallel
@@ -507,6 +534,9 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
         lastSeenAt: identity?.last_seen_at,
       }
     };
+
+    // Cache response for 5 seconds to reduce duplicate requests
+    setCachedAuthMe(emailLower, response);
 
     res.json(response);
 
