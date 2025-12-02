@@ -164,10 +164,10 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
+      // Don't set X-Site-Hash to test pure user-level access control
       const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
-        .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           service: 'alttext-ai',
@@ -196,10 +196,10 @@ describe('Access Control Integration Tests', () => {
         balance: 0,
       });
 
+      // Don't set X-Site-Hash to test pure user-level access control
       const response = await request(server)
         .post('/api/generate')
         .set('Authorization', `Bearer ${token}`)
-        .set('X-Site-Hash', 'test-site-hash')
         .send({
           image_data: { url: 'https://example.com/image.jpg' },
           service: 'alttext-ai',
