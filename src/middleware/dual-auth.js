@@ -7,6 +7,7 @@
 const { supabase } = require('../../db/supabase-client');
 const { verifyToken } = require('../../auth/jwt');
 const siteService = require('../services/siteService');
+const logger = require('../utils/logger');
 
 /**
  * Authenticate using either JWT token OR license key
@@ -66,30 +67,151 @@ async function dualAuthenticate(req, res, next) {
 
   // Try license key authentication
   const licenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
+  const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
 
   if (licenseKey) {
     try {
-      const { data: organization, error: orgError } = await supabase
+      // Trim whitespace from license key
+      const trimmedLicenseKey = licenseKey.trim();
+      
+      // Log the validation attempt
+      logger.info('[DualAuth] Validating license key', {
+        keyPreview: `${trimmedLicenseKey.substring(0, 8)}...${trimmedLicenseKey.substring(trimmedLicenseKey.length - 4)}`,
+        keyLength: trimmedLicenseKey.length,
+        hasSiteHash: !!siteHash,
+        siteHash: siteHash ? `${siteHash.substring(0, 8)}...` : 'none'
+      });
+
+      // First, try to find in organizations table
+      let organization = null;
+      const { data: orgData, error: orgError } = await supabase
         .from('organizations')
         .select('*')
-        .eq('license_key', licenseKey)
+        .eq('license_key', trimmedLicenseKey)
         .single();
 
-      if (orgError || !organization) {
-        return res.status(401).json({
-          error: 'Invalid license key',
-          code: 'INVALID_LICENSE'
+      if (!orgError && orgData) {
+        organization = orgData;
+        logger.info('[DualAuth] Found organization by license key', {
+          orgId: organization.id,
+          orgName: organization.name,
+          plan: organization.plan
         });
       }
 
-      req.organization = organization;
+      // If not found in organizations, try licenses table
+      let license = null;
+      if (!organization) {
+        const { data: licenseData, error: licenseError } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('license_key', trimmedLicenseKey)
+          .single();
+
+        if (!licenseError && licenseData) {
+          license = licenseData;
+          logger.info('[DualAuth] Found license by license key', {
+            licenseId: license.id,
+            licenseKey: `${license.license_key.substring(0, 8)}...`,
+            status: license.status
+          });
+        }
+      }
+
+      // If neither found, return error
+      if (!organization && !license) {
+        logger.error('[DualAuth] License key not found in database', {
+          keyPreview: `${trimmedLicenseKey.substring(0, 8)}...${trimmedLicenseKey.substring(trimmedLicenseKey.length - 4)}`,
+          checkedOrganizations: true,
+          checkedLicenses: true
+        });
+        return res.status(401).json({
+          error: 'License key not found in database',
+          code: 'LICENSE_NOT_FOUND',
+          reason: 'license_not_found',
+          message: 'The provided license key does not exist in our system'
+        });
+      }
+
+      // If site hash is provided, verify license is associated with this site
+      if (siteHash) {
+        const trimmedSiteHash = siteHash.trim();
+        
+        // Check if site exists and has this license key
+        const { data: site, error: siteError } = await supabase
+          .from('sites')
+          .select('license_key, organizationId')
+          .eq('site_hash', trimmedSiteHash)
+          .single();
+
+        if (siteError || !site) {
+          logger.warn('[DualAuth] Site not found for site hash', {
+            siteHash: `${trimmedSiteHash.substring(0, 8)}...`,
+            licenseKey: `${trimmedLicenseKey.substring(0, 8)}...`
+          });
+          // Don't fail here - site might be created later
+        } else {
+          // Verify license key matches site's license key
+          if (site.license_key && site.license_key !== trimmedLicenseKey) {
+            logger.error('[DualAuth] License key mismatch with site', {
+              providedKey: `${trimmedLicenseKey.substring(0, 8)}...`,
+              siteKey: site.license_key ? `${site.license_key.substring(0, 8)}...` : 'none',
+              siteHash: `${trimmedSiteHash.substring(0, 8)}...`
+            });
+            return res.status(403).json({
+              error: 'License key is not associated with this site',
+              code: 'LICENSE_SITE_MISMATCH',
+              reason: 'license_site_mismatch',
+              message: 'The provided license key is not associated with the site hash provided'
+            });
+          }
+
+          // If site has organizationId, verify it matches
+          if (organization && site.organizationId && site.organizationId !== organization.id) {
+            logger.error('[DualAuth] Organization mismatch with site', {
+              licenseOrgId: organization.id,
+              siteOrgId: site.organizationId,
+              siteHash: `${trimmedSiteHash.substring(0, 8)}...`
+            });
+            return res.status(403).json({
+              error: 'License key organization does not match site organization',
+              code: 'LICENSE_ORG_MISMATCH',
+              reason: 'license_org_mismatch',
+              message: 'The license key belongs to a different organization than the site'
+            });
+          }
+
+          logger.info('[DualAuth] License key validated and associated with site', {
+            siteHash: `${trimmedSiteHash.substring(0, 8)}...`,
+            licenseKey: `${trimmedLicenseKey.substring(0, 8)}...`,
+            hasOrganization: !!organization,
+            hasLicense: !!license
+          });
+        }
+      }
+
+      // Set request properties
+      if (organization) {
+        req.organization = organization;
+      }
+      if (license) {
+        req.license = license;
+      }
       req.authMethod = 'license';
+      req.licenseKey = trimmedLicenseKey;
+      
       return next();
 
     } catch (error) {
+      logger.error('[DualAuth] License key validation error', {
+        error: error.message,
+        stack: error.stack
+      });
       return res.status(500).json({
         error: 'Authentication error',
-        code: 'AUTH_ERROR'
+        code: 'AUTH_ERROR',
+        reason: 'server_error',
+        message: error.message
       });
     }
   }
@@ -147,19 +269,50 @@ async function optionalDualAuth(req, res, next) {
 
   if (licenseKey) {
     try {
-      const { data: organization, error: orgError } = await supabase
+      // Trim whitespace from license key
+      const trimmedLicenseKey = licenseKey.trim();
+      
+      // First, try to find in organizations table
+      let organization = null;
+      const { data: orgData, error: orgError } = await supabase
         .from('organizations')
         .select('*')
-        .eq('license_key', licenseKey)
+        .eq('license_key', trimmedLicenseKey)
         .single();
 
-      if (!orgError && organization) {
+      if (!orgError && orgData) {
+        organization = orgData;
+      }
+
+      // If not found in organizations, try licenses table
+      let license = null;
+      if (!organization) {
+        const { data: licenseData, error: licenseError } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('license_key', trimmedLicenseKey)
+          .single();
+
+        if (!licenseError && licenseData) {
+          license = licenseData;
+        }
+      }
+
+      // Set request properties if found
+      if (organization) {
         req.organization = organization;
         req.authMethod = 'license';
+        req.licenseKey = trimmedLicenseKey;
+      }
+      if (license) {
+        req.license = license;
+        req.authMethod = 'license';
+        req.licenseKey = trimmedLicenseKey;
       }
 
     } catch (error) {
       // Ignore errors in optional auth
+      logger.warn('[OptionalDualAuth] License key validation error (ignored)', { error: error.message });
     }
   }
 
@@ -234,7 +387,7 @@ async function authenticateBySiteHash(req, res, next) {
     next();
 
   } catch (error) {
-    console.error('Error authenticating by site hash:', error);
+    logger.error('Error authenticating by site hash', { error: error.message, stack: error.stack });
     return res.status(500).json({
       error: 'Authentication error',
       code: 'AUTH_ERROR'
@@ -268,7 +421,7 @@ async function authenticateBySiteHashForQuota(req, res, next) {
     const license = await siteService.getSiteLicense(siteHash);
 
     // Debug logging for site and license
-    console.log('[AuthenticateBySiteHashForQuota] Site authentication:', {
+    logger.info('[AuthenticateBySiteHashForQuota] Site authentication', {
       siteHash: siteHash.substring(0, 8) + '...',
       siteId: site?.id,
       siteLicenseKey: site?.license_key ? `${site.license_key.substring(0, 8)}...` : 'none',
@@ -302,7 +455,7 @@ async function authenticateBySiteHashForQuota(req, res, next) {
     next();
 
   } catch (error) {
-    console.error('Error authenticating by site hash for quota:', error);
+    logger.error('Error authenticating by site hash for quota', { error: error.message, stack: error.stack });
     return res.status(500).json({
       error: 'Authentication error',
       code: 'AUTH_ERROR',
@@ -324,7 +477,7 @@ async function combinedAuth(req, res, next) {
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
 
   // Debug logging for request authentication
-  console.log('[CombinedAuth] Request authentication:', {
+  logger.info('[CombinedAuth] Request authentication', {
     hasJWT: !!jwtToken,
     hasLicenseKey: !!licenseKey,
     licenseKeySource: req.headers['x-license-key'] ? 'header-X-License-Key' : (req.body?.licenseKey ? 'body-licenseKey' : 'none'),
@@ -355,7 +508,7 @@ async function combinedAuth(req, res, next) {
           if (err2) {
             // If site hash setup fails, continue anyway (JWT auth succeeded)
             // Site hash is mainly for quota tracking, not required if JWT auth worked
-            console.warn('[CombinedAuth] Site hash setup failed, but JWT auth succeeded:', err2.message);
+            logger.warn('[CombinedAuth] Site hash setup failed, but JWT auth succeeded', { error: err2.message });
           }
           // Continue to next middleware regardless
           next();
