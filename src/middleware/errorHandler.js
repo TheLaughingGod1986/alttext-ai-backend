@@ -6,7 +6,16 @@
 
 const errorCodes = require('../constants/errorCodes');
 const logger = require('../utils/logger');
-const { detectSchemaError } = require('../../db/supabase-client');
+
+// Safely import detectSchemaError - it may not be available in all environments
+let detectSchemaError;
+try {
+  const supabaseClient = require('../../db/supabase-client');
+  detectSchemaError = supabaseClient.detectSchemaError;
+} catch (error) {
+  // If import fails, define a no-op function
+  detectSchemaError = () => null;
+}
 
 /**
  * Map error codes to reasons

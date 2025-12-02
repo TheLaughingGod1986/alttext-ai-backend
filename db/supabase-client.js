@@ -11,8 +11,17 @@
  */
 
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
 const logger = require('../src/utils/logger');
+
+// Safely import Supabase client - may fail in some environments
+let createClient;
+try {
+  const supabaseJs = require('@supabase/supabase-js');
+  createClient = supabaseJs.createClient;
+} catch (error) {
+  logger.warn('Failed to load @supabase/supabase-js:', error.message);
+  createClient = null;
+}
 
 // In tests, use the Jest mock and expose the same helpers to keep imports consistent.
 if (process.env.NODE_ENV === 'test') {
@@ -31,10 +40,23 @@ if (process.env.NODE_ENV === 'test') {
     return data;
   }
 
+  /**
+   * Detect if a Supabase error is a database schema error
+   * Simplified version for test mode
+   */
+  function detectSchemaError(error) {
+    if (!error || !error.message) {
+      return null;
+    }
+    // Return null in test mode - schema errors are handled differently in tests
+    return null;
+  }
+
   module.exports = {
     supabase: mock.supabase,
     handleSupabaseError,
     handleSupabaseResponse,
+    detectSchemaError,
     __queueResponse: mock.__queueResponse,
     __reset: mock.__reset,
     __getInsertedData: mock.__getInsertedData,
@@ -48,6 +70,10 @@ if (process.env.NODE_ENV === 'test') {
 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is required');
+  }
+
+  if (!createClient) {
+    throw new Error('@supabase/supabase-js could not be loaded. Check dependencies.');
   }
 
   // Create Supabase client with service role key for server-side operations
