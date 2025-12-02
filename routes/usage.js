@@ -7,7 +7,7 @@ const express = require('express');
 const { supabase, handleSupabaseResponse } = require('../db/supabase-client');
 const { optionalAuth, authenticateToken } = require('../auth/jwt');
 const siteService = require('../src/services/siteService');
-const licenseService = require('../services/licenseService');
+const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
 
 const router = express.Router();
@@ -37,6 +37,8 @@ router.get('/', optionalAuth, async (req, res) => {
     const site = await siteService.getOrCreateSite(siteHash, siteUrl);
 
     // Get site usage (this handles monthly resets automatically)
+    // This is the same function used by authenticateBySiteHashForQuota middleware
+    // to ensure consistency between /usage and /api/generate endpoints
     const usage = await siteService.getSiteUsage(siteHash);
 
     // Determine quota source (priority order):
@@ -48,35 +50,57 @@ router.get('/', optionalAuth, async (req, res) => {
     let licenseKey = null;
     let quotaSource = 'site-free'; // Default to site-based free quota
 
-    // Check for X-License-Key header
-    const headerLicenseKey = req.headers['x-license-key'];
+    // Check for X-License-Key header (same logic as dualAuthenticate middleware)
+    const headerLicenseKey = (req.headers['x-license-key'] || req.body?.licenseKey)?.trim();
     if (headerLicenseKey) {
-      const { data: licenseData, error: licenseError } = await supabase
-        .from('licenses')
+      // First, try to find in organizations table
+      let organization = null;
+      const { data: orgData, error: orgError } = await supabase
+        .from('organizations')
         .select('*')
         .eq('license_key', headerLicenseKey)
         .single();
 
-      if (!licenseError && licenseData) {
-        license = licenseData;
+      if (!orgError && orgData) {
+        organization = orgData;
         licenseKey = headerLicenseKey;
         quotaSource = 'license';
-        // Update site with license key if different
-        if (site.license_key !== headerLicenseKey) {
-          await supabase
-            .from('sites')
-            .update({
-              license_key: headerLicenseKey,
-              plan: licenseData.plan || 'free',
-              token_limit: licenseData.token_limit || 50,
-              updated_at: new Date().toISOString()
-            })
-            .eq('site_hash', siteHash);
+      }
+
+      // If not found in organizations, try licenses table
+      if (!organization) {
+        const { data: licenseData, error: licenseError } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('license_key', headerLicenseKey)
+          .single();
+
+        if (!licenseError && licenseData) {
+          license = licenseData;
+          licenseKey = headerLicenseKey;
+          quotaSource = 'license';
+          
+          // Update site with license key if different (same as authenticateBySiteHashForQuota)
+          if (site.license_key !== headerLicenseKey) {
+            await supabase
+              .from('sites')
+              .update({
+                license_key: headerLicenseKey,
+                plan: licenseData.plan || 'free',
+                token_limit: licenseData.token_limit || 50,
+                updated_at: new Date().toISOString()
+              })
+              .eq('site_hash', siteHash);
+            
+            // Re-fetch usage after updating site (to get updated quota)
+            const updatedUsage = await siteService.getSiteUsage(siteHash);
+            Object.assign(usage, updatedUsage);
+          }
         }
       }
     }
 
-    // If no license key in header, check site's license
+    // If no license key in header, check site's license (same as authenticateBySiteHashForQuota)
     if (!license && site.license_key) {
       license = await siteService.getSiteLicense(siteHash);
       if (license) {
@@ -86,6 +110,9 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     // Check for JWT authentication (Authorization header)
+    // Note: This override logic is only for display purposes in /usage endpoint
+    // The /api/generate endpoint uses requireSubscription which checks req.siteUsage
+    // set by authenticateBySiteHashForQuota, which doesn't apply user account overrides
     if (!license && req.user && req.user.id) {
       // User account quota - get user's plan
       const { data: user, error: userError } = await supabase
@@ -100,7 +127,8 @@ router.get('/', optionalAuth, async (req, res) => {
         const serviceLimits = siteService.PLAN_LIMITS[user.service || 'alttext-ai'] || siteService.PLAN_LIMITS['alttext-ai'];
         const userLimit = serviceLimits[user.plan] || serviceLimits.free;
         
-        // Override usage with user's quota if higher
+        // Override usage with user's quota if higher (for display only)
+        // Note: This doesn't affect actual quota enforcement in /api/generate
         if (userLimit > usage.limit) {
           usage.limit = userLimit;
           usage.remaining = Math.max(0, userLimit - usage.used);

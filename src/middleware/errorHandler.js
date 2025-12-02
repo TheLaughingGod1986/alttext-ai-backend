@@ -5,6 +5,8 @@
  */
 
 const errorCodes = require('../constants/errorCodes');
+const logger = require('../utils/logger');
+const { detectSchemaError } = require('../../db/supabase-client');
 
 /**
  * Map error codes to reasons
@@ -17,6 +19,7 @@ function getReasonForCode(code) {
     'NOT_FOUND': 'resource_not_found',
     'INTERNAL_ERROR': 'server_error',
     'NO_ACCESS': 'access_denied',
+    'DATABASE_SCHEMA_ERROR': 'database_error',
   };
   return reasonMap[code] || 'unknown_error';
 }
@@ -26,17 +29,34 @@ function getReasonForCode(code) {
  * Should be registered last, after all routes
  */
 function errorHandler(err, req, res, next) {
+  // Check if this is a database schema error
+  const schemaError = err.isSchemaError ? err.schemaErrorDetails : detectSchemaError(err.originalError || err);
+
   // Log full error details server-side
-  console.error('[ErrorHandler] Unhandled error:', {
-    message: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method,
-    ip: req.ip,
-    userAgent: req.get('user-agent'),
-    userId: req.user?.id,
-    timestamp: new Date().toISOString(),
-  });
+  if (schemaError) {
+    logger.error('[ErrorHandler] Database schema error:', {
+      type: schemaError.type,
+      resource: schemaError.resource,
+      code: schemaError.code,
+      hint: schemaError.hint,
+      originalMessage: schemaError.originalMessage,
+      url: req.url,
+      method: req.method,
+      ip: req.ip,
+      timestamp: new Date().toISOString(),
+    });
+  } else {
+    logger.error('[ErrorHandler] Unhandled error:', {
+      message: err.message,
+      stack: err.stack,
+      url: req.url,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+      userId: req.user?.id,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   // Determine status code
   let statusCode = err.statusCode || err.status || 500;
@@ -44,9 +64,42 @@ function errorHandler(err, req, res, next) {
   // Determine error message
   let errorMessage = 'Internal server error';
   let errorCode = 'INTERNAL_ERROR';
+  let errorDetails = null;
 
+  // Handle database schema errors
+  if (schemaError) {
+    statusCode = 500;
+    errorCode = 'DATABASE_SCHEMA_ERROR';
+    
+    // Create user-friendly error message
+    if (schemaError.type === 'missing_table') {
+      errorMessage = schemaError.resource
+        ? `Database table "${schemaError.resource}" does not exist. Please run database migrations.`
+        : 'Database table does not exist. Please run database migrations.';
+    } else if (schemaError.type === 'missing_column') {
+      errorMessage = schemaError.resource
+        ? `Database column "${schemaError.resource}" does not exist. Please run database migrations.`
+        : 'Database column does not exist. Please run database migrations.';
+    } else if (schemaError.type === 'permission_denied') {
+      errorMessage = schemaError.resource
+        ? `Permission denied for table "${schemaError.resource}". Please check database permissions.`
+        : 'Database permission denied. Please check database permissions.';
+    } else if (schemaError.type === 'syntax_error') {
+      errorMessage = 'Database query syntax error. Please check the query.';
+    } else {
+      errorMessage = 'Database schema error. Please run database migrations.';
+    }
+
+    // Include helpful details
+    errorDetails = {
+      type: schemaError.type,
+      resource: schemaError.resource,
+      hint: schemaError.hint,
+      code: schemaError.code
+    };
+  }
   // Handle specific error types
-  if (err.name === 'ValidationError') {
+  else if (err.name === 'ValidationError') {
     statusCode = 400;
     errorMessage = err.message || 'Validation failed';
     errorCode = 'VALIDATION_ERROR';
@@ -81,14 +134,28 @@ function errorHandler(err, req, res, next) {
     message: errorMessage,
   };
 
+  // Include schema error details if available
+  if (errorDetails) {
+    errorResponse.details = errorDetails;
+  }
+
   // Include stack trace in development only
   if (process.env.NODE_ENV !== 'production') {
     errorResponse.stack = err.stack;
-    errorResponse.details = {
-      url: req.url,
-      method: req.method,
-      statusCode,
-    };
+    if (!errorDetails) {
+      errorResponse.details = {
+        url: req.url,
+        method: req.method,
+        statusCode,
+      };
+    } else {
+      errorResponse.details = {
+        ...errorResponse.details,
+        url: req.url,
+        method: req.method,
+        statusCode,
+      };
+    }
   }
 
   // Include request ID if available

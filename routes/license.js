@@ -5,8 +5,10 @@
 
 const express = require('express');
 const { supabase } = require('../db/supabase-client');
+const logger = require('../src/utils/logger');
 const { randomUUID } = require('crypto');
 const { authenticateToken } = require('../auth/jwt');
+const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -48,10 +50,7 @@ router.post('/activate', async (req, res) => {
 
     // Validate required fields
     if (!licenseKey || !siteHash) {
-      return res.status(400).json({
-        success: false,
-        error: 'License key and site hash are required'
-      });
+      return httpErrors.missingField(res, 'License key and site hash');
     }
 
     // Find organization by license key
@@ -62,10 +61,7 @@ router.post('/activate', async (req, res) => {
       .single();
 
     if (orgError || !organization) {
-      return res.status(404).json({
-        success: false,
-        error: 'Invalid license key'
-      });
+      return httpErrors.notFound(res, 'License key');
     }
 
     // Get active sites for organization
@@ -85,10 +81,7 @@ router.post('/activate', async (req, res) => {
     if (site) {
       // Site exists - check if it belongs to this organization
       if (site.organizationId !== organization.id) {
-        return res.status(403).json({
-          success: false,
-          error: 'This site is already registered to a different organization'
-        });
+        return httpErrors.forbidden(res, 'This site is already registered to a different organization', 'SITE_ALREADY_REGISTERED');
       }
 
       // Reactivate if inactive and update info
@@ -134,12 +127,7 @@ router.post('/activate', async (req, res) => {
     const activeSiteCount = activeSites.length;
     const maxSites = organization.max_sites || organization.maxSites || 1;
     if (activeSiteCount >= maxSites) {
-      return res.status(403).json({
-        success: false,
-        error: `Site limit reached. This license allows ${maxSites} active site(s). Please deactivate an existing site first.`,
-        activeSiteCount,
-        maxSites
-      });
+      return httpErrors.forbidden(res, `Site limit reached. This license allows ${maxSites} active site(s). Please deactivate an existing site first.`, 'SITE_LIMIT_REACHED');
     }
 
     // Create new site
@@ -181,11 +169,8 @@ router.post('/activate', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error activating license:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to activate license'
-    });
+    logger.error('Error activating license:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to activate license', { code: 'LICENSE_ACTIVATION_ERROR' });
   }
 });
 
@@ -255,7 +240,7 @@ router.post('/deactivate', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error deactivating site:', error);
+    logger.error('Error deactivating site:', { error: error.message });
     res.status(500).json({
       success: false,
       error: 'Failed to deactivate site'
@@ -317,7 +302,7 @@ router.post('/generate', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error generating license:', error);
+    logger.error('Error generating license:', { error: error.message });
     res.status(500).json({
       success: false,
       error: 'Failed to generate license'
@@ -340,10 +325,7 @@ router.get('/info/:licenseKey', async (req, res) => {
       .single();
 
     if (orgError || !organization) {
-      return res.status(404).json({
-        success: false,
-        error: 'License not found'
-      });
+      return httpErrors.notFound(res, 'License');
     }
 
     // Get active sites
@@ -390,10 +372,167 @@ router.get('/info/:licenseKey', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching license info:', error);
-    res.status(500).json({
+    logger.error('Error fetching license info:', { error: error.message, code: error.code });
+    return httpErrors.internalError(res, 'Failed to fetch license information', { code: 'LICENSE_INFO_ERROR' });
+  }
+});
+
+/**
+ * POST /api/license/validate
+ * Validate a license key (with optional site hash verification)
+ * 
+ * Request body:
+ * {
+ *   licenseKey: string (required),
+ *   siteHash?: string (optional)
+ * }
+ * 
+ * Response:
+ * {
+ *   success: true,
+ *   valid: boolean,
+ *   license?: { ... },
+ *   organization?: { ... },
+ *   siteAssociated?: boolean
+ * }
+ */
+router.post('/validate', async (req, res) => {
+  try {
+    const { licenseKey, siteHash } = req.body;
+
+    if (!licenseKey) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        error: 'License key is required'
+      });
+    }
+
+    // Trim whitespace from license key
+    const trimmedLicenseKey = licenseKey.trim();
+
+    logger.info('[License Validate] Validating license key', {
+      keyPreview: `${trimmedLicenseKey.substring(0, 8)}...${trimmedLicenseKey.substring(trimmedLicenseKey.length - 4)}`,
+      hasSiteHash: !!siteHash
+    });
+
+    // First, try to find in organizations table
+    let organization = null;
+    const { data: orgData, error: orgError } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('license_key', trimmedLicenseKey)
+      .single();
+
+    if (!orgError && orgData) {
+      organization = orgData;
+      logger.info('[License Validate] Found organization', {
+        orgId: organization.id,
+        orgName: organization.name,
+        plan: organization.plan
+      });
+    }
+
+    // If not found in organizations, try licenses table
+    let license = null;
+    if (!organization) {
+      const { data: licenseData, error: licenseError } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('license_key', trimmedLicenseKey)
+        .single();
+
+      if (!licenseError && licenseData) {
+        license = licenseData;
+        logger.info('[License Validate] Found license', {
+          licenseId: license.id,
+          plan: license.plan,
+          status: license.status
+        });
+      }
+    }
+
+    // If neither found, return invalid
+    if (!organization && !license) {
+      logger.warn('[License Validate] License key not found', {
+        keyPreview: `${trimmedLicenseKey.substring(0, 8)}...`
+      });
+      return res.json({
+        success: true,
+        valid: false,
+        error: 'License key not found in database'
+      });
+    }
+
+    // If site hash is provided, verify association
+    let siteAssociated = null;
+    if (siteHash) {
+      const trimmedSiteHash = siteHash.trim();
+      
+      const { data: site, error: siteError } = await supabase
+        .from('sites')
+        .select('license_key, organizationId')
+        .eq('site_hash', trimmedSiteHash)
+        .single();
+
+      if (siteError || !site) {
+        siteAssociated = false;
+        logger.warn('[License Validate] Site not found', {
+          siteHash: `${trimmedSiteHash.substring(0, 8)}...`
+        });
+      } else {
+        // Check if license key matches site's license key
+        if (site.license_key && site.license_key === trimmedLicenseKey) {
+          siteAssociated = true;
+        } else if (organization && site.organizationId && site.organizationId === organization.id) {
+          siteAssociated = true;
+        } else {
+          siteAssociated = false;
+        }
+
+        logger.info('[License Validate] Site association check', {
+          siteHash: `${trimmedSiteHash.substring(0, 8)}...`,
+          siteAssociated
+        });
+      }
+    }
+
+    // Build response
+    const response = {
+      success: true,
+      valid: true,
+    };
+
+    if (organization) {
+      response.organization = {
+        id: organization.id,
+        name: organization.name,
+        plan: organization.plan,
+        licenseKey: organization.license_key
+      };
+    }
+
+    if (license) {
+      response.license = {
+        id: license.id,
+        plan: license.plan,
+        status: license.status,
+        licenseKey: license.license_key
+      };
+    }
+
+    if (siteHash !== undefined) {
+      response.siteAssociated = siteAssociated;
+    }
+
+    return res.json(response);
+
+  } catch (error) {
+    logger.error('Error validating license:', { error: error.message, stack: error.stack });
+    return res.status(500).json({
       success: false,
-      error: 'Failed to fetch license information'
+      valid: false,
+      error: 'Failed to validate license key'
     });
   }
 });

@@ -3,7 +3,8 @@
  * Full SaaS backend with user accounts, JWT auth, and Stripe billing
  */
 
-require('dotenv').config();
+const { getEnv, requireEnv, isProduction, isDevelopment } = require('./config/loadEnv');
+const { errors: httpErrors, sendSuccess } = require('./src/utils/http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -14,6 +15,7 @@ const { authenticateToken, optionalAuth } = require('./auth/jwt');
 const { combinedAuth } = require('./src/middleware/dual-auth');
 const requireSubscription = require('./src/middleware/requireSubscription');
 const { getServiceApiKey, getReviewApiKey } = require('./src/utils/apiKey');
+const logger = require('./src/utils/logger');
 const authRoutes = require('./auth/routes');
 const { router: usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens } = require('./routes/usage');
 const siteService = require('./src/services/siteService');
@@ -36,22 +38,23 @@ const billingService = require('./src/services/billingService'); // Billing serv
 const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
 const plansConfig = require('./src/config/plans'); // Plan configuration
 
-const PORT = process.env.PORT || 3000;
+const PORT = getEnv('PORT', 3000);
 
 // Initialize Sentry if available (module-level for process handlers)
 let Sentry = null;
 try {
-  if (process.env.SENTRY_DSN) {
+  const sentryDsn = getEnv('SENTRY_DSN');
+  if (sentryDsn) {
     Sentry = require('@sentry/node');
     Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV || 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+      dsn: sentryDsn,
+      environment: getEnv('NODE_ENV', 'development'),
+      tracesSampleRate: isProduction() ? 0.1 : 1.0,
     });
-    console.log('✅ Sentry initialized for error tracking');
+    logger.info('Sentry initialized for error tracking');
   }
 } catch (error) {
-  console.warn('⚠️  Sentry package not installed or configuration invalid:', error.message);
+  logger.warn('Sentry package not installed or configuration invalid', { error: error.message });
 }
 
 // Helper functions (reused from Phase 1) - defined at module level for export
@@ -187,19 +190,22 @@ function isLikelyPublicUrl(rawUrl) {
 
 async function requestChatCompletion(messages, overrides = {}) {
   const {
-    model = process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    model = getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
     max_tokens = 100,
     temperature = 0.2,
-    apiKey = process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY
+    apiKey = getEnv('ALTTEXT_OPENAI_API_KEY') || getEnv('OPENAI_API_KEY')
   } = overrides;
 
   if (!apiKey) {
-    throw new Error('Missing OpenAI API key');
+    const error = new Error('OpenAI API key is not configured. Please set ALTTEXT_OPENAI_API_KEY or OPENAI_API_KEY environment variable.');
+    error.code = 'BACKEND_CONFIG_ERROR';
+    logger.error('[OpenAI] Missing API key', { code: error.code });
+    throw error;
   }
 
-  console.log(`[OpenAI] Making request to OpenAI API with model: ${model}`);
-  console.log(`[OpenAI] Messages count: ${messages.length}`);
-  console.log(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`);
+  logger.info(`[OpenAI] Making request to OpenAI API with model: ${model}`, { model });
+  logger.info(`[OpenAI] Messages count: ${messages.length}`, { messageCount: messages.length });
+  logger.info(`[OpenAI] API Key present: ${apiKey ? 'YES' : 'NO'}`, { hasApiKey: !!apiKey });
 
   try {
     const response = await axios.post(
@@ -219,20 +225,65 @@ async function requestChatCompletion(messages, overrides = {}) {
       }
     );
     
-    console.log(`[OpenAI] Request successful, received response`);
+    logger.info(`[OpenAI] Request successful, received response`);
     const payload = response && response.data ? response.data : response || {};
     return {
       choices: payload?.choices || [],
       usage: payload?.usage || null
     };
   } catch (error) {
-    console.error('[OpenAI] Request failed:', {
-      message: error.message,
+    // Handle specific OpenAI API errors
+    const status = error.response?.status;
+    const errorData = error.response?.data;
+    const errorMessage = errorData?.error?.message || error.message;
+
+    // Log detailed error information
+    logger.error('[OpenAI] Request failed', {
+      message: errorMessage,
       code: error.code,
-      status: error.response?.status,
+      status,
       statusText: error.response?.statusText,
-      data: error.response?.data
+      openaiErrorType: errorData?.error?.type,
+      openaiErrorCode: errorData?.error?.code
     });
+
+    // Handle specific HTTP status codes
+    if (status === 401) {
+      const apiKeyError = new Error('OpenAI API key is invalid or expired. Please check your API key configuration.');
+      apiKeyError.code = 'BACKEND_CONFIG_ERROR';
+      apiKeyError.status = 401;
+      logger.error('[OpenAI] API key validation failed', { code: apiKeyError.code });
+      throw apiKeyError;
+    }
+
+    if (status === 403) {
+      const forbiddenError = new Error('OpenAI API access forbidden. Your API key may not have permission for this operation or your account may have been suspended.');
+      forbiddenError.code = 'BACKEND_CONFIG_ERROR';
+      forbiddenError.status = 403;
+      logger.error('[OpenAI] API access forbidden', { code: forbiddenError.code });
+      throw forbiddenError;
+    }
+
+    if (status === 429) {
+      const rateLimitError = new Error('OpenAI API rate limit exceeded. Please try again later.');
+      rateLimitError.code = 'RATE_LIMIT_EXCEEDED';
+      rateLimitError.status = 429;
+      logger.warn('[OpenAI] Rate limit exceeded', { code: rateLimitError.code });
+      throw rateLimitError;
+    }
+
+    if (status === 500 || status === 502 || status === 503 || status === 504) {
+      const serverError = new Error('OpenAI API service is temporarily unavailable. Please try again later.');
+      serverError.code = 'AI_SERVICE_UNAVAILABLE';
+      serverError.status = status;
+      logger.error('[OpenAI] OpenAI service error', { code: serverError.code, status });
+      throw serverError;
+    }
+
+    // For other errors, preserve the original error but add code if missing
+    if (!error.code) {
+      error.code = 'AI_SERVICE_ERROR';
+    }
     throw error;
   }
 }
@@ -293,7 +344,7 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
       systemMessage,
       userMessage
     ], {
-      model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      model: getEnv('OPENAI_REVIEW_MODEL') || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
       max_tokens: 220,
       temperature: 0,
       apiKey: effectiveApiKey
@@ -305,7 +356,7 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
         systemMessage,
         fallbackMessage
       ], {
-        model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        model: getEnv('OPENAI_REVIEW_MODEL') || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
         max_tokens: 220,
         temperature: 0,
         apiKey: effectiveApiKey
@@ -339,7 +390,7 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
     grade,
     summary,
     issues,
-    model: process.env.OPENAI_REVIEW_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    model: getEnv('OPENAI_REVIEW_MODEL') || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
     usage: response.usage
   };
 }
@@ -462,8 +513,8 @@ app.use(helmet());
 
 // CORS configuration
 const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  process.env.FRONTEND_DASHBOARD_URL,
+  getEnv('FRONTEND_URL'),
+  getEnv('FRONTEND_DASHBOARD_URL'),
   'https://oppti.dev',
   'https://app.optti.dev',
   'http://localhost:3000',
@@ -481,7 +532,7 @@ app.use(cors({
       callback(null, true);
     } else {
       // In development, allow all origins for easier testing
-      if (process.env.NODE_ENV === 'development') {
+      if (isDevelopment()) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -496,7 +547,10 @@ app.use(cors({
 
 // Stripe webhook needs raw body - must come before express.json()
 app.use('/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route
+// Legacy webhook route - DEPRECATED: Use /stripe/webhook instead
+// NOTE: Keeping /billing/webhook for backward compatibility but it's deprecated
+// Remove after confirming all Stripe webhook configurations use /stripe/webhook
+app.use('/billing/webhook', express.raw({ type: 'application/json' })); // Legacy webhook route (DEPRECATED)
 app.use('/credits/webhook', express.raw({ type: 'application/json' })); // Credits webhook route
 
 // JSON parsing for all other routes - increased limit to 2MB for image base64 encoding
@@ -561,12 +615,7 @@ app.get('/metrics', async (req, res) => {
 
     res.json(metrics);
   } catch (error) {
-    res.status(500).json({
-      ok: false,
-      code: 'METRICS_ERROR',
-      reason: 'server_error',
-      message: 'Failed to collect metrics',
-    });
+    httpErrors.internalError(res, 'Failed to collect metrics', { code: 'METRICS_ERROR' });
   }
 });
 
@@ -593,7 +642,7 @@ app.use('/api/organization', authenticateToken, organizationRouter);
 // Add /organizations route at root level (alias for /api/organization/my-organizations)
 app.get('/organizations', authenticateToken, getMyOrganizations);
 app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
-app.use('/email', emailRoutes); // Legacy routes (for backward compatibility, only used if new routes don't match)
+app.use('/email', emailRoutes); // Legacy routes (DEPRECATED - for backward compatibility only, only used if new routes don't match)
 app.use('/waitlist', waitlistRoutes); // Waitlist routes
 app.use('/account', accountRoutes); // Account routes
 app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
@@ -609,7 +658,7 @@ app.use('/credits', require('./src/routes/credits')); // Credits routes (include
 // Generate alt text endpoint (Phase 2 with JWT auth + Phase 3 with organization support)
 app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) => {
   const requestStartTime = Date.now();
-  console.log(`[Generate] Request received at ${new Date().toISOString()}`);
+  logger.info(`[Generate] Request received`, { timestamp: new Date().toISOString() });
   
   try {
     // Validate request payload with Zod
@@ -617,29 +666,18 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     const validation = safeParseGenerateInput(req.body);
 
     if (!validation.success) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'Request validation failed',
-        details: validation.error.flatten(),
-      });
+      return httpErrors.validationFailed(res, 'Request validation failed', validation.error.flatten());
     }
 
     const { image_data, context, regenerate = false, service = 'alttext-ai', type } = validation.data;
-    console.log(`[Generate] Request parsed, image_id: ${image_data?.image_id || 'unknown'}`);
+    logger.info(`[Generate] Request parsed`, { imageId: image_data?.image_id || 'unknown' });
 
     // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
     // X-WP-User-ID is only for analytics, not for quota tracking
     const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
     
     if (!siteHash) {
-      return res.status(400).json({
-        ok: false,
-        code: 'MISSING_SITE_HASH',
-        reason: 'validation_failed',
-        message: 'X-Site-Hash header is required for quota tracking',
-      });
+      return httpErrors.missingField(res, 'X-Site-Hash header');
     }
 
     // Extract WordPress user info from headers (for analytics only, NOT for quota)
@@ -650,24 +688,24 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     const userId = req.user?.id || null;
 
     // Log for debugging
-    console.log(`[Generate] Site Hash: ${siteHash}, User ID: ${userId}, Auth Method: ${req.authMethod}`);
-    console.log(`[Generate] Service: ${service}, Type: ${type || 'not specified'}, WP User ID: ${wpUserId || 'N/A'}`);
+    logger.info(`[Generate] Request details`, { siteHash, userId, authMethod: req.authMethod });
+    logger.info(`[Generate] Service details`, { service, type: type || 'not specified', wpUserId: wpUserId || 'N/A' });
 
     // Select API key based on service
     const apiKey = getServiceApiKey(service);
 
-    console.log(`[Generate] API Key check - ${service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'}: ${process.env[service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY'] ? 'SET' : 'NOT SET'}`);
-    console.log(`[Generate] Using API key: ${apiKey ? apiKey.substring(0, 7) + '...' : 'NONE'}`);
+    const apiKeyEnvVar = service === 'seo-ai-meta' ? 'SEO_META_OPENAI_API_KEY' : 'ALTTEXT_OPENAI_API_KEY';
+    logger.info(`[Generate] API Key check`, { 
+      service, 
+      envVar: apiKeyEnvVar, 
+      isSet: !!process.env[apiKeyEnvVar] 
+    });
+    logger.info(`[Generate] Using API key`, { hasKey: !!apiKey });
 
     // Validate API key is configured
     if (!apiKey) {
-      console.error(`Missing OpenAI API key for service: ${service}`);
-      return res.status(500).json({
-        ok: false,
-        code: 'GENERATION_ERROR',
-        reason: 'server_error',
-        message: `Missing OpenAI API key for service: ${service}`,
-      });
+      logger.error(`Missing OpenAI API key for service`, { service });
+      return httpErrors.internalError(res, `Missing OpenAI API key for service: ${service}`, { code: 'GENERATION_ERROR' });
     }
     
     // Check if user should use credits for this request
@@ -718,30 +756,25 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
       try {
         openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
           apiKey,
-          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          model: req.body.model || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
           max_tokens: 300,
           temperature: 0.7
         });
       } catch (error) {
-        console.error('Meta generation error:', error.response?.data || error.message);
+        logger.error('Meta generation error', { error: error.response?.data || error.message });
         throw error;
       }
 
       // Validate OpenAI response structure for meta generation
       if (!openaiResponse?.choices?.[0]?.message?.content) {
-        console.error('[Generate] Invalid OpenAI response structure for meta generation:', {
+        logger.error('[Generate] Invalid OpenAI response structure for meta generation', {
           hasResponse: !!openaiResponse,
           hasChoices: !!openaiResponse?.choices,
           choicesLength: openaiResponse?.choices?.length,
           hasMessage: !!openaiResponse?.choices?.[0]?.message,
           hasContent: !!openaiResponse?.choices?.[0]?.message?.content
         });
-        return res.status(500).json({
-          ok: false,
-          code: 'INVALID_AI_RESPONSE',
-          reason: 'server_error',
-          message: 'The AI service returned an unexpected response format',
-        });
+        return httpErrors.internalError(res, 'The AI service returned an unexpected response format', { code: 'INVALID_AI_RESPONSE' });
       }
 
       const content = openaiResponse.choices[0].message.content.trim();
@@ -757,9 +790,9 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
         
         if (spendResult.success) {
           remainingCredits = spendResult.remainingBalance;
-          console.log(`[Generate] Deducted 1 credit for meta generation. Remaining: ${remainingCredits}`);
+          logger.info(`[Generate] Deducted 1 credit for meta generation`, { remainingCredits });
         } else {
-          console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+          logger.error(`[Generate] Failed to deduct credits`, { error: spendResult.error });
           // Continue anyway - generation succeeded, just log the error
         }
       } else {
@@ -807,29 +840,29 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
 
     let openaiResponse;
     try {
-      console.log(`[Generate] Calling OpenAI API for image_id: ${image_data?.image_id || 'unknown'}`);
+      logger.info(`[Generate] Calling OpenAI API`, { imageId: image_data?.image_id || 'unknown' });
       const startTime = Date.now();
       openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
         apiKey
       });
       const duration = Date.now() - startTime;
-      console.log(`[Generate] OpenAI API call completed in ${duration}ms`);
+      logger.info(`[Generate] OpenAI API call completed`, { duration: `${duration}ms` });
     } catch (error) {
-      console.error(`[Generate] OpenAI API call failed:`, {
+      logger.error(`[Generate] OpenAI API call failed`, {
         message: error.message,
         code: error.code,
         status: error.response?.status
       });
       
       if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-        console.warn('Image fetch failed, retrying without image input...');
+        logger.warn('Image fetch failed, retrying without image input');
         const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
         try {
           openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
             apiKey
           });
         } catch (fallbackError) {
-          console.error('[Generate] Fallback request also failed:', fallbackError.message);
+          logger.error('[Generate] Fallback request also failed', { error: fallbackError.message });
           throw fallbackError;
         }
       } else {
@@ -839,7 +872,7 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     
     // Validate OpenAI response structure
     if (!openaiResponse?.choices?.[0]?.message?.content) {
-      console.error('[Generate] Invalid OpenAI response structure:', {
+      logger.error('[Generate] Invalid OpenAI response structure', {
         hasResponse: !!openaiResponse,
         hasChoices: !!openaiResponse?.choices,
         choicesLength: openaiResponse?.choices?.length,
@@ -847,12 +880,7 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
         hasContent: !!openaiResponse?.choices?.[0]?.message?.content,
         response: JSON.stringify(openaiResponse, null, 2)
       });
-      return res.status(500).json({
-        ok: false,
-        code: 'INVALID_AI_RESPONSE',
-        reason: 'server_error',
-        message: 'The AI service returned an unexpected response format',
-      });
+      return httpErrors.internalError(res, 'The AI service returned an unexpected response format', { code: 'INVALID_AI_RESPONSE' });
     }
     
     const altText = openaiResponse.choices[0].message.content.trim();
@@ -869,9 +897,9 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
       
       if (spendResult.success) {
         remainingCredits = spendResult.remainingBalance;
-        console.log(`[Generate] Deducted 1 credit. Remaining: ${remainingCredits}`);
+        logger.info(`[Generate] Deducted 1 credit`, { remainingCredits });
       } else {
-        console.error(`[Generate] Failed to deduct credits: ${spendResult.error}`);
+        logger.error(`[Generate] Failed to deduct credits`, { error: spendResult.error });
         // Continue anyway - generation succeeded, just log the error
       }
     } else {
@@ -908,33 +936,24 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
     const requestDuration = Date.now() - requestStartTime;
     const { image_data, context, regenerate = false, service = 'alttext-ai', type } = req.body || {};
     
-    console.error(`[Generate] Request failed after ${requestDuration}ms:`, {
+    logger.error(`[Generate] Request failed after ${requestDuration}ms`, {
       message: error.message,
       code: error.code,
       status: error.response?.status,
       service: service,
+      duration: `${requestDuration}ms`,
       stack: error.stack?.split('\n').slice(0, 5).join('\n')
     });
     
     // Handle rate limiting
     if (error.response?.status === 429) {
-      return res.status(429).json({
-        ok: false,
-        code: 'OPENAI_RATE_LIMIT',
-        reason: 'rate_limit_exceeded',
-        message: 'OpenAI rate limit reached. Please try again later.',
-      });
+      return httpErrors.rateLimitExceeded(res, 'OpenAI rate limit reached. Please try again later.');
     }
     
     // Handle timeout errors
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      console.error('[Generate] Request timed out - OpenAI API took too long to respond');
-      return res.status(504).json({
-        ok: false,
-        code: 'TIMEOUT',
-        reason: 'server_error',
-        message: 'The image generation is taking longer than expected. Please try again.',
-      });
+      logger.error('[Generate] Request timed out - OpenAI API took too long to respond');
+      return httpErrors.gatewayTimeout(res, 'The image generation is taking longer than expected. Please try again.');
     }
 
     // Extract error message from OpenAI response
@@ -962,21 +981,21 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
         try {
           // Try to get from the service-specific logic
           if (service === 'seo-ai-meta') {
-            return process.env.SEO_META_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+            return getEnv('SEO_META_OPENAI_API_KEY') || getEnv('OPENAI_API_KEY');
           }
-          return process.env.ALTTEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+          return getEnv('ALTTEXT_OPENAI_API_KEY') || getEnv('OPENAI_API_KEY');
         } catch {
           return null;
         }
       })();
       
-      console.error('OpenAI API key error - backend configuration issue:', {
+      logger.error('OpenAI API key error - backend configuration issue', {
         hasKey: !!currentApiKey,
         keyPrefix: currentApiKey ? currentApiKey.substring(0, 7) + '...' : 'missing',
         envVars: {
-          ALTTEXT_OPENAI_API_KEY: !!process.env.ALTTEXT_OPENAI_API_KEY,
-          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
-          SEO_META_OPENAI_API_KEY: !!process.env.SEO_META_OPENAI_API_KEY
+          ALTTEXT_OPENAI_API_KEY: !!getEnv('ALTTEXT_OPENAI_API_KEY'),
+          OPENAI_API_KEY: !!getEnv('OPENAI_API_KEY'),
+          SEO_META_OPENAI_API_KEY: !!getEnv('SEO_META_OPENAI_API_KEY')
         },
         service: service || 'unknown'
       });
@@ -1003,12 +1022,7 @@ app.post('/api/review', authenticateToken, requireSubscription, async (req, res)
     const { alt_text, image_data, context, service = 'alttext-ai' } = req.body;
 
     if (!alt_text || typeof alt_text !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        code: 'MISSING_ALT_TEXT',
-        reason: 'validation_failed',
-        message: 'Alt text is required',
-      });
+      return httpErrors.missingField(res, 'alt_text');
     }
 
     // Select API key based on service
@@ -1022,47 +1036,8 @@ app.post('/api/review', authenticateToken, requireSubscription, async (req, res)
       tokens: review?.usage
     });
   } catch (error) {
-    console.error('Review error:', error.response?.data || error.message);
-    res.status(500).json({
-      ok: false,
-      code: 'REVIEW_ERROR',
-      reason: 'server_error',
-      message: error.response?.data?.error?.message || error.message || 'Failed to review alt text',
-    });
-  }
-});
-
-// Backward compatibility endpoint for Phase 1 domains (temporary)
-app.post('/api/generate-legacy', optionalAuth, async (req, res) => {
-  try {
-    const { domain, image_data, context, regenerate = false } = req.body;
-    
-    if (!domain) {
-      return res.status(400).json({
-        ok: false,
-        code: 'MISSING_DOMAIN',
-        reason: 'validation_failed',
-        message: 'Domain is required for legacy endpoint',
-      });
-    }
-    
-    // For now, redirect to new auth-required endpoint
-    return res.status(410).json({
-      ok: false,
-      code: 'LEGACY_DEPRECATED',
-      reason: 'deprecated',
-      message: 'Legacy domain-based authentication is deprecated. Please create an account.',
-      upgradeUrl: '/auth/register',
-    });
-    
-  } catch (error) {
-    console.error('Legacy generate error:', error);
-    res.status(500).json({
-      ok: false,
-      code: 'LEGACY_ERROR',
-      reason: 'server_error',
-      message: 'Legacy endpoint error',
-    });
+    logger.error('Review error', { error: error.response?.data || error.message });
+    httpErrors.internalError(res, error.response?.data?.error?.message || error.message || 'Failed to review alt text', { code: 'REVIEW_ERROR' });
   }
 });
 
@@ -1071,13 +1046,8 @@ app.post('/api/webhook/reset', async (req, res) => {
   try {
     const { secret } = req.body;
     
-    if (secret !== process.env.WEBHOOK_SECRET) {
-      return res.status(403).json({
-        ok: false,
-        code: 'INVALID_SECRET',
-        reason: 'authentication_required',
-        message: 'Invalid secret',
-      });
+    if (secret !== getEnv('WEBHOOK_SECRET')) {
+      return httpErrors.forbidden(res, 'Invalid secret', 'INVALID_SECRET');
     }
     
     const resetCount = await resetMonthlyTokens();
@@ -1088,13 +1058,8 @@ app.post('/api/webhook/reset', async (req, res) => {
       usersReset: resetCount
     });
   } catch (error) {
-    console.error('Reset error:', error);
-    res.status(500).json({
-      ok: false,
-      code: 'RESET_ERROR',
-      reason: 'server_error',
-      message: 'Reset failed',
-    });
+    logger.error('Reset error', { error: error.message });
+    httpErrors.internalError(res, 'Reset failed', { code: 'RESET_ERROR' });
   }
 });
 
@@ -1111,7 +1076,7 @@ app.post('/api/webhook/reset', async (req, res) => {
   // Final validation
   if (!app || typeof app.listen !== 'function') {
     const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
-    console.error(error.message);
+    logger.error(error.message);
     throw error;
   }
 
@@ -1134,8 +1099,7 @@ module.exports.buildUserMessage = buildUserMessage;
 // ============================================================================
 if (require.main === module) {
   process.on('uncaughtException', (error) => {
-    console.error('❌ Uncaught Exception:', error);
-    console.error('Stack:', error.stack);
+    logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
     
     // Send to Sentry if available
     if (Sentry) {
@@ -1147,8 +1111,7 @@ if (require.main === module) {
   });
 
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise);
-    console.error('Reason:', reason);
+    logger.error('Unhandled Rejection', { promise: String(promise), reason: String(reason) });
     
     // Send to Sentry if available
     if (Sentry) {
@@ -1168,16 +1131,20 @@ if (require.main === module) {
 if (require.main === module) {
   const app = createApp();
   app.listen(PORT, () => {
-    console.log(`🚀 AltText AI Phase 2 API running on port ${PORT}`);
-    console.log(`📅 Version: 2.0.0 (Monetization)`);
-    console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔑 API Key check - ALTTEXT_OPENAI_API_KEY: ${process.env.ALTTEXT_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
-    console.log(`🔑 API Key check - SEO_META_OPENAI_API_KEY: ${process.env.SEO_META_OPENAI_API_KEY ? 'SET' : 'NOT SET'}`);
+    logger.info(`AltText AI Phase 2 API running on port ${PORT}`, { port: PORT });
+    logger.info(`Version: 2.0.0 (Monetization)`);
+    logger.info(`Environment: ${getEnv('NODE_ENV', 'development')}`, { 
+      environment: getEnv('NODE_ENV', 'development') 
+    });
+    logger.info(`API Key check`, { 
+      ALTTEXT_OPENAI_API_KEY: getEnv('ALTTEXT_OPENAI_API_KEY') ? 'SET' : 'NOT SET',
+      SEO_META_OPENAI_API_KEY: getEnv('SEO_META_OPENAI_API_KEY') ? 'SET' : 'NOT SET'
+    });
   });
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {
-    console.log('SIGTERM received, shutting down gracefully...');
+    logger.info('SIGTERM received, shutting down gracefully...');
     process.exit(0);
   });
 }
