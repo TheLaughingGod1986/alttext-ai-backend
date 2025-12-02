@@ -40,7 +40,7 @@ describe('requireSubscription middleware', () => {
       ok: false,
       code: errorCodes.NO_ACCESS,
       reason: errorCodes.REASONS.NO_IDENTITY,
-      message: 'Authentication required.',
+      message: 'Authentication required. Provide JWT token, license key, or site hash.',
     });
     expect(next).not.toHaveBeenCalled();
   });
@@ -55,7 +55,7 @@ describe('requireSubscription middleware', () => {
       ok: false,
       code: errorCodes.NO_ACCESS,
       reason: errorCodes.REASONS.NO_IDENTITY,
-      message: 'Authentication required.',
+      message: 'Authentication required. Provide JWT token, license key, or site hash.',
     });
     expect(next).not.toHaveBeenCalled();
   });
