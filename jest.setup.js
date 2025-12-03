@@ -36,3 +36,17 @@ jest.mock('./db/supabase-client', () => {
 // This must be here to ensure it's applied before any route files are loaded
 jest.mock('express-rate-limit');
 
+// Mock auth/jwt module globally to prevent loading issues in tests
+// This ensures authenticateToken and optionalAuth are always available
+jest.mock('./auth/jwt', () => ({
+  generateToken: jest.fn(),
+  verifyToken: jest.fn(),
+  hashPassword: jest.fn(),
+  comparePassword: jest.fn(),
+  authenticateToken: jest.fn((req, res, next) => next()),
+  optionalAuth: jest.fn((req, res, next) => next()),
+  generateRefreshToken: jest.fn(),
+  verifyRefreshToken: jest.fn(),
+  REFRESH_TOKEN_EXPIRES_IN: '30d',
+}));
+
