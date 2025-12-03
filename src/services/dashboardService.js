@@ -23,8 +23,8 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
  * @returns {Promise<Object>} Dashboard data with installations, subscription, and usage
  */
 async function getDashboardData(email) {
+  const emailLower = email ? email.toLowerCase() : 'unknown';
   try {
-    const emailLower = email.toLowerCase();
 
     // Fetch all data sources in parallel
     const [installationsResult, subscriptionResult, usageResult] = await Promise.all([

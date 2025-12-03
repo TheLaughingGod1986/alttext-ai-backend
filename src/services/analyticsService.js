@@ -7,7 +7,16 @@
 const { supabase } = require('../../db/supabase-client');
 const { analyticsEventSchema, analyticsEventArraySchema } = require('../validation/analyticsEventSchema');
 const logger = require('../utils/logger');
-const { isTest } = require('../../config/loadEnv');
+
+// Helper function to check if running in test mode
+function isTestMode() {
+  try {
+    const { isTest } = require('../../config/loadEnv');
+    return typeof isTest === 'function' ? isTest() : process.env.NODE_ENV === 'test';
+  } catch (err) {
+    return process.env.NODE_ENV === 'test';
+  }
+}
 
 // Throttling state - in-memory Map with TTL-based cleanup
 const emailThrottleMap = new Map(); // email -> { count: number, resetAt: timestamp }
@@ -23,7 +32,7 @@ const THROTTLE_CONFIG = {
 };
 
 // Cleanup old throttle entries periodically (skip in tests to avoid open handles)
-if (!isTest()) {
+if (!isTestMode()) {
   setInterval(() => {
     const now = Date.now();
     

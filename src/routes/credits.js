@@ -62,11 +62,7 @@ router.get('/packs', authenticateToken, creditsRateLimiter, async (req, res) => 
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to get credit packs',
-      packs: [],
-    });
+    return httpErrors.internalError(res, 'Failed to get credit packs');
   }
 });
 
@@ -79,20 +75,14 @@ router.get('/balance', authenticateToken, creditsRateLimiter, async (req, res) =
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const balanceResult = await creditsService.getBalanceByEmail(email);
 
     if (!balanceResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: balanceResult.error || 'Failed to get balance',
-        credits: 0,
-      });
+      logger.error('[Credits Routes] Failed to get balance', { error: balanceResult.error, email });
+      return httpErrors.internalError(res, balanceResult.error || 'Failed to get balance');
     }
 
     return res.json({
@@ -104,11 +94,7 @@ router.get('/balance', authenticateToken, creditsRateLimiter, async (req, res) =
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to get credit balance',
-      credits: 0,
-    });
+    return httpErrors.internalError(res, 'Failed to get credit balance');
   }
 });
 
@@ -122,11 +108,7 @@ router.get('/transactions', authenticateToken, creditsRateLimiter, async (req, r
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'User email not found in token',
-        transactions: [],
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const page = parseInt(req.query.page) || 1;
@@ -135,11 +117,8 @@ router.get('/transactions', authenticateToken, creditsRateLimiter, async (req, r
     const transactionsResult = await creditsService.getTransactionsByEmail(email, page, limit);
 
     if (!transactionsResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: transactionsResult.error || 'Failed to get transactions',
-        transactions: [],
-      });
+      logger.error('[Credits Routes] Failed to get transactions', { error: transactionsResult.error, email });
+      return httpErrors.internalError(res, transactionsResult.error || 'Failed to get transactions');
     }
 
     return res.json({
@@ -157,11 +136,7 @@ router.get('/transactions', authenticateToken, creditsRateLimiter, async (req, r
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to get transaction history',
-      transactions: [],
-    });
+    return httpErrors.internalError(res, 'Failed to get transaction history');
   }
 });
 
@@ -176,13 +151,7 @@ router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (r
     const validation = checkoutSessionSchema.safeParse(req.body);
 
     if (!validation.success) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'Request validation failed',
-        details: validation.error.flatten(),
-      });
+      return httpErrors.validationFailed(res, 'Request validation failed', validation.error.flatten());
     }
 
     const { packId } = validation.data;
@@ -190,10 +159,7 @@ router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (r
     // Find pack in creditPacks array
     const pack = creditPacks.find(p => p.id === packId);
     if (!pack) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid pack',
-      });
+      return httpErrors.invalidInput(res, 'Invalid pack');
     }
 
     // Get identityId from token or get/create from email
@@ -206,18 +172,13 @@ router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (r
     }
 
     if (!identityId) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Unable to determine user identity',
-      });
+      return httpErrors.validationFailed(res, 'Unable to determine user identity');
     }
 
     const stripe = getStripe();
     if (!stripe) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Stripe not configured',
-      });
+      logger.error('[Credits Routes] Stripe not configured');
+      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
     }
 
     // Build success and cancel URLs
@@ -255,10 +216,7 @@ router.post('/checkout-session', authenticateToken, creditsRateLimiter, async (r
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to create checkout session',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to create checkout session');
   }
 });
 
@@ -271,18 +229,14 @@ router.post('/webhook', async (req, res) => {
   try {
     const stripe = getStripe();
     if (!stripe) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Stripe not configured',
-      });
+      logger.error('[Credits Webhook] Stripe not configured');
+      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
     }
 
     const webhookSecret = requireEnv('STRIPE_WEBHOOK_SECRET');
     if (!webhookSecret) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Stripe webhook secret not configured',
-      });
+      logger.error('[Credits Webhook] Stripe webhook secret not configured');
+      return httpErrors.serviceUnavailable(res, 'Stripe webhook secret not configured');
     }
 
     // Validate webhook signature
@@ -306,10 +260,7 @@ router.post('/webhook', async (req, res) => {
 
       if (!identityId) {
         logger.error('[Credits Webhook] No identityId found in session metadata', { sessionId: session.id });
-        return res.status(400).json({
-          ok: false,
-          error: 'identityId not found in session metadata',
-        });
+        return httpErrors.validationFailed(res, 'identityId not found in session metadata');
       }
 
       if (!credits || credits <= 0) {
@@ -317,10 +268,7 @@ router.post('/webhook', async (req, res) => {
           credits,
           sessionId: session.id
         });
-        return res.status(400).json({
-          ok: false,
-          error: 'Invalid credits amount',
-        });
+        return httpErrors.invalidInput(res, 'Invalid credits amount');
       }
 
       // Add credits (addCredits already records the transaction)
@@ -334,10 +282,7 @@ router.post('/webhook', async (req, res) => {
           credits,
           sessionId: session.id
         });
-        return res.status(500).json({
-          ok: false,
-          error: 'Failed to add credits',
-        });
+        return httpErrors.internalError(res, 'Failed to add credits');
       }
 
       logger.info('[Credits Webhook] Added credits', {
@@ -354,10 +299,7 @@ router.post('/webhook', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Webhook processing failed',
-    });
+    return httpErrors.internalError(res, 'Webhook processing failed');
   }
 });
 
@@ -378,10 +320,7 @@ router.post('/purchase/webhook', async (req, res) => {
 
       if (!email) {
         logger.error('[Credits Webhook] No email found in checkout session', { sessionId: session.id });
-        return res.status(400).json({
-          ok: false,
-          error: 'Email not found in session',
-        });
+        return httpErrors.validationFailed(res, 'Email not found in session');
       }
 
       if (!credits || credits <= 0) {
@@ -390,10 +329,7 @@ router.post('/purchase/webhook', async (req, res) => {
           email,
           sessionId: session.id
         });
-        return res.status(400).json({
-          ok: false,
-          error: 'Invalid credits amount',
-        });
+        return httpErrors.invalidInput(res, 'Invalid credits amount');
       }
 
       // Add credits to user's account
@@ -411,10 +347,7 @@ router.post('/purchase/webhook', async (req, res) => {
           credits,
           sessionId: session.id
         });
-        return res.status(500).json({
-          ok: false,
-          error: 'Failed to add credits',
-        });
+        return httpErrors.internalError(res, 'Failed to add credits');
       }
 
       logger.info('[Credits Webhook] Added credits', {
@@ -439,10 +372,7 @@ router.post('/purchase/webhook', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Webhook processing failed',
-    });
+    return httpErrors.internalError(res, 'Webhook processing failed');
   }
 });
 
@@ -458,17 +388,11 @@ router.post('/create-payment', authenticateToken, creditsRateLimiter, async (req
     const email = bodyEmail || req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email is required',
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!packId) {
-      return res.status(400).json({
-        ok: false,
-        error: 'packId is required',
-      });
+      return httpErrors.missingField(res, 'packId');
     }
 
     // Map packId to packSize and credits
@@ -482,10 +406,7 @@ router.post('/create-payment', authenticateToken, creditsRateLimiter, async (req
 
     const pack = packIdMap[packId];
     if (!pack) {
-      return res.status(400).json({
-        ok: false,
-        error: `Invalid packId. Must be one of: pack_50, pack_200, pack_500, pack_1000`,
-      });
+      return httpErrors.invalidInput(res, `Invalid packId. Must be one of: pack_50, pack_200, pack_500, pack_1000`);
     }
 
     // Map packSize to price ID
@@ -512,10 +433,8 @@ router.post('/create-payment', authenticateToken, creditsRateLimiter, async (req
 
     const packConfig = packSizeMap[pack.packSize];
     if (!packConfig || !packConfig.priceId) {
-      return res.status(500).json({
-        ok: false,
-        error: `Credit pack price ID not configured for pack ${pack.packSize}`,
-      });
+      logger.error('[Credits Routes] Credit pack price ID not configured', { packSize: pack.packSize });
+      return httpErrors.serviceUnavailable(res, `Credit pack price ID not configured for pack ${pack.packSize}`);
     }
 
     // Build success and cancel URLs
@@ -543,10 +462,7 @@ router.post('/create-payment', authenticateToken, creditsRateLimiter, async (req
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to create checkout session',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to create checkout session');
   }
 });
 
@@ -560,25 +476,14 @@ router.post('/purchase', authenticateToken, creditsRateLimiter, async (req, res)
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     // Validate request payload with Zod
     const validation = purchaseSchema.safeParse(req.body);
 
     if (!validation.success) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'Request validation failed',
-        details: validation.error.flatten(),
-      });
+      return httpErrors.validationFailed(res, 'Request validation failed', validation.error.flatten());
     }
 
     const { priceId, packSize } = validation.data;
@@ -606,10 +511,7 @@ router.post('/purchase', authenticateToken, creditsRateLimiter, async (req, res)
 
       const pack = packMap[packSize];
       if (!pack || !pack.priceId) {
-        return res.status(400).json({
-          ok: false,
-          error: `Invalid pack size. Must be one of: 50, 200, 1000`,
-        });
+        return httpErrors.invalidInput(res, `Invalid pack size. Must be one of: 50, 200, 1000`);
       }
 
       actualPriceId = pack.priceId;
@@ -618,22 +520,14 @@ router.post('/purchase', authenticateToken, creditsRateLimiter, async (req, res)
       // If priceId is provided, we need to determine credits from priceId
       // For now, we'll require packSize or extract from metadata
       // This is a fallback - ideally packSize should be provided
-      return res.status(400).json({
-        ok: false,
-        error: 'Either priceId or packSize must be provided. packSize is recommended.',
-      });
+      return httpErrors.invalidInput(res, 'Either priceId or packSize must be provided. packSize is recommended.');
     } else {
-      return res.status(400).json({
-        ok: false,
-        error: 'Either priceId or packSize must be provided',
-      });
+      return httpErrors.invalidInput(res, 'Either priceId or packSize must be provided');
     }
 
     if (!actualPriceId) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Credit pack price ID not configured',
-      });
+      logger.error('[Credits Routes] Credit pack price ID not configured');
+      return httpErrors.serviceUnavailable(res, 'Credit pack price ID not configured');
     }
 
     // Build success and cancel URLs
@@ -661,10 +555,7 @@ router.post('/purchase', authenticateToken, creditsRateLimiter, async (req, res)
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to create checkout session',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to create checkout session');
   }
 });
 
@@ -679,18 +570,13 @@ router.post('/confirm', authenticateToken, creditsRateLimiter, async (req, res) 
     const { sessionId } = req.body;
 
     if (!sessionId) {
-      return res.status(400).json({
-        ok: false,
-        error: 'sessionId is required',
-      });
+      return httpErrors.missingField(res, 'sessionId');
     }
 
     const stripe = getStripe();
     if (!stripe) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Stripe not configured',
-      });
+      logger.error('[Credits Routes] Stripe not configured');
+      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
     }
 
     // Retrieve checkout session from Stripe
@@ -698,38 +584,27 @@ router.post('/confirm', authenticateToken, creditsRateLimiter, async (req, res) 
 
     // Verify payment succeeded
     if (session.payment_status !== 'paid') {
-      return res.status(400).json({
-        ok: false,
-        error: `Payment not completed. Status: ${session.payment_status}`,
-      });
+      return httpErrors.invalidInput(res, `Payment not completed. Status: ${session.payment_status}`);
     }
 
     // Get email from session
     const email = session.customer_details?.email || session.metadata?.user_email;
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email not found in checkout session',
-      });
+      return httpErrors.validationFailed(res, 'Email not found in checkout session');
     }
 
     // Get credits amount from metadata
     const credits = session.metadata?.credits ? parseInt(session.metadata.credits) : null;
     if (!credits || credits <= 0) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid credits amount in session metadata',
-      });
+      return httpErrors.invalidInput(res, 'Invalid credits amount in session metadata');
     }
 
     // Check if credits were already added (idempotency check)
     // We can check by looking for a transaction with this session ID
     const identityResult = await creditsService.getOrCreateIdentity(email.toLowerCase());
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: 'Failed to get/create identity',
-      });
+      logger.error('[Credits Confirm] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, 'Failed to get/create identity');
     }
 
     // Check for existing transaction with this session ID
@@ -768,10 +643,7 @@ router.post('/confirm', authenticateToken, creditsRateLimiter, async (req, res) 
         credits,
         sessionId
       });
-      return res.status(500).json({
-        ok: false,
-        error: 'Failed to add credits',
-      });
+      return httpErrors.internalError(res, 'Failed to add credits');
     }
 
     logger.info('[Credits Confirm] Added credits', {
@@ -792,10 +664,7 @@ router.post('/confirm', authenticateToken, creditsRateLimiter, async (req, res) 
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to confirm credit purchase',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to confirm credit purchase');
   }
 });
 

@@ -47,17 +47,11 @@ router.post('/waitlist', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email is required',
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid email format',
-      });
+      return httpErrors.invalidInput(res, 'Invalid email format');
     }
 
     // Send waitlist welcome email
@@ -99,17 +93,11 @@ router.post('/dashboard-welcome', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email is required',
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid email format',
-      });
+      return httpErrors.invalidInput(res, 'Invalid email format');
     }
 
     // Send dashboard welcome email
@@ -234,17 +222,11 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email is required',
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid email format',
-      });
+      return httpErrors.invalidInput(res, 'Invalid email format');
     }
 
     if (!planName || typeof planName !== 'string') {
@@ -288,17 +270,11 @@ router.post('/low-credit-warning', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Email is required',
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid email format',
-      });
+      return httpErrors.invalidInput(res, 'Invalid email format');
     }
 
     if (remainingCredits === undefined || typeof remainingCredits !== 'number') {

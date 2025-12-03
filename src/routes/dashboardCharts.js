@@ -17,6 +17,7 @@ const billingService = require('../services/billingService');
 const usageService = require('../services/usageService');
 const plansConfig = require('../config/plans');
 const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -55,12 +56,7 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
       stack: err.stack,
       email: req.user?.email
     });
-    return res.status(500).json({
-      ok: false,
-      code: 'DASHBOARD_ERROR',
-      reason: 'server_error',
-      message: 'Failed to load daily usage data',
-    });
+    return httpErrors.internalError(res, 'Failed to load daily usage data', { code: 'DASHBOARD_ERROR' });
   }
 });
 
@@ -74,12 +70,7 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const monthlyUsage = await getMonthlyUsage(email);
@@ -99,12 +90,7 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
       stack: err.stack,
       email: req.user?.email
     });
-    return res.status(500).json({
-      ok: false,
-      code: 'DASHBOARD_ERROR',
-      reason: 'server_error',
-      message: 'Failed to load monthly usage data',
-    });
+    return httpErrors.internalError(res, 'Failed to load monthly usage data', { code: 'DASHBOARD_ERROR' });
   }
 });
 
@@ -118,12 +104,7 @@ router.get('/dashboard/events/recent', authenticateToken, async (req, res) => {
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const events = await getRecentEvents(email);
@@ -138,10 +119,7 @@ router.get('/dashboard/events/recent', authenticateToken, async (req, res) => {
       stack: err.stack,
       email: req.user?.email
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to load recent events',
-    });
+    return httpErrors.internalError(res, 'Failed to load recent events');
   }
 });
 
@@ -155,12 +133,7 @@ router.get('/dashboard/plugins/activity', authenticateToken, async (req, res) =>
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const plugins = await getPluginActivity(email);
@@ -175,10 +148,7 @@ router.get('/dashboard/plugins/activity', authenticateToken, async (req, res) =>
       stack: err.stack,
       email: req.user?.email
     });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to load plugin activity',
-    });
+    return httpErrors.internalError(res, 'Failed to load plugin activity');
   }
 });
 
@@ -193,19 +163,7 @@ router.get('/dashboard/charts', authenticateToken, async (req, res) => {
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Missing user email',
-        charts: {
-          dailyUsage: [],
-          monthlyUsage: [],
-          creditTrend: [],
-          subscriptionHistory: [],
-          installActivity: [],
-          usageHeatmap: [],
-          eventSummary: [],
-        },
-      });
+      return httpErrors.validationFailed(res, 'Missing user email');
     }
 
     const result = await getDashboardCharts(email);

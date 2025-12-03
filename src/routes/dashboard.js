@@ -131,12 +131,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const email = req.user.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     // Check cache first
@@ -270,13 +265,8 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
 
     return res.status(200).json(response);
   } catch (err) {
-    logger.error('[Dashboard] GET /dashboard error', { error: err.message });
-    return res.status(500).json({
-      ok: false,
-      code: 'DASHBOARD_ERROR',
-      reason: 'server_error',
-      message: 'Failed to load dashboard',
-    });
+    logger.error('[Dashboard] GET /dashboard error', { error: err.message, stack: err.stack });
+    return httpErrors.internalError(res, 'Failed to load dashboard', { code: 'DASHBOARD_ERROR' });
   }
 });
 
@@ -290,10 +280,7 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
     const email = req.user.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        error: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     // Get time range from query param (default: 30d)
@@ -308,11 +295,8 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
       ...analyticsData,
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /dashboard/analytics error', { error: err.message });
-    return res.status(500).json({
-      ok: false,
-      error: 'Failed to load analytics data',
-    });
+    logger.error('[Dashboard] GET /dashboard/analytics error', { error: err.message, stack: err.stack });
+    return httpErrors.internalError(res, 'Failed to load analytics data');
   }
 });
 
