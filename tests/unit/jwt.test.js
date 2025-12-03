@@ -1,3 +1,6 @@
+// Unmock auth/jwt for this test file since we want to test the real functions
+jest.unmock('../../auth/jwt');
+
 const jwt = require('jsonwebtoken');
 const {
   generateToken,
