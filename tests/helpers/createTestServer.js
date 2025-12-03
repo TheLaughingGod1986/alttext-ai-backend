@@ -78,8 +78,15 @@ function createTestServer() {
     console.error('[createTestServer] Error creating test server:', error.message);
     if (error.stack) {
       const stackLines = error.stack.split('\n');
-      console.error('[createTestServer] Stack (first 20 lines):');
-      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
+      console.error('[createTestServer] Full stack trace:');
+      stackLines.forEach(line => {
+        // Look for route files in the stack
+        if (line.includes('/routes/') || line.includes('router.use') || line.includes('Router.use')) {
+          console.error('  >>>', line);
+        } else {
+          console.error('  ', line);
+        }
+      });
     }
     throw new Error(`Failed to create test server: ${error.message}`);
   }
