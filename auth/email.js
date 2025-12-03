@@ -21,6 +21,13 @@
 async function sendPasswordResetEmail(email, resetUrl) {
   const emailService = require('../src/services/emailService');
   const result = await emailService.sendPasswordReset({ email, resetUrl });
+
+  // If email service is not configured, fall back to console log
+  if (!result.success && result.error && result.error.includes('not configured')) {
+    console.log(`[Auth Email] Password reset email fallback for ${email}: ${resetUrl}`);
+    return true; // Return true for fallback behavior
+  }
+
   return result.success;
 }
 
@@ -34,6 +41,13 @@ async function sendPasswordResetEmail(email, resetUrl) {
 async function sendWelcomeEmail(email, username) {
   const emailService = require('../src/services/emailService');
   const result = await emailService.sendDashboardWelcome({ email });
+
+  // If email service is not configured, fall back to console log
+  if (!result.success && result.error && result.error.includes('not configured')) {
+    console.log(`[Auth Email] Welcome email fallback for ${email} (username: ${username})`);
+    return true; // Return true for fallback behavior
+  }
+
   return result.success;
 }
 
