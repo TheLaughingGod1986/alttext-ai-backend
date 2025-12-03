@@ -896,10 +896,10 @@ try {
     const organizationRouter = orgModule?.router;
     const getMyOrganizations = orgModule?.getMyOrganizations;
     
-    // Validate organization router - Express Router is an object with methods, not a function
+    // Validate organization router - Express Router can be an object or function with router methods
     if (!organizationRouter) {
       logger.warn('Skipping organization routes - router is undefined');
-    } else if (typeof organizationRouter !== 'object' || 
+    } else if ((typeof organizationRouter !== 'object' && typeof organizationRouter !== 'function') || 
         (organizationRouter.stack === undefined && typeof organizationRouter.get !== 'function' && typeof organizationRouter.use !== 'function')) {
       // Invalid router - doesn't have expected Express Router properties
       logger.warn('Skipping organization routes - router validation failed', {
