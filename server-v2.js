@@ -1510,11 +1510,12 @@ try {
 
   return app;
 }
+}
 
-// Export factory function as default
+// ===== Export helpers ======================================================
+// Export factory function as default and named for compatibility
 module.exports = createApp;
-
-// Export helper functions for partner API (functions can have properties in JS)
+module.exports.createApp = createApp;
 module.exports.requestChatCompletion = requestChatCompletion;
 module.exports.buildPrompt = buildPrompt;
 module.exports.buildUserMessage = buildUserMessage;
@@ -1568,5 +1569,4 @@ if (require.main === module) {
     logger.info('SIGTERM received, shutting down gracefully...');
     process.exit(0);
   });
-}
 }
