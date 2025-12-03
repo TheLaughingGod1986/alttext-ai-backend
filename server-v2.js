@@ -1015,7 +1015,9 @@ try {
       throw error;
     }
   }
-// Register routes with defensive checks to prevent undefined middleware errors
+  } // End of else block for organization routes
+
+  // Register routes with defensive checks to prevent undefined middleware errors
 if (newEmailRoutes) app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
 if (emailRoutes) app.use('/email', emailRoutes); // Legacy routes (DEPRECATED - for backward compatibility only, only used if new routes don't match)
 if (waitlistRoutes) app.use('/waitlist', waitlistRoutes); // Waitlist routes
@@ -1501,17 +1503,7 @@ try {
     app.use(Sentry.Handlers.errorHandler());
   }
 
-    // Final validation (inside else block, for non-test mode)
-    if (!app || typeof app.listen !== 'function') {
-      const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
-      logger.error(error.message);
-      throw error;
-    }
-
-    return app;
-  } // End of else block
-
-  // Final validation (for test mode path that skips organization routes)
+  // Final validation (works for both test and non-test mode)
   if (!app || typeof app.listen !== 'function') {
     const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
     logger.error(error.message);
