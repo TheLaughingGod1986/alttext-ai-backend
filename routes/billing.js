@@ -17,7 +17,6 @@ const { createCheckoutSession, createCustomerPortalSession } = require('../src/s
 const { webhookMiddleware, webhookHandler, testWebhook } = require('../src/stripe/webhooks');
 const logger = require('../src/utils/logger');
 const { getEnv, requireEnv, isProduction } = require('../config/loadEnv');
-const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -58,7 +57,10 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
 
     if (!req.user || !req.user.id) {
       logger.warn('[Billing Security] Unauthenticated checkout attempt');
-      return httpErrors.authenticationRequired(res, 'User authentication required');
+      return res.status(401).json({
+        error: 'User authentication required',
+        code: 'AUTHENTICATION_REQUIRED'
+      });
     }
 
     // SECURITY: If email is provided in body, verify it matches authenticated user
@@ -75,7 +77,10 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
           userId: req.user.id,
           ip: req.ip
         });
-        return httpErrors.forbidden(res, 'You can only create checkout sessions for your own account', 'EMAIL_MISMATCH');
+        return res.status(403).json({
+          error: 'You can only create checkout sessions for your own account',
+          code: 'EMAIL_MISMATCH'
+        });
       }
     }
     
@@ -83,7 +88,10 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     const actualPriceId = price_id || priceId;
 
     if (!actualPriceId) {
-      return httpErrors.missingField(res, 'priceId', { code: 'MISSING_PRICE_ID' });
+      return res.status(400).json({
+        error: 'Price ID is required',
+        code: 'MISSING_PRICE_ID'
+      });
     }
 
     // Service-specific valid price IDs from environment variables
@@ -112,7 +120,12 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
         service,
         ip: req.ip
       });
-      return httpErrors.invalidInput(res, `Invalid price ID for ${service} service`, { code: 'INVALID_PRICE_ID', provided: actualPriceId, valid: servicePrices });
+      return res.status(400).json({
+        error: `Invalid price ID for ${service} service`,
+        code: 'INVALID_PRICE_ID',
+        provided: actualPriceId,
+        valid: servicePrices
+      });
     }
 
     // SECURITY: Log all checkout session creation attempts

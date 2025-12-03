@@ -11,7 +11,6 @@ const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
 const { rateLimitByIp } = require('../src/middleware/rateLimiter');
 const logger = require('../src/utils/logger');
-const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -61,7 +60,11 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
     const siteHash = req.headers['x-site-hash'];
     
     if (!siteHash) {
-      return httpErrors.missingField(res, 'X-Site-Hash header');
+      return res.status(400).json({
+        success: false,
+        error: 'X-Site-Hash header is required',
+        code: 'MISSING_SITE_HASH'
+      });
     }
 
     // Get site URL from header (optional)
@@ -85,8 +88,12 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
       usage = await siteService.getSiteUsage(siteHash);
     } catch (error) {
       // If getSiteUsage fails, return error
-      logger.error('[Usage Routes] Failed to get usage info', { error: error.message, stack: error.stack, siteHash });
-      return httpErrors.internalError(res, error.message || 'Failed to get usage info', { code: 'USAGE_ERROR' });
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get usage info',
+        code: 'USAGE_ERROR',
+        message: error.message || 'Unknown error'
+      });
     }
 
     // Determine quota source (priority order):
@@ -259,7 +266,12 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
       details: error.details,
       hint: error.hint
     });
-    return httpErrors.internalError(res, error.message || 'Failed to get usage info', { code: 'USAGE_ERROR' });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get usage info',
+      code: 'USAGE_ERROR',
+      message: error.message || 'Unknown error'
+    });
   }
 });
 
@@ -310,7 +322,11 @@ router.get('/history', authenticateToken, async (req, res) => {
       details: error.details,
       hint: error.hint
     });
-    return httpErrors.internalError(res, error.message || 'Failed to get usage history', { code: 'HISTORY_ERROR' });
+    res.status(500).json({
+      error: 'Failed to get usage history',
+      code: 'HISTORY_ERROR',
+      message: error.message || 'Unknown error'
+    });
   }
 });
 
@@ -752,11 +768,19 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
 
     // Validate required fields
     if (!email) {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
     }
 
     if (!plugin) {
-      return httpErrors.missingField(res, 'plugin');
+      return res.status(400).json({
+        success: false,
+        error: 'Plugin slug is required',
+        code: 'MISSING_PLUGIN'
+      });
     }
 
     const emailLower = email.toLowerCase();
@@ -774,8 +798,11 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
     });
 
     if (!snapshotResult.success) {
-      logger.error('[Usage Routes] Failed to store usage snapshot', { error: snapshotResult.error, email });
-      return httpErrors.internalError(res, snapshotResult.error || 'Failed to store usage snapshot', { code: 'SNAPSHOT_ERROR' });
+      return res.status(500).json({
+        success: false,
+        error: snapshotResult.error || 'Failed to store usage snapshot',
+        code: 'SNAPSHOT_ERROR'
+      });
     }
 
     // If snapshot was skipped (no recent activity), return success but indicate skip
@@ -801,7 +828,11 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    return httpErrors.internalError(res, error.message || 'Failed to sync usage', { code: 'SYNC_ERROR' });
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to sync usage',
+      code: 'SYNC_ERROR'
+    });
   }
 });
 

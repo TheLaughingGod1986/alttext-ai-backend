@@ -528,8 +528,12 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
     );
 
     if (!historyResult.success) {
-      logger.error('[Billing Routes] Failed to get credit transactions', { error: historyResult.error, email });
-      return httpErrors.internalError(res, historyResult.error);
+      return res.status(500).json({
+        ok: false,
+        error: historyResult.error,
+        transactions: [],
+        pagination: { page, limit, total: 0, pages: 0 },
+      });
     }
 
     return res.status(200).json({

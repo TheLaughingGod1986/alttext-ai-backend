@@ -9,7 +9,6 @@ const { z } = require('zod');
 const emailService = require('../services/emailService');
 const logger = require('../utils/logger');
 const { isTest } = require('../../config/loadEnv');
-const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -60,7 +59,10 @@ router.post('/plugin/register', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: errorMessage,
+      });
     }
 
     const { email, plugin, site, installId } = validationResult.data;
@@ -76,8 +78,10 @@ router.post('/plugin/register', async (req, res) => {
     });
 
     if (!result.success) {
-      logger.error('[Compatibility Route] Failed to send email', { error: result.error, email });
-      return httpErrors.internalError(res, result.error || 'Failed to send email');
+      return res.status(500).json({
+        ok: false,
+        error: result.error || 'Failed to send email',
+      });
     }
 
     // Check for deduplication
@@ -92,7 +96,10 @@ router.post('/plugin/register', async (req, res) => {
       stack: error.stack
     });
     // Never break endpoint - return error response
-    return httpErrors.internalError(res, 'Internal server error');
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+    });
   }
 });
 
@@ -110,7 +117,10 @@ router.post('/wp-signup', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: errorMessage,
+      });
     }
 
     const { email, plugin, site, installId } = validationResult.data;
@@ -126,8 +136,10 @@ router.post('/wp-signup', async (req, res) => {
     });
 
     if (!result.success) {
-      logger.error('[Compatibility Route] Failed to send email', { error: result.error, email });
-      return httpErrors.internalError(res, result.error || 'Failed to send email');
+      return res.status(500).json({
+        ok: false,
+        error: result.error || 'Failed to send email',
+      });
     }
 
     // Check for deduplication
@@ -142,7 +154,10 @@ router.post('/wp-signup', async (req, res) => {
       stack: error.stack
     });
     // Never break endpoint - return error response
-    return httpErrors.internalError(res, 'Internal server error');
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+    });
   }
 });
 
@@ -169,7 +184,10 @@ router.post('/legacy-waitlist', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: errorMessage,
+      });
     }
 
     const { email, plugin, source } = validationResult.data;
@@ -185,8 +203,10 @@ router.post('/legacy-waitlist', async (req, res) => {
     });
 
     if (!result.success) {
-      logger.error('[Compatibility Route] Failed to send email', { error: result.error, email });
-      return httpErrors.internalError(res, result.error || 'Failed to send email');
+      return res.status(500).json({
+        ok: false,
+        error: result.error || 'Failed to send email',
+      });
     }
 
     // Check for deduplication
@@ -201,7 +221,10 @@ router.post('/legacy-waitlist', async (req, res) => {
       stack: error.stack
     });
     // Never break endpoint - return error response
-    return httpErrors.internalError(res, 'Internal server error');
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+    });
   }
 });
 
@@ -226,7 +249,10 @@ router.post('/dashboard/email', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: errorMessage,
+      });
     }
 
     const { email } = validationResult.data;
@@ -238,8 +264,10 @@ router.post('/dashboard/email', async (req, res) => {
     const result = await emailService.sendDashboardWelcome({ email });
 
     if (!result.success) {
-      logger.error('[Compatibility Route] Failed to send email', { error: result.error, email });
-      return httpErrors.internalError(res, result.error || 'Failed to send email');
+      return res.status(500).json({
+        ok: false,
+        error: result.error || 'Failed to send email',
+      });
     }
 
     // Check for deduplication
@@ -254,7 +282,10 @@ router.post('/dashboard/email', async (req, res) => {
       stack: error.stack
     });
     // Never break endpoint - return error response
-    return httpErrors.internalError(res, 'Internal server error');
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+    });
   }
 });
 

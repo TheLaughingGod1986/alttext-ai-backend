@@ -10,7 +10,6 @@ const { supabase } = require('../../db/supabase-client');
 const emailService = require('../services/emailService');
 const logger = require('../utils/logger');
 const { isTest } = require('../../config/loadEnv');
-const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -66,7 +65,10 @@ router.post('/submit', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: errorMessage,
+      });
     }
 
     const { email, plugin, source } = validationResult.data;
@@ -147,8 +149,10 @@ router.post('/submit', async (req, res) => {
         });
       }
       // If both failed, return error
-      logger.error('[Waitlist] Both database and email failed', { error: emailResult.error, email });
-      return httpErrors.internalError(res, emailResult.error || 'Failed to process waitlist signup');
+      return res.status(500).json({
+        ok: false,
+        error: emailResult.error || 'Failed to process waitlist signup',
+      });
     }
 
     // Success - record stored (if table exists), email sent, and subscribed to audience
@@ -163,7 +167,10 @@ router.post('/submit', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    return httpErrors.internalError(res, error.message || 'Internal server error');
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Internal server error',
+    });
   }
 });
 
