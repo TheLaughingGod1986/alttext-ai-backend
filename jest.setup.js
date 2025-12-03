@@ -37,17 +37,24 @@ jest.mock('./db/supabase-client', () => {
 jest.mock('express-rate-limit', () => {
   // Return a function that directly returns a middleware function
   // This matches the actual express-rate-limit API: rateLimit(options) returns middleware
-  const mockMiddleware = (req, res, next) => next();
+  const mockMiddleware = (req, res, next) => {
+    // Always call next() to continue the request
+    if (typeof next === 'function') {
+      next();
+    }
+  };
   
-  const mockRateLimiter = jest.fn((options) => {
-    // Always return a valid middleware function
+  // Create the mock function that always returns a valid middleware
+  const mockRateLimiter = function(options) {
+    // Always return a valid middleware function, no matter what
     return mockMiddleware;
-  });
+  };
   
   // Ensure the mock always returns a function, even if called incorrectly
   mockRateLimiter.default = mockRateLimiter;
   
   // Also export as default for ES6 imports
-  return mockRateLimiter;
+  // Make it a jest.fn so it can be tracked
+  return jest.fn(mockRateLimiter);
 });
 
