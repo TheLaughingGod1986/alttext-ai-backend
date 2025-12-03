@@ -867,25 +867,19 @@ try {
   throw e;
 }
   // Load organization routes with error handling
-  // TEMPORARY: Skip organization routes in test mode to isolate the issue
-  // If tests pass without organization routes, we know the issue is with organization routes
-  // If tests still fail, the issue is with another route
-  if (process.env.NODE_ENV === 'test') {
-    logger.warn('Skipping organization routes in test mode to isolate Jest module loading issue');
-  } else {
-    try {
-      // First, verify localAuthenticateToken is available BEFORE requiring organization routes
-      // This prevents any potential issues if organization routes module tries to use it
-      if (!localAuthenticateToken || typeof localAuthenticateToken !== 'function') {
-        const errorMsg = `localAuthenticateToken is not a function BEFORE requiring organization routes. Type: ${typeof localAuthenticateToken}`;
-        logger.error(errorMsg, {
-          localAuthType: typeof localAuthenticateToken,
-          localAuthValue: localAuthenticateToken,
-          authenticateTokenType: typeof authenticateToken,
-          authenticateTokenValue: authenticateToken
-        });
-        throw new Error(errorMsg);
-      } else {
+  try {
+    // First, verify localAuthenticateToken is available BEFORE requiring organization routes
+    // This prevents any potential issues if organization routes module tries to use it
+    if (!localAuthenticateToken || typeof localAuthenticateToken !== 'function') {
+      const errorMsg = `localAuthenticateToken is not a function BEFORE requiring organization routes. Type: ${typeof localAuthenticateToken}`;
+      logger.error(errorMsg, {
+        localAuthType: typeof localAuthenticateToken,
+        localAuthValue: localAuthenticateToken,
+        authenticateTokenType: typeof authenticateToken,
+        authenticateTokenValue: authenticateToken
+      });
+      throw new Error(errorMsg);
+    } else {
       // localAuthenticateToken is valid, proceed with loading organization routes
       const orgModule = require('./routes/organization');
       const organizationRouter = orgModule?.router;
@@ -1008,14 +1002,8 @@ try {
     } // Close the else block for localAuthenticateToken check
   } catch (error) {
     logger.error('Failed to load organization routes', { error: error.message, stack: error.stack });
-    // In test mode, don't throw - just log and continue to see if that's the issue
-    if (process.env.NODE_ENV === 'test') {
-      logger.warn('Continuing without organization routes in test mode');
-    } else {
-      throw error;
-    }
+    throw error;
   }
-  } // End of else block for organization routes
 
   // Register routes with defensive checks to prevent undefined middleware errors
 if (newEmailRoutes) app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
