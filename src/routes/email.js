@@ -62,10 +62,8 @@ router.post('/waitlist', async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     // Check for deduplication
@@ -75,11 +73,8 @@ router.post('/waitlist', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Waitlist email error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] Waitlist email error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -104,10 +99,8 @@ router.post('/dashboard-welcome', async (req, res) => {
     const result = await emailService.sendDashboardWelcome({ email });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     // Check for deduplication
@@ -117,11 +110,8 @@ router.post('/dashboard-welcome', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Dashboard welcome email error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] Dashboard welcome email error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -161,10 +151,7 @@ router.post('/plugin-signup', async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return res.status(400).json({
-        ok: false,
-        error: errorMessage,
-      });
+      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
     }
 
     const { email, plugin, pluginName, site, siteUrl, version, wpVersion, phpVersion, language, timezone, installSource } = validationResult.data;
@@ -191,10 +178,8 @@ router.post('/plugin-signup', async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     // Check for deduplication
@@ -204,11 +189,8 @@ router.post('/plugin-signup', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Plugin signup email error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] Plugin signup email error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -230,10 +212,7 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
     }
 
     if (!planName || typeof planName !== 'string') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Plan name is required',
-      });
+      return httpErrors.missingField(res, 'planName');
     }
 
     // Send license activated email
@@ -244,19 +223,14 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] License activated email error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] License activated email error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -278,10 +252,7 @@ router.post('/low-credit-warning', async (req, res) => {
     }
 
     if (remainingCredits === undefined || typeof remainingCredits !== 'number') {
-      return res.status(400).json({
-        ok: false,
-        error: 'Remaining credits is required and must be a number',
-      });
+      return httpErrors.invalidInput(res, 'Remaining credits is required and must be a number');
     }
 
     // Send low credit warning email
@@ -293,19 +264,14 @@ router.post('/low-credit-warning', async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Low credit warning error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] Low credit warning error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -343,10 +309,7 @@ router.post('/receipt', authenticateToken, async (req, res) => {
       const issues = validationResult.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return res.status(400).json({
-        ok: false,
-        error: errorMessage,
-      });
+      return httpErrors.validationFailed(res, errorMessage, validationResult.error.flatten());
     }
 
     const { email, amount, planName, invoiceUrl, pluginName } = validationResult.data;
@@ -360,19 +323,14 @@ router.post('/receipt', authenticateToken, async (req, res) => {
     });
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to send email',
-      });
+      logger.error('[Email Routes] Failed to send email', { error: result.error, email });
+      return httpErrors.internalError(res, result.error || 'Failed to send email');
     }
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Receipt email error', { error: error.message });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
-    });
+    logger.error('[Email Routes] Receipt email error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 

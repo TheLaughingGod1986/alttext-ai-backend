@@ -11,6 +11,7 @@ const creditsService = require('../services/creditsService');
 const emailService = require('../services/emailService');
 const analyticsService = require('../services/analyticsService');
 const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 const { 
   handleSuccessfulCheckout, 
   handleSubscriptionUpdate, 
@@ -651,13 +652,8 @@ function webhookMiddleware(req, res, next) {
     req.stripeEvent = event;
     next();
   } catch (error) {
-    logger.error('Webhook verification failed', { error: error.message });
-    res.status(400).json({
-      ok: false,
-      code: 'INVALID_SIGNATURE',
-      reason: 'validation_failed',
-      message: 'Invalid webhook signature',
-    });
+    logger.error('Webhook verification failed', { error: error.message, stack: error.stack });
+    return httpErrors.validationFailed(res, 'Invalid webhook signature', { code: 'INVALID_SIGNATURE' });
   }
 }
 
@@ -669,13 +665,8 @@ async function webhookHandler(req, res) {
     await handleWebhookEvent(req.stripeEvent);
     res.json({ received: true });
   } catch (error) {
-    logger.error('Webhook handler error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      code: 'WEBHOOK_ERROR',
-      reason: 'server_error',
-      message: 'Webhook processing failed',
-    });
+    logger.error('Webhook handler error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, 'Webhook processing failed', { code: 'WEBHOOK_ERROR' });
   }
 }
 
@@ -702,13 +693,8 @@ async function testWebhook(req, res) {
     res.json({ success: true, message: `Test webhook ${eventType} processed` });
 
   } catch (error) {
-    logger.error('Test webhook error', { error: error.message });
-    res.status(500).json({
-      ok: false,
-      code: 'WEBHOOK_ERROR',
-      reason: 'server_error',
-      message: 'Test webhook failed',
-    });
+    logger.error('Test webhook error', { error: error.message, stack: error.stack });
+    return httpErrors.internalError(res, 'Test webhook failed', { code: 'WEBHOOK_ERROR' });
   }
 }
 

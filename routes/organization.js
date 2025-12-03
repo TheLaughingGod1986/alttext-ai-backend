@@ -175,10 +175,7 @@ router.get('/:orgId/sites', async (req, res) => {
       .single();
 
     if (membershipError || !membership) {
-      return res.status(403).json({
-        success: false,
-        error: 'You do not have access to this organization'
-      });
+      return httpErrors.forbidden(res, 'You do not have access to this organization');
     }
 
     const { data: sites, error: sitesError } = await supabase
@@ -237,17 +234,11 @@ router.get('/:orgId/usage', async (req, res) => {
     // Handle missing table error gracefully
     if (membershipError && (membershipError.code === 'PGRST205' || membershipError.message?.includes('Could not find the table'))) {
       logger.warn('organization_members table not found for usage check', { error: membershipError.message });
-      return res.status(403).json({
-        success: false,
-        error: 'You do not have access to this organization'
-      });
+      return httpErrors.forbidden(res, 'You do not have access to this organization');
     }
 
     if (membershipError || !membership) {
-      return res.status(403).json({
-        success: false,
-        error: 'You do not have access to this organization'
-      });
+      return httpErrors.forbidden(res, 'You do not have access to this organization');
     }
 
     // Get organization details
@@ -466,10 +457,7 @@ router.get('/:orgId/members', async (req, res) => {
       .single();
 
     if (membershipError || !membership) {
-      return res.status(403).json({
-        success: false,
-        error: 'You do not have access to this organization'
-      });
+      return httpErrors.forbidden(res, 'You do not have access to this organization');
     }
 
     const { data: members, error: membersError } = await supabase

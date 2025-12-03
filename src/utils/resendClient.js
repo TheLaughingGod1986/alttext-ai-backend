@@ -9,17 +9,23 @@ const { getEnv } = require('../../config/loadEnv');
 const logger = require('../utils/logger');
 
 let resendInstance = null;
+let cachedApiKey = null;
 
 /**
  * Initialize Resend client if API key is available
  */
 function initResend() {
-  if (!resendInstance) {
-    const apiKey = getEnv('RESEND_API_KEY');
+  const apiKey = getEnv('RESEND_API_KEY');
+  
+  // If API key changed or instance doesn't exist, recreate
+  if (!resendInstance || cachedApiKey !== apiKey) {
+    resendInstance = null;
+    cachedApiKey = apiKey;
     if (apiKey) {
       resendInstance = new Resend(apiKey);
     }
   }
+  
   return resendInstance;
 }
 

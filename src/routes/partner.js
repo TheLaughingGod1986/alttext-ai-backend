@@ -43,6 +43,7 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const logger = require('../utils/logger');
 const { getEnv } = require('../../config/loadEnv');
+const { errors: httpErrors } = require('../utils/http');
 
 // Rate limiting for partner API endpoints (defensive check for test environment)
 let partnerRateLimiter;
@@ -106,12 +107,8 @@ router.post(
       // Get identity email (already set by checkSubscriptionForPartner middleware)
       const email = req.user?.email;
       if (!email) {
-        return res.status(500).json({
-          ok: false,
-          code: 'IDENTITY_ERROR',
-          reason: 'server_error',
-          message: 'Identity email not found',
-        });
+        logger.error('[Partner API] Identity email not found');
+        return httpErrors.internalError(res, 'Identity email not found', { code: 'IDENTITY_ERROR' });
       }
 
       // Check if we should use credits for this request
@@ -137,10 +134,8 @@ router.post(
       const apiKey = getServiceApiKey(service);
 
       if (!apiKey) {
-        return res.status(500).json({
-          ok: false,
-          error: 'Service not configured',
-        });
+        logger.error('[Partner API] Service not configured', { service });
+        return httpErrors.serviceUnavailable(res, 'Service not configured');
       }
 
       // Build prompt and call OpenAI (simplified version of main generate endpoint)
@@ -223,10 +218,16 @@ router.post(
         statusCode: error.response?.status
       });
       const statusCode = error.response?.status || 500;
-      return res.status(statusCode).json({
-        ok: false,
-        error: error.message || 'Generation failed',
-      });
+      if (statusCode === 500) {
+        return httpErrors.internalError(res, error.message || 'Generation failed');
+      } else {
+        return res.status(statusCode).json({
+          ok: false,
+          code: 'GENERATION_ERROR',
+          reason: 'generation_failed',
+          message: error.message || 'Generation failed',
+        });
+      }
     }
   }
 );
@@ -239,10 +240,7 @@ router.post(
 router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.email) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-      });
+      return httpErrors.authenticationRequired(res);
     }
 
     const email = req.user.email.toLowerCase();
@@ -250,19 +248,14 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: identityResult.error,
-      });
+      logger.error('[Partner API] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, identityResult.error);
     }
 
     // Validate input
     const parsed = createApiKeySchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({
-        ok: false,
-        error: parsed.error.issues[0]?.message || 'Validation failed',
-      });
+      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
     }
 
     const { name, rateLimitPerMinute } = parsed.data;
@@ -271,10 +264,8 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
     const result = await partnerApiService.createApiKey(identityResult.identityId, name, rateLimitPerMinute);
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error,
-      });
+      logger.error('[Partner API] Failed to create API key', { error: result.error, email });
+      return httpErrors.internalError(res, result.error);
     }
 
     return res.status(201).json({
@@ -289,10 +280,7 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
       stack: error.stack,
       userId: req.user?.id
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to create API key',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to create API key');
   }
 });
 
@@ -304,10 +292,7 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
 router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.email) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-      });
+      return httpErrors.authenticationRequired(res);
     }
 
     const email = req.user.email.toLowerCase();
@@ -315,22 +300,16 @@ router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req,
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: identityResult.error,
-        apiKeys: [],
-      });
+      logger.error('[Partner API] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, identityResult.error);
     }
 
     // List API keys
     const result = await partnerApiService.listApiKeys(identityResult.identityId);
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error,
-        apiKeys: [],
-      });
+      logger.error('[Partner API] Failed to list API keys', { error: result.error, email });
+      return httpErrors.internalError(res, result.error);
     }
 
     return res.json({
@@ -343,11 +322,7 @@ router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req,
       stack: error.stack,
       userId: req.user?.id
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to list API keys',
-      apiKeys: [],
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to list API keys');
   }
 });
 
@@ -359,10 +334,7 @@ router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req,
 router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.email) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-      });
+      return httpErrors.authenticationRequired(res);
     }
 
     const email = req.user.email.toLowerCase();
@@ -371,21 +343,21 @@ router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, asyn
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: identityResult.error,
-      });
+      logger.error('[Partner API] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, identityResult.error);
     }
 
     // Deactivate API key
     const result = await partnerApiService.deactivateApiKey(apiKeyId, identityResult.identityId);
 
     if (!result.success) {
-      const statusCode = result.error === 'Unauthorized' ? 403 : result.error === 'API key not found' ? 404 : 500;
-      return res.status(statusCode).json({
-        ok: false,
-        error: result.error,
-      });
+      if (result.error === 'Unauthorized') {
+        return httpErrors.forbidden(res, result.error);
+      } else if (result.error === 'API key not found') {
+        return httpErrors.notFound(res, 'API key');
+      }
+      logger.error('[Partner API] Failed to deactivate API key', { error: result.error, apiKeyId, email });
+      return httpErrors.internalError(res, result.error);
     }
 
     return res.json({
@@ -399,10 +371,7 @@ router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, asyn
       apiKeyId: req.params.id,
       userId: req.user?.id
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to deactivate API key',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to deactivate API key');
   }
 });
 
@@ -414,10 +383,7 @@ router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, asyn
 router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.email) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-      });
+      return httpErrors.authenticationRequired(res);
     }
 
     const email = req.user.email.toLowerCase();
@@ -426,21 +392,19 @@ router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken,
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: identityResult.error,
-      });
+      logger.error('[Partner API] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, identityResult.error);
     }
 
     // Rotate API key
     const result = await partnerApiService.rotateApiKey(apiKeyId, identityResult.identityId);
 
     if (!result.success) {
-      const statusCode = result.error === 'API key not found or unauthorized' ? 404 : 500;
-      return res.status(statusCode).json({
-        ok: false,
-        error: result.error,
-      });
+      if (result.error === 'API key not found or unauthorized') {
+        return httpErrors.notFound(res, 'API key');
+      }
+      logger.error('[Partner API] Failed to rotate API key', { error: result.error, apiKeyId, email });
+      return httpErrors.internalError(res, result.error);
     }
 
     return res.json({
@@ -456,10 +420,7 @@ router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken,
       apiKeyId: req.params.id,
       userId: req.user?.id
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to rotate API key',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to rotate API key');
   }
 });
 
@@ -472,10 +433,7 @@ router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken,
 router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.email) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Authentication required',
-      });
+      return httpErrors.authenticationRequired(res);
     }
 
     const email = req.user.email.toLowerCase();
@@ -485,26 +443,18 @@ router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, a
 
     // Validate dates
     if (startDate && isNaN(startDate.getTime())) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid startDate format. Expected ISO string.',
-      });
+      return httpErrors.invalidInput(res, 'Invalid startDate format. Expected ISO string.');
     }
 
     if (endDate && isNaN(endDate.getTime())) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid endDate format. Expected ISO string.',
-      });
+      return httpErrors.invalidInput(res, 'Invalid endDate format. Expected ISO string.');
     }
 
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      return res.status(500).json({
-        ok: false,
-        error: identityResult.error,
-      });
+      logger.error('[Partner API] Failed to get/create identity', { error: identityResult.error, email });
+      return httpErrors.internalError(res, identityResult.error);
     }
 
     // Verify ownership by checking if API key belongs to identity
@@ -516,27 +466,19 @@ router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, a
       .single();
 
     if (keyError || !keyData) {
-      return res.status(404).json({
-        ok: false,
-        error: 'API key not found',
-      });
+      return httpErrors.notFound(res, 'API key');
     }
 
     if (keyData.identity_id !== identityResult.identityId) {
-      return res.status(403).json({
-        ok: false,
-        error: 'Unauthorized',
-      });
+      return httpErrors.forbidden(res, 'Unauthorized');
     }
 
     // Get usage analytics
     const result = await partnerApiService.getUsageAnalytics(apiKeyId, startDate, endDate);
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error,
-      });
+      logger.error('[Partner API] Failed to get usage analytics', { error: result.error, apiKeyId, email });
+      return httpErrors.internalError(res, result.error);
     }
 
     return res.json({
@@ -550,10 +492,7 @@ router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, a
       apiKeyId: req.params.id,
       userId: req.user?.id
     });
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Failed to get usage analytics',
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to get usage analytics');
   }
 });
 

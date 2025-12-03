@@ -31,12 +31,7 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
     const email = req.user?.email;
 
     if (!email) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'User email not found in token',
-      });
+      return httpErrors.validationFailed(res, 'User email not found in token');
     }
 
     const dailyUsage = await getDailyUsage(email);

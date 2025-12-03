@@ -13,6 +13,7 @@ const billingService = require('../src/services/billingService');
 const { rateLimitByUser } = require('../src/middleware/rateLimiter');
 const logger = require('../src/utils/logger');
 const { getEnv, isProduction } = require('../config/loadEnv');
+const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -52,17 +53,11 @@ router.post('/register', async (req, res) => {
 
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({
-        error: 'Email and password are required',
-        code: 'MISSING_FIELDS'
-      });
+      return httpErrors.missingField(res, 'email and password');
     }
 
     if (password.length < 8) {
-      return res.status(400).json({
-        error: 'Password must be at least 8 characters',
-        code: 'WEAK_PASSWORD'
-      });
+      return httpErrors.invalidInput(res, 'Password must be at least 8 characters', { code: 'WEAK_PASSWORD' });
     }
 
     // Validate service
@@ -83,10 +78,7 @@ router.post('/register', async (req, res) => {
       .single();
 
     if (existingUser) {
-      return res.status(409).json({
-        error: 'User already exists with this email',
-        code: 'USER_EXISTS'
-      });
+      return httpErrors.conflict(res, 'User already exists with this email', { code: 'USER_EXISTS' });
     }
 
     // Hash password and create user
@@ -197,12 +189,7 @@ router.post('/register', async (req, res) => {
       details: error.details,
       hint: error.hint
     });
-    res.status(500).json({
-      error: 'Failed to create account',
-      code: 'REGISTRATION_ERROR',
-      message: error.message || 'Unknown error',
-      details: error.details || null
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to create account', { code: 'REGISTRATION_ERROR', details: error.details || null });
   }
 });
 
@@ -218,10 +205,7 @@ router.post('/login', async (req, res) => {
 
     // Validate input
     if (!email) {
-      return res.status(400).json({
-        error: 'Email is required',
-        code: 'MISSING_EMAIL'
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     const emailLower = email.toLowerCase();
@@ -290,19 +274,13 @@ router.post('/login', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return res.status(401).json({
-        error: 'Invalid email or password',
-        code: 'INVALID_CREDENTIALS'
-      });
+      return httpErrors.authenticationRequired(res, 'Invalid email or password', { code: 'INVALID_CREDENTIALS' });
     }
 
     // Verify password
     const isValidPassword = await comparePassword(password, user.password_hash);
     if (!isValidPassword) {
-      return res.status(401).json({
-        error: 'Invalid email or password',
-        code: 'INVALID_CREDENTIALS'
-      });
+      return httpErrors.authenticationRequired(res, 'Invalid email or password', { code: 'INVALID_CREDENTIALS' });
     }
 
     // Get or create identity
@@ -364,10 +342,7 @@ router.post('/login', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to login',
-      code: 'LOGIN_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to login', { code: 'LOGIN_ERROR' });
   }
 });
 
@@ -381,10 +356,7 @@ router.post('/verify', async (req, res) => {
 
     // Validate input
     if (!email || !token) {
-      return res.status(400).json({
-        error: 'Email and token are required',
-        code: 'MISSING_FIELDS'
-      });
+      return httpErrors.missingField(res, 'email and token');
     }
 
     const emailLower = email.toLowerCase();
@@ -397,10 +369,7 @@ router.post('/verify', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return res.status(404).json({
-        error: 'Invalid verification token',
-        code: 'INVALID_TOKEN'
-      });
+      return httpErrors.notFound(res, 'User', { code: 'INVALID_TOKEN', message: 'Invalid verification token' });
     }
 
     // Find valid token
@@ -414,10 +383,7 @@ router.post('/verify', async (req, res) => {
       .single();
 
     if (tokenError || !resetToken) {
-      return res.status(400).json({
-        error: 'Invalid or expired verification token',
-        code: 'INVALID_TOKEN'
-      });
+      return httpErrors.invalidInput(res, 'Invalid or expired verification token', { code: 'INVALID_TOKEN' });
     }
 
     // Mark token as used
@@ -475,10 +441,7 @@ router.post('/verify', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to verify token',
-      code: 'VERIFY_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to verify token', { code: 'VERIFY_ERROR' });
   }
 });
 
@@ -492,10 +455,7 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
   try {
     const email = req.user.email;
     if (!email) {
-      return res.status(400).json({
-        error: 'Email not found in token',
-        code: 'MISSING_EMAIL'
-      });
+      return httpErrors.validationFailed(res, 'Email not found in token');
     }
 
     const emailLower = email.toLowerCase();
@@ -565,10 +525,7 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to get user info',
-      code: 'USER_INFO_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to get user info', { code: 'USER_INFO_ERROR' });
   }
 });
 
@@ -584,10 +541,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return res.status(404).json({
-        error: 'User not found',
-        code: 'USER_NOT_FOUND'
-      });
+      return httpErrors.notFound(res, 'User');
     }
 
     const token = generateToken(user);
@@ -602,10 +556,7 @@ router.post('/refresh', authenticateToken, async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to refresh token',
-      code: 'REFRESH_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to refresh token', { code: 'REFRESH_ERROR' });
   }
 });
 
@@ -619,10 +570,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Validate input
     if (!email) {
-      return res.status(400).json({
-        error: 'Email is required',
-        code: 'MISSING_EMAIL'
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     // Find user
@@ -656,10 +604,7 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     if (recentResets >= 3) {
-      return res.status(429).json({
-        error: 'Too many password reset requests. Please wait 1 hour before requesting another reset.',
-        code: 'RATE_LIMIT_EXCEEDED'
-      });
+      return httpErrors.rateLimitExceeded(res, 'Too many password reset requests. Please wait 1 hour before requesting another reset.');
     }
 
     // Invalidate any existing unused tokens for this user
@@ -740,10 +685,7 @@ router.post('/forgot-password', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to process password reset request',
-      code: 'RESET_REQUEST_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to process password reset request', { code: 'RESET_REQUEST_ERROR' });
   }
 });
 
@@ -759,17 +701,11 @@ router.post('/reset-password', async (req, res) => {
 
     // Validate input
     if (!email || !token || !finalPassword) {
-      return res.status(400).json({
-        error: 'Email, token, and new password are required',
-        code: 'MISSING_FIELDS'
-      });
+      return httpErrors.missingField(res, 'email, token, and new password');
     }
 
     if (finalPassword.length < 8) {
-      return res.status(400).json({
-        error: 'Password must be at least 8 characters',
-        code: 'WEAK_PASSWORD'
-      });
+      return httpErrors.invalidInput(res, 'Password must be at least 8 characters', { code: 'WEAK_PASSWORD' });
     }
 
     // Find user
@@ -780,10 +716,7 @@ router.post('/reset-password', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return res.status(404).json({
-        error: 'Invalid reset token or email',
-        code: 'INVALID_RESET_TOKEN'
-      });
+      return httpErrors.notFound(res, 'User', { code: 'INVALID_RESET_TOKEN', message: 'Invalid reset token or email' });
     }
 
     // Find valid reset token
@@ -797,10 +730,7 @@ router.post('/reset-password', async (req, res) => {
       .single();
 
     if (tokenError || !resetToken) {
-      return res.status(400).json({
-        error: 'Invalid or expired reset token. Please request a new password reset.',
-        code: 'INVALID_RESET_TOKEN'
-      });
+      return httpErrors.invalidInput(res, 'Invalid or expired reset token. Please request a new password reset.', { code: 'INVALID_RESET_TOKEN' });
     }
 
     // Hash new password
@@ -839,10 +769,7 @@ router.post('/reset-password', async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    res.status(500).json({
-      error: 'Failed to reset password',
-      code: 'RESET_PASSWORD_ERROR'
-    });
+    return httpErrors.internalError(res, 'Failed to reset password', { code: 'RESET_PASSWORD_ERROR' });
   }
 });
 

@@ -8,6 +8,7 @@ const { supabase } = require('../../db/supabase-client');
 const { verifyToken } = require('../../auth/jwt');
 const siteService = require('../services/siteService');
 const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 
 /**
  * Authenticate using either JWT token OR license key
@@ -125,12 +126,7 @@ async function dualAuthenticate(req, res, next) {
           checkedOrganizations: true,
           checkedLicenses: true
         });
-        return res.status(401).json({
-          error: 'License key not found in database',
-          code: 'LICENSE_NOT_FOUND',
-          reason: 'license_not_found',
-          message: 'The provided license key does not exist in our system'
-        });
+        return httpErrors.authenticationRequired(res, 'The provided license key does not exist in our system', { code: 'LICENSE_NOT_FOUND' });
       }
 
       // If site hash is provided, verify license is associated with this site
@@ -158,12 +154,7 @@ async function dualAuthenticate(req, res, next) {
               siteKey: site.license_key ? `${site.license_key.substring(0, 8)}...` : 'none',
               siteHash: `${trimmedSiteHash.substring(0, 8)}...`
             });
-            return res.status(403).json({
-              error: 'License key is not associated with this site',
-              code: 'LICENSE_SITE_MISMATCH',
-              reason: 'license_site_mismatch',
-              message: 'The provided license key is not associated with the site hash provided'
-            });
+            return httpErrors.forbidden(res, 'The provided license key is not associated with the site hash provided', { code: 'LICENSE_SITE_MISMATCH' });
           }
 
           // If site has organizationId, verify it matches
@@ -173,12 +164,7 @@ async function dualAuthenticate(req, res, next) {
               siteOrgId: site.organizationId,
               siteHash: `${trimmedSiteHash.substring(0, 8)}...`
             });
-            return res.status(403).json({
-              error: 'License key organization does not match site organization',
-              code: 'LICENSE_ORG_MISMATCH',
-              reason: 'license_org_mismatch',
-              message: 'The license key belongs to a different organization than the site'
-            });
+            return httpErrors.forbidden(res, 'The license key belongs to a different organization than the site', { code: 'LICENSE_ORG_MISMATCH' });
           }
 
           logger.info('[DualAuth] License key validated and associated with site', {
@@ -207,20 +193,12 @@ async function dualAuthenticate(req, res, next) {
         error: error.message,
         stack: error.stack
       });
-      return res.status(500).json({
-        error: 'Authentication error',
-        code: 'AUTH_ERROR',
-        reason: 'server_error',
-        message: error.message
-      });
+      return httpErrors.internalError(res, error.message || 'Authentication error', { code: 'AUTH_ERROR' });
     }
   }
 
   // No valid authentication provided
-  return res.status(401).json({
-    error: 'Authentication required. Provide either JWT token or license key.',
-    code: 'MISSING_AUTH'
-  });
+  return httpErrors.authenticationRequired(res, 'Provide either JWT token or license key.', { code: 'MISSING_AUTH' });
 }
 
 /**
@@ -330,10 +308,7 @@ async function authenticateBySiteHash(req, res, next) {
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
 
   if (!siteHash) {
-    return res.status(400).json({
-      error: 'Site hash required',
-      code: 'MISSING_SITE_HASH'
-    });
+    return httpErrors.missingField(res, 'siteHash');
   }
 
   try {
@@ -344,10 +319,7 @@ async function authenticateBySiteHash(req, res, next) {
       .single();
 
     if (siteError || !site) {
-      return res.status(404).json({
-        error: 'Site not registered',
-        code: 'SITE_NOT_FOUND'
-      });
+      return httpErrors.notFound(res, 'Site');
     }
 
     // Get organization if site has one
@@ -366,10 +338,7 @@ async function authenticateBySiteHash(req, res, next) {
 
     // Check if site is active (if isActive field exists)
     if (site.isActive === false) {
-      return res.status(403).json({
-        error: 'Site has been deactivated',
-        code: 'SITE_DEACTIVATED'
-      });
+      return httpErrors.forbidden(res, 'Site has been deactivated', { code: 'SITE_DEACTIVATED' });
     }
 
     // Update lastSeen if field exists
@@ -388,10 +357,7 @@ async function authenticateBySiteHash(req, res, next) {
 
   } catch (error) {
     logger.error('Error authenticating by site hash', { error: error.message, stack: error.stack });
-    return res.status(500).json({
-      error: 'Authentication error',
-      code: 'AUTH_ERROR'
-    });
+    return httpErrors.internalError(res, 'Authentication error', { code: 'AUTH_ERROR' });
   }
 }
 
@@ -404,10 +370,7 @@ async function authenticateBySiteHashForQuota(req, res, next) {
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
 
   if (!siteHash) {
-    return res.status(400).json({
-      error: 'Site hash required',
-      code: 'MISSING_SITE_HASH'
-    });
+    return httpErrors.missingField(res, 'siteHash');
   }
 
   try {
@@ -456,11 +419,7 @@ async function authenticateBySiteHashForQuota(req, res, next) {
 
   } catch (error) {
     logger.error('Error authenticating by site hash for quota', { error: error.message, stack: error.stack });
-    return res.status(500).json({
-      error: 'Authentication error',
-      code: 'AUTH_ERROR',
-      message: error.message
-    });
+    return httpErrors.internalError(res, error.message || 'Authentication error', { code: 'AUTH_ERROR' });
   }
 }
 
@@ -531,10 +490,7 @@ async function combinedAuth(req, res, next) {
   }
 
   // No authentication provided
-  return res.status(401).json({
-    error: 'Authentication required. Provide JWT token, license key, or site hash.',
-    code: 'MISSING_AUTH'
-  });
+  return httpErrors.authenticationRequired(res, 'Provide JWT token, license key, or site hash.', { code: 'MISSING_AUTH' });
 }
 
 module.exports = {

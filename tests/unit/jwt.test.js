@@ -135,8 +135,10 @@ describe('JWT utilities', () => {
       authenticateToken(req, res, next);
       expect(res.status).toHaveBeenCalledWith(403);
       expect(res.json).toHaveBeenCalledWith({
-        error: 'Invalid or expired token',
-        code: 'INVALID_TOKEN'
+        ok: false,
+        code: 'INVALID_TOKEN',
+        reason: 'authorization_failed',
+        message: 'Invalid or expired token'
       });
       expect(next).not.toHaveBeenCalled();
     });

@@ -11,6 +11,7 @@ const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
 const { rateLimitByIp } = require('../src/middleware/rateLimiter');
 const logger = require('../src/utils/logger');
+const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -60,11 +61,7 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
     const siteHash = req.headers['x-site-hash'];
     
     if (!siteHash) {
-      return res.status(400).json({
-        success: false,
-        error: 'X-Site-Hash header is required',
-        code: 'MISSING_SITE_HASH'
-      });
+      return httpErrors.missingField(res, 'X-Site-Hash header');
     }
 
     // Get site URL from header (optional)
@@ -88,12 +85,8 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
       usage = await siteService.getSiteUsage(siteHash);
     } catch (error) {
       // If getSiteUsage fails, return error
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to get usage info',
-        code: 'USAGE_ERROR',
-        message: error.message || 'Unknown error'
-      });
+      logger.error('[Usage Routes] Failed to get usage info', { error: error.message, stack: error.stack, siteHash });
+      return httpErrors.internalError(res, error.message || 'Failed to get usage info', { code: 'USAGE_ERROR' });
     }
 
     // Determine quota source (priority order):
@@ -266,12 +259,7 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
       details: error.details,
       hint: error.hint
     });
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get usage info',
-      code: 'USAGE_ERROR',
-      message: error.message || 'Unknown error'
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to get usage info', { code: 'USAGE_ERROR' });
   }
 });
 
@@ -322,11 +310,7 @@ router.get('/history', authenticateToken, async (req, res) => {
       details: error.details,
       hint: error.hint
     });
-    res.status(500).json({
-      error: 'Failed to get usage history',
-      code: 'HISTORY_ERROR',
-      message: error.message || 'Unknown error'
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to get usage history', { code: 'HISTORY_ERROR' });
   }
 });
 
@@ -768,19 +752,11 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
 
     // Validate required fields
     if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email is required',
-        code: 'MISSING_EMAIL'
-      });
+      return httpErrors.missingField(res, 'email');
     }
 
     if (!plugin) {
-      return res.status(400).json({
-        success: false,
-        error: 'Plugin slug is required',
-        code: 'MISSING_PLUGIN'
-      });
+      return httpErrors.missingField(res, 'plugin');
     }
 
     const emailLower = email.toLowerCase();
@@ -798,11 +774,8 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
     });
 
     if (!snapshotResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: snapshotResult.error || 'Failed to store usage snapshot',
-        code: 'SNAPSHOT_ERROR'
-      });
+      logger.error('[Usage Routes] Failed to store usage snapshot', { error: snapshotResult.error, email });
+      return httpErrors.internalError(res, snapshotResult.error || 'Failed to store usage snapshot', { code: 'SNAPSHOT_ERROR' });
     }
 
     // If snapshot was skipped (no recent activity), return success but indicate skip
@@ -828,11 +801,7 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
       error: error.message,
       stack: error.stack
     });
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to sync usage',
-      code: 'SYNC_ERROR'
-    });
+    return httpErrors.internalError(res, error.message || 'Failed to sync usage', { code: 'SYNC_ERROR' });
   }
 });
 

@@ -8,6 +8,7 @@ const { supabase } = require('../../db/supabase-client');
 const requireSubscription = require('./requireSubscription');
 const errorCodes = require('../constants/errorCodes');
 const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 
 /**
  * Middleware to check subscription for partner API requests
@@ -17,12 +18,7 @@ async function checkSubscriptionForPartner(req, res, next) {
   try {
     // Partner API auth sets req.partnerApiKey with identityId
     if (!req.partnerApiKey || !req.partnerApiKey.identityId) {
-      return res.status(401).json({
-        ok: false,
-        code: 'UNAUTHORIZED',
-        reason: 'authentication_required',
-        message: 'Partner API authentication required',
-      });
+      return httpErrors.authenticationRequired(res, 'Partner API authentication required');
     }
 
     // Get identity email from identityId
@@ -33,12 +29,11 @@ async function checkSubscriptionForPartner(req, res, next) {
       .single();
 
     if (identityError || !identity) {
-      return res.status(500).json({
-        ok: false,
-        code: 'IDENTITY_ERROR',
-        reason: 'server_error',
-        message: 'Identity not found',
+      logger.error('[CheckSubscriptionForPartner] Identity not found', {
+        error: identityError?.message,
+        identityId: req.partnerApiKey.identityId
       });
+      return httpErrors.internalError(res, 'Identity not found', { code: 'IDENTITY_ERROR' });
     }
 
     // Set req.user.email so the standard subscription middleware can use it
@@ -55,12 +50,7 @@ async function checkSubscriptionForPartner(req, res, next) {
       stack: error.stack,
       identityId: req.partnerApiKey?.identityId
     });
-    return res.status(500).json({
-      ok: false,
-      code: 'SERVER_ERROR',
-      reason: 'server_error',
-      message: 'Subscription check failed',
-    });
+    return httpErrors.internalError(res, 'Subscription check failed');
   }
 }
 
