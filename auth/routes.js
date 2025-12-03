@@ -570,7 +570,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Validate input
     if (!email) {
-      return httpErrors.missingField(res, 'email');
+      return httpErrors.missingField(res, 'email', 'MISSING_EMAIL');
     }
 
     // Find user
@@ -701,7 +701,7 @@ router.post('/reset-password', async (req, res) => {
 
     // Validate input
     if (!email || !token || !finalPassword) {
-      return httpErrors.missingField(res, 'email, token, and new password');
+      return httpErrors.missingField(res, 'email, token, and new password', 'MISSING_FIELDS');
     }
 
     if (finalPassword.length < 8) {

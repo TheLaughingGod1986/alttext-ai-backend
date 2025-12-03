@@ -265,6 +265,14 @@ async function requestChatCompletion(messages, overrides = {}) {
       usage: payload?.usage || null
     };
   } catch (error) {
+    // Handle timeout errors first (network-level errors, no response object)
+    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      const timeoutError = new Error('Request timeout');
+      timeoutError.code = error.code || 'ETIMEDOUT';
+      logger.error('[OpenAI] Request timeout', { code: timeoutError.code });
+      throw timeoutError;
+    }
+
     // Handle specific OpenAI API errors
     const status = error.response?.status;
     const errorData = error.response?.data;

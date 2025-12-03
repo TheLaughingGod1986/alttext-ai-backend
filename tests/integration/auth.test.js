@@ -23,7 +23,18 @@ describe('Auth routes', () => {
 
   afterAll((done) => {
     if (server) {
-      server.close(done);
+      // Close all connections first (Node 18.2+)
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+      // Set a timeout for the close operation
+      const timeout = setTimeout(() => {
+        done();
+      }, 1000);
+      server.close(() => {
+        clearTimeout(timeout);
+        done();
+      });
     } else {
       done();
     }

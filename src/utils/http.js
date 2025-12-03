@@ -77,12 +77,19 @@ const errors = {
     return sendError(res, 400, 'VALIDATION_ERROR', 'validation_failed', message, details);
   },
 
-  missingField: (res, fieldName) => {
-    return sendError(res, 400, 'MISSING_FIELD', 'validation_failed', `${fieldName} is required`);
+  missingField: (res, fieldName, code = null) => {
+    const errorCode = code || 'MISSING_FIELD';
+    return sendError(res, 400, errorCode, 'validation_failed', `${fieldName} is required`);
   },
 
   invalidInput: (res, message = 'Invalid input provided', details = null) => {
-    return sendError(res, 400, 'INVALID_INPUT', 'validation_failed', message, details);
+    // Extract code from details if provided, otherwise use default
+    const code = (details && typeof details === 'object' && details.code) ? details.code : 'INVALID_INPUT';
+    // Remove code from details if it exists (to avoid duplication)
+    const cleanDetails = (details && typeof details === 'object' && details.code) 
+      ? Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'code'))
+      : details;
+    return sendError(res, 400, code, 'validation_failed', message, cleanDetails);
   },
 
   // 401 Unauthorized
@@ -108,8 +115,15 @@ const errors = {
   },
 
   // 404 Not Found
-  notFound: (res, resource = 'Resource') => {
-    return sendError(res, 404, 'NOT_FOUND', 'resource_not_found', `${resource} not found`);
+  notFound: (res, resource = 'Resource', details = null) => {
+    // Extract code from details if provided, otherwise use default
+    const code = (details && typeof details === 'object' && details.code) ? details.code : 'NOT_FOUND';
+    // Remove code from details if it exists (to avoid duplication)
+    const cleanDetails = (details && typeof details === 'object' && details.code) 
+      ? Object.fromEntries(Object.entries(details).filter(([key]) => key !== 'code'))
+      : details;
+    const message = (details && typeof details === 'object' && details.message) ? details.message : `${resource} not found`;
+    return sendError(res, 404, code, 'resource_not_found', message, cleanDetails);
   },
 
   // 409 Conflict
