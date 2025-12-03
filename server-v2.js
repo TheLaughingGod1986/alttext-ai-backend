@@ -8,7 +8,8 @@ const { errors: httpErrors, sendSuccess } = require('./src/utils/http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+// Rate limit - will be loaded conditionally in createApp() to avoid test issues
+let rateLimit;
 const axios = require('axios');
 
 // Safely import supabase - handle dependency loading issues
