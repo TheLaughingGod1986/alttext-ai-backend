@@ -868,7 +868,7 @@ try {
 }
   // Load organization routes with error handling
   try {
-    // First, verify localAuthenticateToken is available BEFORE requiring organization routes
+    // First, verify localAuthenticateToken and safeAuthenticateToken are available BEFORE requiring organization routes
     // This prevents any potential issues if organization routes module tries to use it
     if (!localAuthenticateToken || typeof localAuthenticateToken !== 'function') {
       const errorMsg = `localAuthenticateToken is not a function BEFORE requiring organization routes. Type: ${typeof localAuthenticateToken}`;
@@ -879,24 +879,38 @@ try {
         authenticateTokenValue: authenticateToken
       });
       throw new Error(errorMsg);
-    } else {
-      // localAuthenticateToken is valid, proceed with loading organization routes
-      const orgModule = require('./routes/organization');
-      const organizationRouter = orgModule?.router;
-      const getMyOrganizations = orgModule?.getMyOrganizations;
+    }
     
-    // Validate organization router
+    // Verify safeAuthenticateToken is available (it should be since it's defined earlier in the function)
+    if (!safeAuthenticateToken || typeof safeAuthenticateToken !== 'function') {
+      const errorMsg = `safeAuthenticateToken is not a function BEFORE requiring organization routes. Type: ${typeof safeAuthenticateToken}`;
+      logger.error(errorMsg, {
+        safeAuthType: typeof safeAuthenticateToken,
+        safeAuthValue: safeAuthenticateToken
+      });
+      throw new Error(errorMsg);
+    }
+    
+    // localAuthenticateToken and safeAuthenticateToken are valid, proceed with loading organization routes
+    const orgModule = require('./routes/organization');
+    const organizationRouter = orgModule?.router;
+    const getMyOrganizations = orgModule?.getMyOrganizations;
+    
+    // Validate organization router - Express Router is an object with methods, not a function
     if (!organizationRouter) {
       logger.warn('Skipping organization routes - router is undefined');
-    } else if (typeof organizationRouter !== 'function' || 
-        (organizationRouter.stack === undefined && organizationRouter.get === undefined)) {
+    } else if (typeof organizationRouter !== 'object' || 
+        (organizationRouter.stack === undefined && typeof organizationRouter.get !== 'function' && typeof organizationRouter.use !== 'function')) {
+      // Invalid router - doesn't have expected Express Router properties
       logger.warn('Skipping organization routes - router validation failed', {
         hasRouter: !!organizationRouter,
         routerType: typeof organizationRouter,
-        hasStack: organizationRouter.stack !== undefined,
-        hasGet: organizationRouter.get !== undefined
+        hasStack: organizationRouter?.stack !== undefined,
+        hasGet: typeof organizationRouter?.get === 'function',
+        hasUse: typeof organizationRouter?.use === 'function'
       });
     } else {
+      // Valid Express Router - has stack property or router methods
       // All validations passed - register routes
       // Final check right before app.use() to be absolutely sure
       if (typeof localAuthenticateToken !== 'function') {
@@ -905,21 +919,28 @@ try {
       if (!organizationRouter) {
         throw new Error('organizationRouter is undefined when trying to register routes');
       }
+      if (!safeAuthenticateToken || typeof safeAuthenticateToken !== 'function') {
+        throw new Error(`safeAuthenticateToken is not a function right before app.use(). Type: ${typeof safeAuthenticateToken}`);
+      }
       
       // Log what we're about to register for debugging
       logger.debug('Registering organization routes', {
         hasLocalAuth: !!localAuthenticateToken,
         localAuthType: typeof localAuthenticateToken,
+        hasSafeAuth: !!safeAuthenticateToken,
+        safeAuthType: typeof safeAuthenticateToken,
         hasRouter: !!organizationRouter,
-        routerType: typeof organizationRouter
+        routerType: typeof organizationRouter,
+        routerHasStack: organizationRouter.stack !== undefined,
+        routerHasGet: typeof organizationRouter.get === 'function'
       });
       
-      // Use the safe wrapper instead of creating a new one
+      // Use the safe wrapper - ensure it's accessible
       const orgAuthMiddleware = safeAuthenticateToken;
       
       // Verify the middleware function is valid
       if (typeof orgAuthMiddleware !== 'function') {
-        throw new Error(`orgAuthMiddleware is not a function. Type: ${typeof orgAuthMiddleware}`);
+        throw new Error(`orgAuthMiddleware is not a function. Type: ${typeof orgAuthMiddleware}, safeAuthenticateToken type: ${typeof safeAuthenticateToken}`);
       }
       
       try {
@@ -999,7 +1020,6 @@ try {
         throw useError;
       }
     }
-    } // Close the else block for localAuthenticateToken check
   } catch (error) {
     logger.error('Failed to load organization routes', { error: error.message, stack: error.stack });
     throw error;
