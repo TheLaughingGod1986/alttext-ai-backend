@@ -1501,7 +1501,17 @@ try {
     app.use(Sentry.Handlers.errorHandler());
   }
 
-  // Final validation
+    // Final validation (inside else block, for non-test mode)
+    if (!app || typeof app.listen !== 'function') {
+      const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
+      logger.error(error.message);
+      throw error;
+    }
+
+    return app;
+  } // End of else block
+
+  // Final validation (for test mode path that skips organization routes)
   if (!app || typeof app.listen !== 'function') {
     const error = new Error(`[server-v2] Invalid app created: type=${typeof app}, hasListen=${typeof app?.listen}`);
     logger.error(error.message);
@@ -1509,7 +1519,6 @@ try {
   }
 
   return app;
-}
 }
 
 // ===== Export helpers ======================================================
