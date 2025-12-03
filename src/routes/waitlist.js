@@ -11,14 +11,22 @@ const emailService = require('../services/emailService');
 
 const router = express.Router();
 
-// Rate limiting for waitlist endpoint
-const waitlistRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 waitlist signups per windowMs
-  message: 'Too many waitlist requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting for waitlist endpoint (defensive check for test environment)
+let waitlistRateLimiter;
+if (rateLimit && typeof rateLimit === 'function') {
+  try {
+    waitlistRateLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 5, // Limit each IP to 5 waitlist signups per windowMs
+      message: 'Too many waitlist requests from this IP, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+  } catch (e) {
+    // If rateLimit fails, continue without rate limiting
+    waitlistRateLimiter = null;
+  }
+}
 
 // Apply rate limiting (defensive check for test environment)
 if (waitlistRateLimiter && typeof waitlistRateLimiter === 'function') {

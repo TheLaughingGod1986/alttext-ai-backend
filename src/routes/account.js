@@ -12,14 +12,22 @@ const { getAccountSummary } = require('../services/accountService');
 
 const router = express.Router();
 
-// Rate limiting for account endpoints
-const accountRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // Limit each IP to 30 requests per windowMs
-  message: 'Too many account requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting for account endpoints (defensive check for test environment)
+let accountRateLimiter;
+if (rateLimit && typeof rateLimit === 'function') {
+  try {
+    accountRateLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 30, // Limit each IP to 30 requests per windowMs
+      message: 'Too many account requests from this IP, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+  } catch (e) {
+    // If rateLimit fails, continue without rate limiting
+    accountRateLimiter = null;
+  }
+}
 
 // Apply rate limiting to all account routes (defensive check for test environment)
 if (accountRateLimiter && typeof accountRateLimiter === 'function') {

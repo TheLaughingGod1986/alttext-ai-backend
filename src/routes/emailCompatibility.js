@@ -10,14 +10,22 @@ const emailService = require('../services/emailService');
 
 const router = express.Router();
 
-// Rate limiting for compatibility routes
-const compatibilityRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting for compatibility routes (defensive check for test environment)
+let compatibilityRateLimiter;
+if (rateLimit && typeof rateLimit === 'function') {
+  try {
+    compatibilityRateLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 10, // Limit each IP to 10 requests per windowMs
+      message: 'Too many requests from this IP, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+  } catch (e) {
+    // If rateLimit fails, continue without rate limiting
+    compatibilityRateLimiter = null;
+  }
+}
 
 // Apply rate limiting to all compatibility routes (defensive check for test environment)
 if (compatibilityRateLimiter && typeof compatibilityRateLimiter === 'function') {

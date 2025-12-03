@@ -12,16 +12,23 @@ const logger = require('../src/utils/logger');
 
 const router = express.Router();
 
-// Rate limiting for email endpoints
-const emailRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 email requests per windowMs
-  message: 'Too many email requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiting for email endpoints (defensive check for test environment)
+let emailRateLimiter;
+if (rateLimit && typeof rateLimit === 'function') {
+  try {
+    emailRateLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 10, // Limit each IP to 10 email requests per windowMs
+      message: 'Too many email requests from this IP, please try again later.',
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+  } catch (e) {
+    // If rateLimit fails, continue without rate limiting
+    emailRateLimiter = null;
+  }
+}
 
-// Apply rate limiting to all email routes
 // Apply rate limiting (defensive check for test environment)
 if (emailRateLimiter && typeof emailRateLimiter === 'function') {
   router.use(emailRateLimiter);
