@@ -4,12 +4,19 @@
  * Must be at top level for Jest hoisting
  */
 jest.mock('express-rate-limit', () => {
-  const mockRateLimiter = jest.fn(() => {
-    // Return a middleware function that just calls next() - no rate limiting
-    return (req, res, next) => next();
+  // Return a function that directly returns a middleware function
+  // This matches the actual express-rate-limit API: rateLimit(options) returns middleware
+  const mockMiddleware = (req, res, next) => next();
+  
+  const mockRateLimiter = jest.fn((options) => {
+    // Always return a valid middleware function
+    return mockMiddleware;
   });
+  
   // Ensure the mock always returns a function, even if called incorrectly
   mockRateLimiter.default = mockRateLimiter;
+  
+  // Also export as default for ES6 imports
   return mockRateLimiter;
 });
 
