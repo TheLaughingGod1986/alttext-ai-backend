@@ -28,6 +28,8 @@ module.exports = {
   restoreMocks: true,
   moduleDirectories: ['node_modules', '<rootDir>'],
   setupFiles: ['dotenv/config', '<rootDir>/jest.setup.js'],
+  // Enable manual mocks from __mocks__ directory
+  automock: false,
   testPathIgnorePatterns: ['/node_modules/', '/tests/mocks/', '<rootDir>/coverage'],
   testTimeout: 10000, // 10 second timeout for tests
   // Performance optimizations for cloud-synced filesystem
