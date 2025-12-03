@@ -5,6 +5,7 @@
  */
 
 const partnerApiService = require('../services/partnerApiService');
+const logger = require('../utils/logger');
 
 /**
  * Partner API authentication middleware
@@ -71,7 +72,11 @@ async function partnerApiAuth(req, res, next) {
 
     next();
   } catch (error) {
-    console.error('[PartnerApiAuth] Error in middleware:', error);
+    logger.error('[PartnerApiAuth] Error in middleware', {
+      error: error.message,
+      stack: error.stack,
+      path: req.path
+    });
     return res.status(500).json({
       ok: false,
       error: 'Internal server error',
@@ -104,7 +109,11 @@ function logPartnerApiUsage(req, res, next) {
           req.ip
         )
         .catch((error) => {
-          console.error('[PartnerApiAuth] Error logging usage:', error);
+          logger.error('[PartnerApiAuth] Error logging usage', {
+            error: error.message,
+            stack: error.stack,
+            apiKeyId: req.partnerApiKey?.id
+          });
         });
     }
 

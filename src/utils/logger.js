@@ -4,6 +4,8 @@
  * Supports structured JSON logging for log aggregation services
  */
 
+const { getEnv, isProduction } = require('../../config/loadEnv');
+
 /**
  * Log levels
  */
@@ -18,7 +20,7 @@ const LOG_LEVELS = {
  * Get current log level from environment
  */
 function getLogLevel() {
-  const level = process.env.LOG_LEVEL || 'INFO';
+  const level = getEnv('LOG_LEVEL', 'INFO');
   return LOG_LEVELS[level.toUpperCase()] ?? LOG_LEVELS.INFO;
 }
 
@@ -26,7 +28,7 @@ function getLogLevel() {
  * Check if JSON logging is enabled
  */
 function useJsonFormat() {
-  return process.env.LOG_FORMAT === 'json' || process.env.NODE_ENV === 'production';
+  return getEnv('LOG_FORMAT') === 'json' || isProduction();
 }
 
 const currentLogLevel = getLogLevel();

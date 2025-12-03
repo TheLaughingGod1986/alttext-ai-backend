@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const { analyticsEventSchema, analyticsEventOrArraySchema } = require('../validation/analyticsEventSchema');
 const analyticsService = require('../services/analyticsService');
+const logger = require('../utils/logger');
 
 /**
  * Helper to get client IP address
@@ -62,7 +63,10 @@ router.post('/log', async (req, res) => {
     });
   } catch (error) {
     // Catch any unexpected errors - always return 200
-    console.error('[AnalyticsRoutes] Unexpected error in /analytics/log:', error);
+    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/log', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(200).json({
       ok: false,
       error: 'UNEXPECTED_ERROR',
@@ -138,7 +142,10 @@ router.post('/event', async (req, res) => {
     });
   } catch (error) {
     // Catch any unexpected errors - always return 200
-    console.error('[AnalyticsRoutes] Unexpected error in /analytics/event:', error);
+    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/event', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(200).json({
       ok: false,
       error: 'UNEXPECTED_ERROR',
@@ -238,7 +245,10 @@ router.get('/summary', async (req, res) => {
       summary: result.summary,
     });
   } catch (error) {
-    console.error('[AnalyticsRoutes] Unexpected error in /analytics/summary:', error);
+    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/summary', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({
       ok: false,
       error: 'UNEXPECTED_ERROR',

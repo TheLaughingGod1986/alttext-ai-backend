@@ -10,6 +10,7 @@ const siteService = require('../src/services/siteService');
 const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
 const { rateLimitByIp } = require('../src/middleware/rateLimiter');
+const logger = require('../src/utils/logger');
 
 const router = express.Router();
 
@@ -258,10 +259,10 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
     res.json(response);
 
   } catch (error) {
-    console.error('Get usage error:', error);
-    console.error('Error details:', {
+    logger.error('Get usage error', {
+      error: error.message,
+      stack: error.stack,
       code: error.code,
-      message: error.message,
       details: error.details,
       hint: error.hint
     });
@@ -314,10 +315,10 @@ router.get('/history', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get usage history error:', error);
-    console.error('Error details:', {
+    logger.error('Get usage history error', {
+      error: error.message,
+      stack: error.stack,
       code: error.code,
-      message: error.message,
       details: error.details,
       hint: error.hint
     });
@@ -361,7 +362,11 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
     // No need to update users table
 
   } catch (error) {
-    console.error('Error recording usage:', error);
+    logger.error('Error recording usage', {
+      error: error.message,
+      stack: error.stack,
+      userId
+    });
     throw error;
   }
 }
@@ -372,11 +377,11 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
 async function checkUserLimits(userId) {
   // Validate userId exists
   if (!userId) {
-    console.error('checkUserLimits: Invalid userId provided:', userId);
+    logger.error('checkUserLimits: Invalid userId provided', { userId });
     throw new Error('User not found');
   }
 
-  console.log('checkUserLimits: Querying user:', { userId, userIdType: typeof userId });
+  logger.debug('checkUserLimits: Querying user', { userId, userIdType: typeof userId });
   
   // Query user for plan
   const { data: user, error: userError } = await supabase
@@ -386,8 +391,8 @@ async function checkUserLimits(userId) {
     .single();
 
   if (userError) {
-    console.error('checkUserLimits: Supabase query error:', {
-      message: userError.message,
+    logger.error('checkUserLimits: Supabase query error', {
+      error: userError.message,
       code: userError.code,
       details: userError.details,
       hint: userError.hint,
@@ -397,7 +402,7 @@ async function checkUserLimits(userId) {
   }
 
   if (!user) {
-    console.error('checkUserLimits: User not found in database:', { userId: userId });
+    logger.error('checkUserLimits: User not found in database', { userId: userId });
     throw new Error('User not found');
   }
 
@@ -431,7 +436,7 @@ async function checkUserLimits(userId) {
   const usedThisMonth = creditsData?.used_this_month || 0;
   const creditsRemaining = Math.max(0, monthlyLimit - usedThisMonth);
 
-  console.log('checkUserLimits: User found:', { 
+  logger.debug('checkUserLimits: User found', { 
     id: userId, 
     plan: user.plan, 
     creditsRemaining,
@@ -543,14 +548,21 @@ async function resetMonthlyTokens() {
         .eq('id', user.id);
 
       if (updateError) {
-        console.error(`Error resetting tokens for user ${user.id}:`, updateError);
+        logger.error('Error resetting tokens for user', {
+          error: updateError.message,
+          stack: updateError.stack,
+          userId: user.id
+        });
       }
     }
 
-    console.log(`Reset monthly tokens for ${users.length} users`);
+    logger.info('Reset monthly tokens for users', { count: users.length });
     return users.length;
   } catch (error) {
-    console.error('Error resetting monthly tokens:', error);
+    logger.error('Error resetting monthly tokens', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -637,7 +649,12 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
     if (updateError) throw updateError;
 
   } catch (error) {
-    console.error('Error recording organization usage:', error);
+    logger.error('Error recording organization usage', {
+      error: error.message,
+      stack: error.stack,
+      organizationId,
+      userId
+    });
     throw error;
   }
 }
@@ -720,14 +737,21 @@ async function resetOrganizationTokens() {
         .eq('id', org.id);
 
       if (updateError) {
-        console.error(`Error resetting tokens for organization ${org.id}:`, updateError);
+        logger.error('Error resetting tokens for organization', {
+          error: updateError.message,
+          stack: updateError.stack,
+          organizationId: org.id
+        });
       }
     }
 
-    console.log(`Reset monthly tokens for ${organizations.length} organizations`);
+    logger.info('Reset monthly tokens for organizations', { count: organizations.length });
     return organizations.length;
   } catch (error) {
-    console.error('Error resetting organization tokens:', error);
+    logger.error('Error resetting organization tokens', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -800,7 +824,10 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
       staleVersions: staleVersionsResult.success ? staleVersionsResult.staleVersions : [],
     });
   } catch (error) {
-    console.error('[Usage Routes] Error in /sync/usage:', error);
+    logger.error('[Usage Routes] Error in /sync/usage', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to sync usage',

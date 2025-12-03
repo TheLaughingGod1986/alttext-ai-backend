@@ -8,6 +8,8 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { supabase } = require('../../db/supabase-client');
 const emailService = require('../services/emailService');
+const logger = require('../utils/logger');
+const { isTest } = require('../../config/loadEnv');
 
 const router = express.Router();
 
@@ -29,7 +31,8 @@ if (rateLimit && typeof rateLimit === 'function') {
 }
 
 // Apply rate limiting (defensive check for test environment)
-if (waitlistRateLimiter && typeof waitlistRateLimiter === 'function') {
+// Skip rate limiting entirely in test environment to avoid middleware issues
+if (!isTest() && waitlistRateLimiter && typeof waitlistRateLimiter === 'function') {
   router.use(waitlistRateLimiter);
 }
 
@@ -86,15 +89,21 @@ router.post('/submit', async (req, res) => {
         .single();
 
       if (error && !error.message.includes('duplicate') && !error.message.includes('already exists')) {
-        console.warn('[Waitlist] Failed to insert into Supabase (non-critical):', error.message);
+        logger.warn('[Waitlist] Failed to insert into Supabase (non-critical)', {
+          error: error.message,
+          email
+        });
         // Continue even if Supabase insert fails - email sending is more important
       } else if (data) {
         waitlistRecord = data;
-        console.log(`[Waitlist] Signup stored in database: ${email}`);
+        logger.info('[Waitlist] Signup stored in database', { email });
       }
     } catch (dbError) {
       // Table might not exist yet - that's okay, we'll just send the email
-      console.warn('[Waitlist] Database operation failed (non-critical):', dbError.message);
+      logger.warn('[Waitlist] Database operation failed (non-critical)', {
+        error: dbError.message,
+        email
+      });
     }
 
     // Send welcome email
@@ -117,13 +126,19 @@ router.post('/submit', async (req, res) => {
     });
 
     if (!subscribeResult.success && subscribeResult.error !== 'Email service not configured') {
-      console.warn(`[Waitlist] Failed to subscribe ${email} to audience (non-critical):`, subscribeResult.error);
+      logger.warn('[Waitlist] Failed to subscribe to audience (non-critical)', {
+        error: subscribeResult.error,
+        email
+      });
     } else if (subscribeResult.success) {
-      console.log(`[Waitlist] Subscribed ${email} to Resend audience`);
+      logger.info('[Waitlist] Subscribed to Resend audience', { email });
     }
 
     if (!emailResult.success) {
-      console.error(`[Waitlist] Failed to send welcome email to ${email}:`, emailResult.error);
+      logger.error('[Waitlist] Failed to send welcome email', {
+        error: emailResult.error,
+        email
+      });
       // Still return success if we stored the record, but log the email failure
       if (waitlistRecord) {
         return res.status(200).json({
@@ -148,7 +163,10 @@ router.post('/submit', async (req, res) => {
       subscribed: subscribeResult.success || false,
     });
   } catch (error) {
-    console.error('[Waitlist] Error processing waitlist signup:', error);
+    logger.error('[Waitlist] Error processing waitlist signup', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',

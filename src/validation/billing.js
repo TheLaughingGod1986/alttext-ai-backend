@@ -3,6 +3,7 @@
  */
 
 const { createValidationError } = require('./index');
+const { getEnv } = require('../../config/loadEnv');
 
 /**
  * Validate checkout session input
@@ -36,13 +37,13 @@ function validateCheckoutInput(data) {
 function validatePriceId(priceId, service = 'alttext-ai') {
   const validPrices = {
     'alttext-ai': [
-      process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
-      process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
-      process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS
+      getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO'),
+      getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
+      getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')
     ].filter(Boolean),
     'seo-ai-meta': [
-      process.env.SEO_AI_META_STRIPE_PRICE_PRO,
-      process.env.SEO_AI_META_STRIPE_PRICE_AGENCY
+      getEnv('SEO_AI_META_STRIPE_PRICE_PRO'),
+      getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY')
     ].filter(Boolean)
   };
 

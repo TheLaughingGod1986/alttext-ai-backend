@@ -11,6 +11,8 @@
  * Production code should use src/services/emailService.
  */
 
+const logger = require('../src/utils/logger');
+
 /**
  * Send password reset email
  * @deprecated Use emailService.sendPasswordReset() instead
@@ -22,9 +24,9 @@ async function sendPasswordResetEmail(email, resetUrl) {
   const emailService = require('../src/services/emailService');
   const result = await emailService.sendPasswordReset({ email, resetUrl });
 
-  // If email service is not configured, fall back to console log
+  // If email service is not configured, fall back to logger
   if (!result.success && result.error && result.error.includes('not configured')) {
-    console.log(`[Auth Email] Password reset email fallback for ${email}: ${resetUrl}`);
+    logger.info('[Auth Email] Password reset email fallback', { email, resetUrl });
     return true; // Return true for fallback behavior
   }
 
@@ -42,9 +44,9 @@ async function sendWelcomeEmail(email, username) {
   const emailService = require('../src/services/emailService');
   const result = await emailService.sendDashboardWelcome({ email });
 
-  // If email service is not configured, fall back to console log
+  // If email service is not configured, fall back to logger
   if (!result.success && result.error && result.error.includes('not configured')) {
-    console.log(`[Auth Email] Welcome email fallback for ${email} (username: ${username})`);
+    logger.info('[Auth Email] Welcome email fallback', { email, username });
     return true; // Return true for fallback behavior
   }
 

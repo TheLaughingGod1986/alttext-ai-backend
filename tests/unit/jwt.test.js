@@ -2,6 +2,7 @@
 jest.unmock('../../auth/jwt');
 
 const jwt = require('jsonwebtoken');
+const { getEnv } = require('../../config/loadEnv');
 const {
   generateToken,
   verifyToken,
@@ -36,7 +37,7 @@ describe('JWT utilities', () => {
   });
 
   test('verifyToken rejects expired tokens', () => {
-    const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+    const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
     const expiredToken = jwt.sign({ id: 4, email: 'expired@example.com' }, secret, { expiresIn: '-1s' });
     expect(() => verifyToken(expiredToken)).toThrow('Invalid token');
   });
@@ -87,7 +88,7 @@ describe('JWT utilities', () => {
   });
 
   test('authenticateToken rejects expired token payloads', () => {
-    const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+    const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
     const expiredToken = jwt.sign({ id: 6, email: 'expired@example.com' }, secret, { expiresIn: '-1s' });
     const req = { headers: { authorization: `Bearer ${expiredToken}` } };
     const res = {
@@ -111,7 +112,7 @@ describe('JWT utilities', () => {
   // PHASE 9: JWT Helper Edge Cases
   describe('PHASE 9: JWT Edge Cases', () => {
     test('expired token - verifyToken throws after expiration', async () => {
-      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
       const expiredToken = jwt.sign({ id: 50, email: 'expired@example.com' }, secret, { expiresIn: '1s' });
       
       // Wait for token to expire
@@ -121,7 +122,7 @@ describe('JWT utilities', () => {
     });
 
     test('expired token - authenticateToken middleware returns 403', async () => {
-      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
       const expiredToken = jwt.sign({ id: 51, email: 'expired@example.com' }, secret, { expiresIn: '-1s' });
       
       const req = { headers: { authorization: `Bearer ${expiredToken}` } };
@@ -166,7 +167,7 @@ describe('JWT utilities', () => {
     });
 
     test('token with missing required fields - no id field', () => {
-      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
       const tokenWithoutId = jwt.sign({ email: 'no-id@example.com', plan: 'free' }, secret, { expiresIn: '1h' });
       
       // verifyToken should succeed (it doesn't validate fields)
@@ -176,7 +177,7 @@ describe('JWT utilities', () => {
     });
 
     test('token with missing required fields - no email field', () => {
-      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
       const tokenWithoutEmail = jwt.sign({ id: 52, plan: 'free' }, secret, { expiresIn: '1h' });
       
       const decoded = verifyToken(tokenWithoutEmail);
@@ -185,7 +186,7 @@ describe('JWT utilities', () => {
     });
 
     test('token with missing required fields - middleware handles gracefully', () => {
-      const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+      const secret = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
       const tokenWithoutId = jwt.sign({ email: 'no-id@example.com' }, secret, { expiresIn: '1h' });
       
       const req = { headers: { authorization: `Bearer ${tokenWithoutId}` } };

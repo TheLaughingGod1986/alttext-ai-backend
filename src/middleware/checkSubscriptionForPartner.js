@@ -7,6 +7,7 @@
 const { supabase } = require('../../db/supabase-client');
 const requireSubscription = require('./requireSubscription');
 const errorCodes = require('../constants/errorCodes');
+const logger = require('../utils/logger');
 
 /**
  * Middleware to check subscription for partner API requests
@@ -49,7 +50,11 @@ async function checkSubscriptionForPartner(req, res, next) {
     // Call the standard subscription check middleware
     return requireSubscription(req, res, next);
   } catch (error) {
-    console.error('[CheckSubscriptionForPartner] Exception in middleware:', error);
+    logger.error('[CheckSubscriptionForPartner] Exception in middleware', {
+      error: error.message,
+      stack: error.stack,
+      identityId: req.partnerApiKey?.identityId
+    });
     return res.status(500).json({
       ok: false,
       code: 'SERVER_ERROR',

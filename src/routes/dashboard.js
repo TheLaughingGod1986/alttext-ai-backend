@@ -377,7 +377,10 @@ router.get('/me/licenses', authenticateToken, async (req, res) => {
       }
     } catch (err) {
       // Log error but return empty array instead of 500
-      console.error('[Dashboard] Error fetching licenses:', err);
+      logger.error('[Dashboard] Error fetching licenses', {
+        error: err.message,
+        stack: err.stack
+      });
     }
 
     return res.status(200).json({
@@ -385,7 +388,10 @@ router.get('/me/licenses', authenticateToken, async (req, res) => {
       licenses: licenses || [],
     });
   } catch (err) {
-    console.error('[Dashboard] GET /me/licenses error:', err);
+    logger.error('[Dashboard] GET /me/licenses error', {
+      error: err.message,
+      stack: err.stack
+    });
     // Return empty array instead of 500 error for graceful degradation
     return res.status(200).json({
       ok: true,

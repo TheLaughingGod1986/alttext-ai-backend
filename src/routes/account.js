@@ -9,6 +9,9 @@ const rateLimit = require('express-rate-limit');
 const { accountEmailSchema } = require('../validation/accountSchemas');
 const { getUserInstallations, getFullAccount } = require('../services/userAccountService');
 const { getAccountSummary } = require('../services/accountService');
+const logger = require('../utils/logger');
+const { isTest } = require('../../config/loadEnv');
+const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -30,7 +33,8 @@ if (rateLimit && typeof rateLimit === 'function') {
 }
 
 // Apply rate limiting to all account routes (defensive check for test environment)
-if (accountRateLimiter && typeof accountRateLimiter === 'function') {
+// Skip rate limiting entirely in test environment to avoid middleware issues
+if (!isTest() && accountRateLimiter && typeof accountRateLimiter === 'function') {
   router.use(accountRateLimiter);
 }
 
@@ -46,20 +50,18 @@ router.post('/overview', async (req, res) => {
       const issues = parsed.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return res.status(400).json({
-        ok: false,
-        error: errorMessage,
-      });
+      return httpErrors.validationFailed(res, errorMessage, parsed.error.flatten());
     }
     
     const { email } = parsed.data;
     const result = await getFullAccount(email);
     
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to fetch account data',
+      logger.error('[Account Routes] Failed to fetch account data', {
+        error: result.error,
+        email
       });
+      return httpErrors.internalError(res, result.error || 'Failed to fetch account data');
     }
     
     return res.status(200).json({
@@ -67,11 +69,11 @@ router.post('/overview', async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error('[Account Routes] Overview error:', error);
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
+    logger.error('[Account Routes] Overview error', {
+      error: error.message,
+      stack: error.stack
     });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -87,29 +89,27 @@ router.post('/summary', async (req, res) => {
       const issues = parsed.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return res.status(400).json({
-        ok: false,
-        error: errorMessage,
-      });
+      return httpErrors.validationFailed(res, errorMessage, parsed.error.flatten());
     }
     
     const { email } = parsed.data;
     const result = await getAccountSummary(email);
     
     if (!result.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to fetch account summary',
+      logger.error('[Account Routes] Failed to fetch account summary', {
+        error: result.error,
+        email
       });
+      return httpErrors.internalError(res, result.error || 'Failed to fetch account summary');
     }
     
     return res.status(200).json(result);
   } catch (error) {
-    console.error('[Account Routes] Summary error:', error);
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
+    logger.error('[Account Routes] Summary error', {
+      error: error.message,
+      stack: error.stack
     });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 
@@ -125,20 +125,18 @@ router.post('/installations', async (req, res) => {
       const issues = parsed.error.issues || [];
       const firstIssue = issues[0];
       const errorMessage = firstIssue?.message || 'Validation failed';
-      return res.status(400).json({
-        ok: false,
-        error: errorMessage,
-      });
+      return httpErrors.validationFailed(res, errorMessage, parsed.error.flatten());
     }
     
     const { email } = parsed.data;
     const result = await getUserInstallations(email);
     
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to fetch installations',
+      logger.error('[Account Routes] Failed to fetch installations', {
+        error: result.error,
+        email
       });
+      return httpErrors.internalError(res, result.error || 'Failed to fetch installations');
     }
     
     return res.status(200).json({
@@ -146,11 +144,11 @@ router.post('/installations', async (req, res) => {
       installations: result.installations,
     });
   } catch (error) {
-    console.error('[Account Routes] Installations error:', error);
-    return res.status(500).json({
-      ok: false,
-      error: error.message || 'Internal server error',
+    logger.error('[Account Routes] Installations error', {
+      error: error.message,
+      stack: error.stack
     });
+    return httpErrors.internalError(res, error.message || 'Internal server error');
   }
 });
 

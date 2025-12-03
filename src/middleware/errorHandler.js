@@ -6,6 +6,7 @@
 
 const errorCodes = require('../constants/errorCodes');
 const logger = require('../utils/logger');
+const { isProduction } = require('../../config/loadEnv');
 
 /**
  * Detect if an error is a database schema error
@@ -198,7 +199,7 @@ function errorHandler(err, req, res, next) {
     errorCode = 'CORS_ERROR';
   } else if (err.message) {
     // Use error message if provided (but sanitize in production)
-    if (process.env.NODE_ENV === 'production') {
+    if (isProduction()) {
       // In production, only show generic messages for 500 errors
       if (statusCode >= 500) {
         errorMessage = 'Internal server error';
@@ -225,7 +226,7 @@ function errorHandler(err, req, res, next) {
   }
 
   // Include stack trace in development only
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction()) {
     errorResponse.stack = err.stack;
     if (!errorDetails) {
       errorResponse.details = {

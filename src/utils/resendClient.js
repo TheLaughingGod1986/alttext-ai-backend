@@ -5,6 +5,8 @@
 
 const { Resend } = require('resend');
 const { transactionalFromEmail } = require('../emails/emailConfig');
+const { getEnv } = require('../../config/loadEnv');
+const logger = require('../utils/logger');
 
 let resendInstance = null;
 
@@ -12,8 +14,11 @@ let resendInstance = null;
  * Initialize Resend client if API key is available
  */
 function initResend() {
-  if (!resendInstance && process.env.RESEND_API_KEY) {
-    resendInstance = new Resend(process.env.RESEND_API_KEY);
+  if (!resendInstance) {
+    const apiKey = getEnv('RESEND_API_KEY');
+    if (apiKey) {
+      resendInstance = new Resend(apiKey);
+    }
   }
   return resendInstance;
 }
@@ -34,7 +39,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
 
   if (!client) {
     const error = 'Resend API key not configured';
-    console.error(`[Resend Client] ${error}`);
+    logger.error('[Resend Client] Resend API key not configured');
     return {
       success: false,
       error,
@@ -43,7 +48,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
 
   if (!to || !subject || !html) {
     const error = 'Missing required email fields: to, subject, and html are required';
-    console.error(`[Resend Client] ${error}`);
+    logger.error('[Resend Client] Missing required email fields', { to: !!to, subject: !!subject, html: !!html });
     return {
       success: false,
       error,
@@ -51,7 +56,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
   }
 
   try {
-    console.log(`[Resend Client] Sending email to ${to} with subject: ${subject}`);
+    logger.info('[Resend Client] Sending email', { to, subject });
 
     const emailData = {
       from: from || transactionalFromEmail,
@@ -71,7 +76,11 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
     const result = await client.emails.send(emailData);
 
     if (result.error) {
-      console.error(`[Resend Client] Error sending email:`, result.error);
+      logger.error('[Resend Client] Error sending email', {
+        error: result.error.message || result.error,
+        to,
+        subject
+      });
       return {
         success: false,
         error: result.error.message || 'Failed to send email',
@@ -79,7 +88,10 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
       };
     }
 
-    console.log(`[Resend Client] Email sent successfully. ID: ${result.data?.id || 'unknown'}`);
+    logger.info('[Resend Client] Email sent successfully', {
+      emailId: result.data?.id || 'unknown',
+      to
+    });
 
     return {
       success: true,
@@ -87,7 +99,12 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
       data: result.data,
     };
   } catch (error) {
-    console.error(`[Resend Client] Exception sending email:`, error);
+    logger.error('[Resend Client] Exception sending email', {
+      error: error.message,
+      stack: error.stack,
+      to,
+      subject
+    });
     return {
       success: false,
       error: error.message || 'Failed to send email',

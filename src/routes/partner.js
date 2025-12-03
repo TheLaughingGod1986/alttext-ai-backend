@@ -41,6 +41,8 @@ const partnerApiService = require('../services/partnerApiService');
 const creditsService = require('../services/creditsService');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+const logger = require('../utils/logger');
+const { getEnv } = require('../../config/loadEnv');
 
 // Rate limiting for partner API endpoints (defensive check for test environment)
 let partnerRateLimiter;
@@ -159,7 +161,7 @@ router.post(
 
         openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
           apiKey,
-          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          model: req.body.model || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
           max_tokens: 300,
           temperature: 0.7,
         });
@@ -197,7 +199,10 @@ router.post(
         if (spendResult.success) {
           remainingCredits = spendResult.remainingBalance;
         } else {
-          console.error(`[Partner API] Failed to deduct credits: ${spendResult.error}`);
+          logger.error('[Partner API] Failed to deduct credits', {
+            error: spendResult.error,
+            creditIdentityId: req.creditIdentityId
+          });
           // Continue anyway - generation succeeded, just log the error
         }
       }
@@ -212,7 +217,11 @@ router.post(
         tokens: openaiResponse.usage,
       });
     } catch (error) {
-      console.error('[Partner API] Generation error:', error);
+      logger.error('[Partner API] Generation error', {
+        error: error.message,
+        stack: error.stack,
+        statusCode: error.response?.status
+      });
       const statusCode = error.response?.status || 500;
       return res.status(statusCode).json({
         ok: false,
@@ -275,7 +284,11 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
       warning: 'Store this API key securely. It will not be shown again.',
     });
   } catch (error) {
-    console.error('[Partner API] Error creating API key:', error);
+    logger.error('[Partner API] Error creating API key', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.id
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to create API key',
@@ -325,7 +338,11 @@ router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req,
       apiKeys: result.apiKeys,
     });
   } catch (error) {
-    console.error('[Partner API] Error listing API keys:', error);
+    logger.error('[Partner API] Error listing API keys', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.id
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to list API keys',
@@ -376,7 +393,12 @@ router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, asyn
       message: 'API key deactivated successfully',
     });
   } catch (error) {
-    console.error('[Partner API] Error deactivating API key:', error);
+    logger.error('[Partner API] Error deactivating API key', {
+      error: error.message,
+      stack: error.stack,
+      apiKeyId: req.params.id,
+      userId: req.user?.id
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to deactivate API key',
@@ -428,7 +450,12 @@ router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken,
       warning: 'Store this new API key securely. The old key has been deactivated.',
     });
   } catch (error) {
-    console.error('[Partner API] Error rotating API key:', error);
+    logger.error('[Partner API] Error rotating API key', {
+      error: error.message,
+      stack: error.stack,
+      apiKeyId: req.params.id,
+      userId: req.user?.id
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to rotate API key',
@@ -517,7 +544,12 @@ router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, a
       analytics: result.analytics,
     });
   } catch (error) {
-    console.error('[Partner API] Error getting usage analytics:', error);
+    logger.error('[Partner API] Error getting usage analytics', {
+      error: error.message,
+      stack: error.stack,
+      apiKeyId: req.params.id,
+      userId: req.user?.id
+    });
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to get usage analytics',

@@ -6,6 +6,7 @@
 
 const { supabase } = require('../../db/supabase-client');
 const billingService = require('./billingService');
+const logger = require('../utils/logger');
 
 /**
  * Get all installations for a user
@@ -20,13 +21,21 @@ async function getUserInstallations(email) {
       .eq('email', email.toLowerCase());
     
     if (error) {
-      console.error('[UserAccountService] Error fetching installations:', error);
+      logger.error('[UserAccountService] Error fetching installations', {
+        error: error.message,
+        code: error.code,
+        email
+      });
       throw error;
     }
     
     return { success: true, installations: data || [] };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching installations:', err);
+    logger.error('[UserAccountService] Exception fetching installations', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, installations: [] };
   }
 }
@@ -44,13 +53,21 @@ async function getUserPlugins(email) {
       .eq('email', email.toLowerCase());
     
     if (error) {
-      console.error('[UserAccountService] Error fetching plugins:', error);
+      logger.error('[UserAccountService] Error fetching plugins', {
+        error: error.message,
+        code: error.code,
+        email
+      });
       throw error;
     }
     
     return { success: true, plugins: data || [] };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching plugins:', err);
+    logger.error('[UserAccountService] Exception fetching plugins', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, plugins: [] };
   }
 }
@@ -68,13 +85,21 @@ async function getUserSites(email) {
       .eq('email', email.toLowerCase());
     
     if (error) {
-      console.error('[UserAccountService] Error fetching sites:', error);
+      logger.error('[UserAccountService] Error fetching sites', {
+        error: error.message,
+        code: error.code,
+        email
+      });
       throw error;
     }
     
     return { success: true, sites: data || [] };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching sites:', err);
+    logger.error('[UserAccountService] Exception fetching sites', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, sites: [] };
   }
 }
@@ -111,7 +136,11 @@ async function getUserUsage(email) {
       },
     };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching usage:', err);
+    logger.error('[UserAccountService] Exception fetching usage', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, usage: [] };
   }
 }
@@ -130,13 +159,21 @@ async function getUserInvoices(email) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[UserAccountService] Error fetching invoices:', error);
+      logger.error('[UserAccountService] Error fetching invoices', {
+        error: error.message,
+        code: error.code,
+        email
+      });
       throw error;
     }
 
     return { success: true, invoices: data || [] };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching invoices:', err);
+    logger.error('[UserAccountService] Exception fetching invoices', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, invoices: [] };
   }
 }
@@ -169,7 +206,11 @@ async function getFullAccount(email) {
       invoices: invoicesResult.success ? invoicesResult.invoices : [],
     };
   } catch (err) {
-    console.error('[UserAccountService] Exception fetching full account:', err);
+    logger.error('[UserAccountService] Exception fetching full account', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return {
       success: false,
       error: err.message,

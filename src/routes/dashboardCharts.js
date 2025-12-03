@@ -16,6 +16,7 @@ const {
 const billingService = require('../services/billingService');
 const usageService = require('../services/usageService');
 const plansConfig = require('../config/plans');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -49,7 +50,11 @@ router.get('/dashboard/usage/daily', authenticateToken, async (req, res) => {
       days,
     });
   } catch (err) {
-    console.error('[DashboardCharts] GET /dashboard/usage/daily error:', err);
+    logger.error('[DashboardCharts] GET /dashboard/usage/daily error', {
+      error: err.message,
+      stack: err.stack,
+      email: req.user?.email
+    });
     return res.status(500).json({
       ok: false,
       code: 'DASHBOARD_ERROR',
@@ -89,7 +94,11 @@ router.get('/dashboard/usage/monthly', authenticateToken, async (req, res) => {
       months,
     });
   } catch (err) {
-    console.error('[DashboardCharts] GET /dashboard/usage/monthly error:', err);
+    logger.error('[DashboardCharts] GET /dashboard/usage/monthly error', {
+      error: err.message,
+      stack: err.stack,
+      email: req.user?.email
+    });
     return res.status(500).json({
       ok: false,
       code: 'DASHBOARD_ERROR',
@@ -124,7 +133,11 @@ router.get('/dashboard/events/recent', authenticateToken, async (req, res) => {
       events,
     });
   } catch (err) {
-    console.error('[DashboardCharts] GET /dashboard/events/recent error:', err);
+    logger.error('[DashboardCharts] GET /dashboard/events/recent error', {
+      error: err.message,
+      stack: err.stack,
+      email: req.user?.email
+    });
     return res.status(500).json({
       ok: false,
       error: 'Failed to load recent events',
@@ -157,7 +170,11 @@ router.get('/dashboard/plugins/activity', authenticateToken, async (req, res) =>
       plugins,
     });
   } catch (err) {
-    console.error('[DashboardCharts] GET /dashboard/plugins/activity error:', err);
+    logger.error('[DashboardCharts] GET /dashboard/plugins/activity error', {
+      error: err.message,
+      stack: err.stack,
+      email: req.user?.email
+    });
     return res.status(500).json({
       ok: false,
       error: 'Failed to load plugin activity',
@@ -258,7 +275,11 @@ router.get('/dashboard/charts', authenticateToken, async (req, res) => {
       quotaUsed,
     });
   } catch (err) {
-    console.error('[DashboardCharts] GET /dashboard/charts error:', err);
+    logger.error('[DashboardCharts] GET /dashboard/charts error', {
+      error: err.message,
+      stack: err.stack,
+      email: req.user?.email
+    });
     return res.status(200).json({
       ok: false,
       charts: {

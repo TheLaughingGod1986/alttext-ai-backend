@@ -8,6 +8,8 @@ const router = express.Router();
 const { pluginInitSchema } = require('../validation/pluginInitSchema');
 const { getOrCreateIdentity, issueJwt, refreshJwt } = require('../services/identityService');
 const { recordInstallation } = require('../services/pluginInstallationService');
+const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 
 /**
  * POST /auth/plugin-init
@@ -15,27 +17,22 @@ const { recordInstallation } = require('../services/pluginInstallationService');
  * Creates/gets identity, records installation (non-blocking), and issues JWT
  */
 router.post('/auth/plugin-init', async (req, res) => {
-  const validation = pluginInitSchema.safeParse(req.body);
+  try {
+    const validation = pluginInitSchema.safeParse(req.body);
 
-  if (!validation.success) {
-    return res.status(400).json({
-      ok: false,
-      error: 'VALIDATION_ERROR',
-      details: validation.error.flatten(),
-    });
-  }
+    if (!validation.success) {
+      return httpErrors.validationFailed(res, 'Request validation failed', validation.error.flatten());
+    }
 
-  const data = validation.data;
+    const data = validation.data;
 
-  // Get or create identity
-  const identity = await getOrCreateIdentity(data.email, data.plugin, data.site);
+    // Get or create identity
+    const identity = await getOrCreateIdentity(data.email, data.plugin, data.site);
 
-  if (!identity) {
-    return res.status(500).json({
-      ok: false,
-      error: 'IDENTITY_CREATION_FAILED',
-    });
-  }
+    if (!identity) {
+      logger.error('[PluginAuth] Identity creation failed', { email: data.email, plugin: data.plugin });
+      return httpErrors.internalError(res, 'Failed to create or retrieve identity', { code: 'IDENTITY_CREATION_FAILED' });
+    }
 
   // Record installation (non-blocking - don't wait for it)
   recordInstallation({
@@ -49,18 +46,30 @@ router.post('/auth/plugin-init', async (req, res) => {
     timezone: data.timezone,
     installSource: 'plugin',
   }).catch((e) => {
-    console.error('Failed to record installation', e);
+    logger.error('Failed to record installation', {
+      error: e.message,
+      stack: e.stack,
+      email: data.email,
+      plugin: data.plugin
+    });
   });
 
-  // Issue JWT
-  const token = issueJwt(identity);
+    // Issue JWT
+    const token = issueJwt(identity);
 
-  return res.status(200).json({
-    ok: true,
-    token,
-    email: identity.email,
-    plugin: identity.plugin_slug,
-  });
+    return res.status(200).json({
+      ok: true,
+      token,
+      email: identity.email,
+      plugin: identity.plugin_slug,
+    });
+  } catch (error) {
+    logger.error('[PluginAuth] Error in plugin-init', {
+      error: error.message,
+      stack: error.stack
+    });
+    return httpErrors.internalError(res, error.message || 'Failed to initialize plugin');
+  }
 });
 
 /**
@@ -69,28 +78,30 @@ router.post('/auth/plugin-init', async (req, res) => {
  * Validates old token, checks version, and returns new token
  */
 router.post('/auth/refresh-token', async (req, res) => {
-  const { token } = req.body;
+  try {
+    const { token } = req.body;
 
-  if (!token) {
-    return res.status(400).json({
-      ok: false,
-      error: 'TOKEN_REQUIRED',
+    if (!token) {
+      return httpErrors.missingField(res, 'token');
+    }
+
+    const result = await refreshJwt(token);
+
+    if (!result.success) {
+      return httpErrors.invalidToken(res, result.message || 'Failed to refresh token');
+    }
+
+    return res.status(200).json({
+      ok: true,
+      token: result.token,
     });
-  }
-
-  const result = await refreshJwt(token);
-
-  if (!result.success) {
-    return res.status(401).json({
-      ok: false,
-      ...result,
+  } catch (error) {
+    logger.error('[PluginAuth] Error in refresh-token', {
+      error: error.message,
+      stack: error.stack
     });
+    return httpErrors.internalError(res, error.message || 'Failed to refresh token');
   }
-
-  return res.status(200).json({
-    ok: true,
-    token: result.token,
-  });
 });
 
 /**

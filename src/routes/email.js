@@ -10,6 +10,7 @@ const { authenticateToken } = require('../../auth/jwt');
 const emailService = require('../services/emailService');
 const { validateEmail } = require('../validation/validators');
 const { errors: httpErrors } = require('../utils/http');
+const { isTest } = require('../../config/loadEnv');
 
 const router = express.Router();
 
@@ -31,7 +32,8 @@ if (rateLimit && typeof rateLimit === 'function') {
 }
 
 // Apply rate limiting to all email routes (defensive check for test environment)
-if (emailRateLimiter && typeof emailRateLimiter === 'function') {
+// Skip rate limiting entirely in test environment to avoid middleware issues
+if (!isTest() && emailRateLimiter && typeof emailRateLimiter === 'function') {
   router.use(emailRateLimiter);
 }
 

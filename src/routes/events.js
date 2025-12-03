@@ -8,6 +8,8 @@ const express = require('express');
 const { authenticateToken } = require('../../auth/jwt');
 const eventService = require('../services/eventService');
 const creditsService = require('../services/creditsService');
+const logger = require('../utils/logger');
+const { errors: httpErrors } = require('../utils/http');
 
 const router = express.Router();
 
@@ -33,12 +35,7 @@ router.post('/log', authenticateToken, async (req, res) => {
 
     // Validate required fields
     if (!eventType) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'eventType is required',
-      });
+      return httpErrors.missingField(res, 'eventType');
     }
 
     // Map JWT → identity_id
@@ -54,23 +51,13 @@ router.post('/log', authenticateToken, async (req, res) => {
     }
 
     if (!identityId) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'Unable to determine identity_id from token',
-      });
+      return httpErrors.validationFailed(res, 'Unable to determine identity_id from token');
     }
 
     // Validate creditsDelta if provided
     const creditsDeltaValue = creditsDelta !== undefined ? parseInt(creditsDelta, 10) : 0;
     if (isNaN(creditsDeltaValue)) {
-      return res.status(400).json({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        reason: 'validation_failed',
-        message: 'creditsDelta must be a valid integer',
-      });
+      return httpErrors.invalidInput(res, 'creditsDelta must be a valid integer');
     }
 
     // For credit-consuming events, check subscription/credits
@@ -84,12 +71,7 @@ router.post('/log', authenticateToken, async (req, res) => {
       
       // If no subscription and no credits, return error
       if (!subscriptionCheck && (!balanceResult.success || balanceResult.balance <= 0)) {
-        return res.status(402).json({
-          ok: false,
-          code: 'NO_ACCESS',
-          reason: 'no_subscription',
-          message: 'No active subscription found. Please subscribe to continue.',
-        });
+        return httpErrors.noAccess(res);
       }
     }
 
@@ -102,12 +84,12 @@ router.post('/log', authenticateToken, async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(500).json({
-        ok: false,
-        code: 'EVENT_LOG_ERROR',
-        reason: 'server_error',
-        message: result.error || 'Failed to log event',
+      logger.error('[Events] Failed to log event', {
+        error: result.error,
+        eventType,
+        identityId
       });
+      return httpErrors.internalError(res, result.error || 'Failed to log event', { code: 'EVENT_LOG_ERROR' });
     }
 
     return res.status(200).json({
@@ -115,13 +97,13 @@ router.post('/log', authenticateToken, async (req, res) => {
       eventId: result.eventId,
     });
   } catch (error) {
-    console.error('[Events] Error logging event:', error);
-    return res.status(500).json({
-      ok: false,
-      code: 'EVENT_LOG_ERROR',
-      reason: 'server_error',
-      message: error.message || 'Failed to log event',
+    logger.error('[Events] Error logging event', {
+      error: error.message,
+      stack: error.stack,
+      eventType: req.body?.eventType,
+      identityId: req.user?.identityId || req.user?.id
     });
+    return httpErrors.internalError(res, error.message || 'Failed to log event', { code: 'EVENT_LOG_ERROR' });
   }
 });
 

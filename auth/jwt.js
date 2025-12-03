@@ -4,11 +4,12 @@
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+const { getEnv, requireEnv } = require('../config/loadEnv');
 const crypto = require('crypto');
+
+const JWT_SECRET = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
+const JWT_EXPIRES_IN = getEnv('JWT_EXPIRES_IN', '7d');
+const REFRESH_TOKEN_EXPIRES_IN = getEnv('REFRESH_TOKEN_EXPIRES_IN', '30d');
 
 /**
  * Generate JWT token for user

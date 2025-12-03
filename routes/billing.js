@@ -16,6 +16,7 @@ const { authenticateToken } = require('../auth/jwt');
 const { createCheckoutSession, createCustomerPortalSession } = require('../src/stripe/checkout');
 const { webhookMiddleware, webhookHandler, testWebhook } = require('../src/stripe/webhooks');
 const logger = require('../src/utils/logger');
+const { getEnv, requireEnv, isProduction } = require('../config/loadEnv');
 
 const router = express.Router();
 
@@ -96,13 +97,13 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     // Service-specific valid price IDs from environment variables
     const validPrices = {
       'alttext-ai': [
-        process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
-        process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
-        process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS
+        getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO'),
+        getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
+        getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')
       ].filter(Boolean), // Remove any undefined values
       'seo-ai-meta': [
-        process.env.SEO_AI_META_STRIPE_PRICE_PRO,
-        process.env.SEO_AI_META_STRIPE_PRICE_AGENCY
+        getEnv('SEO_AI_META_STRIPE_PRICE_PRO'),
+        getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY')
       ].filter(Boolean) // Remove any undefined values
     };
 
@@ -138,13 +139,14 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
       timestamp: new Date().toISOString()
     });
 
+    const frontendUrl = getEnv('FRONTEND_URL', '');
     const session = await createCheckoutSession(
       req.user.id,
       actualPriceId,
-      successUrl || `${process.env.FRONTEND_URL}/success`,
-      cancelUrl || `${process.env.FRONTEND_URL}/cancel`,
+      successUrl || `${frontendUrl}/success`,
+      cancelUrl || `${frontendUrl}/cancel`,
       service // Pass service to checkout
-    ) || { id: 'mock-session', url: successUrl || `${process.env.FRONTEND_URL}/success` };
+    ) || { id: 'mock-session', url: successUrl || `${frontendUrl}/success` };
 
     // SECURITY: Log successful checkout session creation
     logger.info('[Billing Security] Checkout session created successfully', {
@@ -183,10 +185,11 @@ router.post('/portal', authenticateToken, async (req, res) => {
   try {
     const { returnUrl } = req.body;
 
+    const frontendUrl = getEnv('FRONTEND_URL', '');
     const session = await createCustomerPortalSession(
       req.user.id,
-      returnUrl || `${process.env.FRONTEND_URL}/dashboard`
-    ) || { url: returnUrl || `${process.env.FRONTEND_URL}/dashboard` };
+      returnUrl || `${frontendUrl}/dashboard`
+    ) || { url: returnUrl || `${frontendUrl}/dashboard` };
 
     res.json({
       success: true,
@@ -194,7 +197,11 @@ router.post('/portal', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Portal error:', error);
+    logger.error('Portal error', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.id
+    });
     res.status(500).json({
       error: 'Failed to create customer portal session',
       code: 'PORTAL_ERROR'
@@ -224,7 +231,7 @@ router.get('/info', authenticateToken, async (req, res) => {
     let subscription = null;
     if (user.stripe_subscription_id) {
       try {
-        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        const stripe = require('stripe')(requireEnv('STRIPE_SECRET_KEY'));
         subscription = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
       } catch (error) {
         logger.warn('Failed to fetch subscription from Stripe', { error: error.message });
@@ -291,7 +298,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
     }
 
     // Fetch subscription from Stripe
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    const stripe = require('stripe')(requireEnv('STRIPE_SECRET_KEY'));
     let subscription;
     let paymentMethod = null;
 
@@ -412,7 +419,7 @@ router.post('/webhook', webhookMiddleware, webhookHandler);
  * Test webhook endpoint (development only)
  */
 router.post('/webhook/test', authenticateToken, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
+  if (isProduction()) {
     return res.status(404).json({
       ok: false,
       code: 'NOT_FOUND',
@@ -466,7 +473,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 1000,
-          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
+          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO'),
           features: [
             '1000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -482,7 +489,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 10000,
-          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
+          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
           features: [
             '10000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -499,7 +506,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'one-time',
           images: 100,
-          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS,
+          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS'),
           features: [
             '100 AI-generated alt texts',
             'No expiration',
@@ -529,7 +536,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 100,
-          priceId: process.env.SEO_AI_META_STRIPE_PRICE_PRO,
+          priceId: getEnv('SEO_AI_META_STRIPE_PRICE_PRO'),
           features: [
             '100 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -544,7 +551,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 1000,
-          priceId: process.env.SEO_AI_META_STRIPE_PRICE_AGENCY,
+          priceId: getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY'),
           features: [
             '1000 AI-generated meta tags per month',
             'GPT-4-turbo model',

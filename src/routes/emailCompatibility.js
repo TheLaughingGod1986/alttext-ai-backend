@@ -7,6 +7,8 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const emailService = require('../services/emailService');
+const logger = require('../utils/logger');
+const { isTest } = require('../../config/loadEnv');
 
 const router = express.Router();
 
@@ -28,7 +30,8 @@ if (rateLimit && typeof rateLimit === 'function') {
 }
 
 // Apply rate limiting to all compatibility routes (defensive check for test environment)
-if (compatibilityRateLimiter && typeof compatibilityRateLimiter === 'function') {
+// Skip rate limiting entirely in test environment to avoid middleware issues
+if (!isTest() && compatibilityRateLimiter && typeof compatibilityRateLimiter === 'function') {
   router.use(compatibilityRateLimiter);
 }
 
@@ -65,7 +68,7 @@ router.post('/plugin/register', async (req, res) => {
     const { email, plugin, site, installId } = validationResult.data;
 
     // Log request for analytics
-    console.log(`[Compatibility Route] /plugin/register called for ${email} with plugin ${plugin}`);
+    logger.info('[Compatibility Route] /plugin/register called', { email, plugin });
 
     // Map to emailService.sendPluginSignup
     const result = await emailService.sendPluginSignup({
@@ -88,7 +91,10 @@ router.post('/plugin/register', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Compatibility Route] /plugin/register error:', error);
+    logger.error('[Compatibility Route] /plugin/register error', {
+      error: error.message,
+      stack: error.stack
+    });
     // Never break endpoint - return error response
     return res.status(500).json({
       ok: false,
@@ -120,7 +126,7 @@ router.post('/wp-signup', async (req, res) => {
     const { email, plugin, site, installId } = validationResult.data;
 
     // Log request for analytics
-    console.log(`[Compatibility Route] /wp-signup called for ${email} with plugin ${plugin}`);
+    logger.info('[Compatibility Route] /wp-signup called', { email, plugin });
 
     // Map to emailService.sendPluginSignup
     const result = await emailService.sendPluginSignup({
@@ -143,7 +149,10 @@ router.post('/wp-signup', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Compatibility Route] /wp-signup error:', error);
+    logger.error('[Compatibility Route] /wp-signup error', {
+      error: error.message,
+      stack: error.stack
+    });
     // Never break endpoint - return error response
     return res.status(500).json({
       ok: false,
@@ -184,7 +193,7 @@ router.post('/legacy-waitlist', async (req, res) => {
     const { email, plugin, source } = validationResult.data;
 
     // Log request for analytics
-    console.log(`[Compatibility Route] /legacy-waitlist called for ${email}`);
+    logger.info('[Compatibility Route] /legacy-waitlist called', { email });
 
     // Map to emailService.sendWaitlistWelcome
     const result = await emailService.sendWaitlistWelcome({
@@ -207,7 +216,10 @@ router.post('/legacy-waitlist', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Compatibility Route] /legacy-waitlist error:', error);
+    logger.error('[Compatibility Route] /legacy-waitlist error', {
+      error: error.message,
+      stack: error.stack
+    });
     // Never break endpoint - return error response
     return res.status(500).json({
       ok: false,
@@ -246,7 +258,7 @@ router.post('/dashboard/email', async (req, res) => {
     const { email } = validationResult.data;
 
     // Log request for analytics
-    console.log(`[Compatibility Route] /dashboard/email called for ${email}`);
+    logger.info('[Compatibility Route] /dashboard/email called', { email });
 
     // Map to emailService.sendDashboardWelcome
     const result = await emailService.sendDashboardWelcome({ email });
@@ -265,7 +277,10 @@ router.post('/dashboard/email', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    console.error('[Compatibility Route] /dashboard/email error:', error);
+    logger.error('[Compatibility Route] /dashboard/email error', {
+      error: error.message,
+      stack: error.stack
+    });
     // Never break endpoint - return error response
     return res.status(500).json({
       ok: false,

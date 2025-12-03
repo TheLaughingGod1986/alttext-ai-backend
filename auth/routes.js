@@ -11,6 +11,8 @@ const licenseService = require('../src/services/licenseService');
 const { getOrCreateIdentity } = require('../src/services/identityService');
 const billingService = require('../src/services/billingService');
 const { rateLimitByUser } = require('../src/middleware/rateLimiter');
+const logger = require('../src/utils/logger');
+const { getEnv, isProduction } = require('../config/loadEnv');
 
 const router = express.Router();
 
@@ -108,7 +110,7 @@ router.post('/register', async (req, res) => {
       .single();
 
     if (createError) {
-      console.error('Registration error details:', {
+      logger.error('Registration error details', {
         code: createError.code,
         message: createError.message,
         details: createError.details,
@@ -128,7 +130,7 @@ router.post('/register', async (req, res) => {
     let license = null;
     let licenseSnapshot = null;
     try {
-      console.log(`📋 Creating free license for user ${user.id}`);
+      logger.info('Creating free license for user', { userId: user.id });
 
       license = await licenseService.createLicense({
         plan: 'free',
@@ -144,16 +146,24 @@ router.post('/register', async (req, res) => {
       // Get license snapshot
       licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
 
-      console.log(`✅ Free license created: ${license.licenseKey}`);
+      logger.info('Free license created', { userId: user.id, licenseKey: license.licenseKey });
     } catch (licenseError) {
-      console.error('Error creating free license (non-critical):', licenseError);
+      logger.error('Error creating free license (non-critical)', {
+        error: licenseError.message,
+        stack: licenseError.stack,
+        userId: user.id
+      });
       // Don't fail registration if license creation fails
       // User can still use the system
     }
 
     // Send welcome email (non-blocking)
     emailService.sendDashboardWelcome({ email: user.email }).catch(err => {
-      console.error('Failed to send welcome email (non-critical):', err);
+      logger.error('Failed to send welcome email (non-critical)', {
+        error: err.message,
+        stack: err.stack,
+        email: user.email
+      });
       // Don't fail registration if email fails
     });
 
@@ -180,10 +190,10 @@ router.post('/register', async (req, res) => {
     res.status(201).json(response);
 
   } catch (error) {
-    console.error('Registration error:', error);
-    console.error('Error details:', {
+    logger.error('Registration error', {
+      error: error.message,
+      stack: error.stack,
       code: error.code,
-      message: error.message,
       details: error.details,
       hint: error.hint
     });
@@ -256,7 +266,11 @@ router.post('/login', async (req, res) => {
           token,
           redirectUrl
         }).catch(err => {
-          console.error('Failed to send magic link email:', err);
+          logger.error('Failed to send magic link email', {
+            error: err.message,
+            stack: err.stack,
+            email: emailLower
+          });
         });
       }
 
@@ -346,7 +360,10 @@ router.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to login',
       code: 'LOGIN_ERROR'
@@ -454,7 +471,10 @@ router.post('/verify', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Verify error:', error);
+    logger.error('Verify error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to verify token',
       code: 'VERIFY_ERROR'
@@ -541,7 +561,10 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
     res.json(response);
 
   } catch (error) {
-    console.error('Get user error:', error);
+    logger.error('Get user error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to get user info',
       code: 'USER_INFO_ERROR'
@@ -575,7 +598,10 @@ router.post('/refresh', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Token refresh error:', error);
+    logger.error('Token refresh error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to refresh token',
       code: 'REFRESH_ERROR'
@@ -663,7 +689,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate reset URL
     // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
-    const frontendUrl = siteUrl || process.env.FRONTEND_URL || null;
+    const frontendUrl = siteUrl || getEnv('FRONTEND_URL') || null;
     
     // Construct reset URL that points back to WordPress
     // WordPress will detect the token/email params and show reset form
@@ -684,13 +710,17 @@ router.post('/forgot-password', async (req, res) => {
         resetUrl,
       });
     } catch (emailError) {
-      console.error('Failed to send password reset email:', emailError);
+      logger.error('Failed to send password reset email', {
+        error: emailError.message,
+        stack: emailError.stack,
+        email: email.toLowerCase()
+      });
       // Don't fail the request if email fails - token is still created
     }
 
     // For testing/development: include reset link in response
     // In production with real email, this would be omitted for security
-    const isDevelopment = process.env.NODE_ENV !== 'production' || process.env.DEBUG_EMAIL === 'true';
+    const isDevelopment = !isProduction() || getEnv('DEBUG_EMAIL') === 'true';
     
     res.json({
       success: true,
@@ -706,7 +736,10 @@ router.post('/forgot-password', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Forgot password error:', error);
+    logger.error('Forgot password error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to process password reset request',
       code: 'RESET_REQUEST_ERROR'
@@ -802,7 +835,10 @@ router.post('/reset-password', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Reset password error:', error);
+    logger.error('Reset password error', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({
       error: 'Failed to reset password',
       code: 'RESET_PASSWORD_ERROR'

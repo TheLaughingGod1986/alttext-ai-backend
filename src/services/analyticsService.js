@@ -6,6 +6,8 @@
 
 const { supabase } = require('../../db/supabase-client');
 const { analyticsEventSchema, analyticsEventArraySchema } = require('../validation/analyticsEventSchema');
+const logger = require('../utils/logger');
+const { isTest } = require('../../config/loadEnv');
 
 // Throttling state - in-memory Map with TTL-based cleanup
 const emailThrottleMap = new Map(); // email -> { count: number, resetAt: timestamp }
@@ -21,7 +23,7 @@ const THROTTLE_CONFIG = {
 };
 
 // Cleanup old throttle entries periodically (skip in tests to avoid open handles)
-if (process.env.NODE_ENV !== 'test') {
+if (!isTest()) {
   setInterval(() => {
     const now = Date.now();
     
@@ -187,7 +189,12 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
         identityId,
       });
     } catch (validationError) {
-      console.error('[AnalyticsService] Schema validation error:', validationError);
+      logger.error('[AnalyticsService] Schema validation error', {
+        error: validationError.message,
+        stack: validationError.stack,
+        email: normalizedEmail,
+        eventName
+      });
       return {
         success: false,
         error: 'Validation failed',
@@ -222,7 +229,12 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
       .insert(insertData);
 
     if (insertError) {
-      console.error('[AnalyticsService] Error inserting event:', insertError);
+      logger.error('[AnalyticsService] Error inserting event', {
+        error: insertError.message,
+        stack: insertError.stack,
+        email: normalizedEmail,
+        eventName
+      });
       return {
         success: false,
         error: insertError.message || 'Failed to log event',
@@ -232,7 +244,12 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
     return { success: true };
   } catch (err) {
     // Catch any unexpected errors - never throw
-    console.error('[AnalyticsService] Exception in logEvent:', err);
+    logger.error('[AnalyticsService] Exception in logEvent', {
+      error: err.message,
+      stack: err.stack,
+      email: normalizedEmail,
+      eventName
+    });
     return {
       success: false,
       error: err.message || 'Unexpected error logging event',
@@ -314,7 +331,11 @@ async function logEvents(events, ip) {
         .insert(insertDataArray);
 
       if (insertError) {
-        console.error('[AnalyticsService] Error batch inserting events:', insertError);
+        logger.error('[AnalyticsService] Error batch inserting events', {
+          error: insertError.message,
+          stack: insertError.stack,
+          eventCount: insertDataArray.length
+        });
         results.success = false;
         results.failed += insertDataArray.length;
         results.errors.push({
@@ -332,7 +353,11 @@ async function logEvents(events, ip) {
 
     return results;
   } catch (err) {
-    console.error('[AnalyticsService] Exception in logEvents:', err);
+    logger.error('[AnalyticsService] Exception in logEvents', {
+      error: err.message,
+      stack: err.stack,
+      eventCount: events.length
+    });
     return {
       success: false,
       error: err.message || 'Unexpected error logging events',
@@ -358,7 +383,12 @@ function logEventBackground({ email, eventName, plugin, source, eventData, ident
     logEvent({ email, eventName, plugin, source, eventData, identityId, ip }).catch((err) => {
       // Even if logEvent fails, we don't want to throw or log to console
       // since this is a background operation
-      console.error('[AnalyticsService] Background event logging failed:', err);
+      logger.error('[AnalyticsService] Background event logging failed', {
+        error: err.message,
+        stack: err.stack,
+        email,
+        eventName
+      });
     });
   });
 
@@ -402,7 +432,11 @@ async function getAnalyticsSummary(email, options = {}) {
       .order('created_at', { ascending: false });
 
     if (queryError) {
-      console.error('[AnalyticsService] Error querying analytics summary:', queryError);
+      logger.error('[AnalyticsService] Error querying analytics summary', {
+        error: queryError.message,
+        stack: queryError.stack,
+        email: normalizedEmail
+      });
       return {
         success: false,
         error: queryError.message || 'Failed to query analytics summary',
@@ -451,7 +485,11 @@ async function getAnalyticsSummary(email, options = {}) {
       },
     };
   } catch (err) {
-    console.error('[AnalyticsService] Exception in getAnalyticsSummary:', err);
+    logger.error('[AnalyticsService] Exception in getAnalyticsSummary', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return {
       success: false,
       error: err.message || 'Unexpected error getting analytics summary',
@@ -504,7 +542,12 @@ async function getEventCounts(email, eventNames, options = {}) {
       .lte('created_at', endDate.toISOString());
 
     if (queryError) {
-      console.error('[AnalyticsService] Error querying event counts:', queryError);
+      logger.error('[AnalyticsService] Error querying event counts', {
+        error: queryError.message,
+        stack: queryError.stack,
+        email: normalizedEmail,
+        eventNames
+      });
       return {
         success: false,
         error: queryError.message || 'Failed to query event counts',
@@ -534,7 +577,12 @@ async function getEventCounts(email, eventNames, options = {}) {
       },
     };
   } catch (err) {
-    console.error('[AnalyticsService] Exception in getEventCounts:', err);
+    logger.error('[AnalyticsService] Exception in getEventCounts', {
+      error: err.message,
+      stack: err.stack,
+      email,
+      eventNames
+    });
     return {
       success: false,
       error: err.message || 'Unexpected error getting event counts',

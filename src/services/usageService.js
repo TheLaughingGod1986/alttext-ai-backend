@@ -5,6 +5,7 @@
  */
 
 const { supabase } = require('../../db/supabase-client');
+const logger = require('../utils/logger');
 
 /**
  * Get usage summary per plugin for a user
@@ -39,7 +40,11 @@ async function getUsageSummary(email) {
       .order('created_at', { ascending: false });
 
     if (logsError) {
-      console.error('[UsageService] Error fetching usage logs:', logsError);
+      logger.error('[UsageService] Error fetching usage logs', {
+        error: logsError.message,
+        stack: logsError.stack,
+        email
+      });
       return { success: false, error: logsError.message, usage: {} };
     }
 
@@ -75,7 +80,11 @@ async function getUsageSummary(email) {
       },
     };
   } catch (err) {
-    console.error('[UsageService] Exception fetching usage summary:', err);
+    logger.error('[UsageService] Exception fetching usage summary', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return { success: false, error: err.message, usage: {} };
   }
 }
@@ -97,13 +106,23 @@ async function recordSiteUsage(siteHash, tokens = 1) {
       });
 
     if (error) {
-      console.error('[UsageService] Error recording site usage:', error);
+      logger.error('[UsageService] Error recording site usage', {
+        error: error.message,
+        stack: error.stack,
+        siteHash,
+        tokens
+      });
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (err) {
-    console.error('[UsageService] Exception recording site usage:', err);
+    logger.error('[UsageService] Exception recording site usage', {
+      error: err.message,
+      stack: err.stack,
+      siteHash,
+      tokens
+    });
     return { success: false, error: err.message };
   }
 }
@@ -127,7 +146,11 @@ async function getSiteUsageStats(siteHash) {
       .order('generated_at', { ascending: false });
 
     if (logsError) {
-      console.error('[UsageService] Error fetching site usage stats:', logsError);
+      logger.error('[UsageService] Error fetching site usage stats', {
+        error: logsError.message,
+        stack: logsError.stack,
+        siteHash
+      });
       return { success: false, error: logsError.message, stats: null };
     }
 
@@ -144,7 +167,11 @@ async function getSiteUsageStats(siteHash) {
       }
     };
   } catch (err) {
-    console.error('[UsageService] Exception fetching site usage stats:', err);
+    logger.error('[UsageService] Exception fetching site usage stats', {
+      error: err.message,
+      stack: err.stack,
+      siteHash
+    });
     return { success: false, error: err.message, stats: null };
   }
 }
@@ -219,7 +246,12 @@ async function storeUsageSnapshot(data) {
       .single();
 
     if (upsertError) {
-      console.error('[UsageService] Error storing usage snapshot:', upsertError);
+      logger.error('[UsageService] Error storing usage snapshot', {
+        error: upsertError.message,
+        stack: upsertError.stack,
+        email: emailLower,
+        plugin
+      });
       return {
         success: false,
         error: upsertError.message,
@@ -243,7 +275,12 @@ async function storeUsageSnapshot(data) {
       snapshotId: snapshot.id,
     };
   } catch (err) {
-    console.error('[UsageService] Exception storing usage snapshot:', err);
+    logger.error('[UsageService] Exception storing usage snapshot', {
+      error: err.message,
+      stack: err.stack,
+      email: data.email,
+      plugin: data.plugin
+    });
     return {
       success: false,
       error: err.message || 'Failed to store usage snapshot',
@@ -269,7 +306,11 @@ async function detectStaleVersions(email) {
       .order('snapshot_date', { ascending: false });
 
     if (snapshotsError) {
-      console.error('[UsageService] Error fetching snapshots:', snapshotsError);
+      logger.error('[UsageService] Error fetching snapshots', {
+        error: snapshotsError.message,
+        stack: snapshotsError.stack,
+        email: emailLower
+      });
       return {
         success: false,
         error: snapshotsError.message,
@@ -318,7 +359,11 @@ async function detectStaleVersions(email) {
       staleVersions,
     };
   } catch (err) {
-    console.error('[UsageService] Exception detecting stale versions:', err);
+    logger.error('[UsageService] Exception detecting stale versions', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     return {
       success: false,
       error: err.message || 'Failed to detect stale versions',

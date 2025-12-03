@@ -9,6 +9,7 @@ const usageService = require('./usageService');
 const analyticsService = require('./analyticsService');
 const eventService = require('./eventService');
 const creditsService = require('./creditsService');
+const logger = require('../utils/logger');
 
 // In-memory cache for analytics data (5 minute TTL)
 const analyticsCache = new Map();
@@ -50,7 +51,11 @@ async function getDashboardData(email) {
     const installations = installationsResult.data || [];
     if (installationsResult.error && installationsResult.error.code !== 'PGRST116') {
       // PGRST116 is "not found" which is fine, log other errors
-      console.error('[DashboardService] Error fetching installations:', installationsResult.error);
+      logger.error('[DashboardService] Error fetching installations', {
+        error: installationsResult.error.message,
+        code: installationsResult.error.code,
+        email: emailLower
+      });
     }
 
     // Extract subscription data or use null
@@ -63,7 +68,11 @@ async function getDashboardData(email) {
       subscription = subscriptionResult.data;
     } else if (subscriptionResult.error && subscriptionResult.error.code !== 'PGRST116') {
       // PGRST116 is "not found" which is fine, log other errors
-      console.error('[DashboardService] Error fetching subscription:', subscriptionResult.error);
+      logger.error('[DashboardService] Error fetching subscription', {
+        error: subscriptionResult.error.message,
+        code: subscriptionResult.error.code,
+        email: emailLower
+      });
     }
 
     // Extract usage data or use defaults
@@ -76,7 +85,10 @@ async function getDashboardData(email) {
         totalImages: usageResult.usage.totalImages || 0,
       };
     } else if (!usageResult.success) {
-      console.error('[DashboardService] Error fetching usage:', usageResult.error);
+      logger.error('[DashboardService] Error fetching usage', {
+        error: usageResult.error,
+        email: emailLower
+      });
     }
 
     // Log analytics event (background - don't block dashboard loading)
@@ -96,7 +108,11 @@ async function getDashboardData(email) {
       usage,
     };
   } catch (err) {
-    console.error('[DashboardService] Aggregation error:', err);
+    logger.error('[DashboardService] Aggregation error', {
+      error: err.message,
+      stack: err.stack,
+      email: emailLower
+    });
     // Return defaults on error
     return {
       installations: [],
@@ -217,7 +233,11 @@ async function getAnalyticsData(email, timeRange = '30d') {
 
     return analyticsData;
   } catch (err) {
-    console.error('[DashboardService] Error fetching analytics data:', err);
+    logger.error('[DashboardService] Error fetching analytics data', {
+      error: err.message,
+      stack: err.stack,
+      email
+    });
     // Return defaults on error
     return {
       usage: [],

@@ -5,6 +5,7 @@
  */
 
 const { supabase } = require('../../db/supabase-client');
+const logger = require('../utils/logger');
 
 /**
  * Log an event to the unified events table
@@ -35,7 +36,12 @@ async function logEvent(identityId, eventType, creditsDelta = 0, metadata = {}) 
       .single();
 
     if (error) {
-      console.error('[EventService] Error logging event:', error);
+      logger.error('[EventService] Error logging event', {
+        error: error.message,
+        code: error.code,
+        identityId,
+        eventType
+      });
       return { success: false, error: error.message || 'Failed to log event' };
     }
 
@@ -46,7 +52,12 @@ async function logEvent(identityId, eventType, creditsDelta = 0, metadata = {}) 
 
     return { success: true, eventId: event.id };
   } catch (err) {
-    console.error('[EventService] Exception logging event:', err);
+    logger.error('[EventService] Exception logging event', {
+      error: err.message,
+      stack: err.stack,
+      identityId,
+      eventType
+    });
     return { success: false, error: err.message || 'Unexpected error logging event' };
   }
 }
@@ -80,7 +91,11 @@ async function getEventRollup(identityId, startDate = null, endDate = null) {
     const { data: events, error } = await query;
 
     if (error) {
-      console.error('[EventService] Error fetching event rollup:', error);
+      logger.error('[EventService] Error fetching event rollup', {
+        error: error.message,
+        code: error.code,
+        identityId
+      });
       return { success: false, error: error.message || 'Failed to fetch events' };
     }
 
@@ -112,7 +127,11 @@ async function getEventRollup(identityId, startDate = null, endDate = null) {
       },
     };
   } catch (err) {
-    console.error('[EventService] Exception getting event rollup:', err);
+    logger.error('[EventService] Exception getting event rollup', {
+      error: err.message,
+      stack: err.stack,
+      identityId
+    });
     return { success: false, error: err.message || 'Unexpected error getting rollup' };
   }
 }
@@ -136,7 +155,11 @@ async function getCreditBalance(identityId) {
       .eq('identity_id', identityId);
 
     if (queryError) {
-      console.error('[EventService] Error fetching credit balance:', queryError);
+      logger.error('[EventService] Error fetching credit balance', {
+        error: queryError.message,
+        code: queryError.code,
+        identityId
+      });
       return { success: false, error: queryError.message || 'Failed to calculate balance', balance: 0 };
     }
 
@@ -149,7 +172,11 @@ async function getCreditBalance(identityId) {
 
     return { success: true, balance };
   } catch (err) {
-    console.error('[EventService] Exception getting credit balance:', err);
+    logger.error('[EventService] Exception getting credit balance', {
+      error: err.message,
+      stack: err.stack,
+      identityId
+    });
     return { success: false, error: err.message || 'Unexpected error calculating balance', balance: 0 };
   }
 }
@@ -171,7 +198,11 @@ async function updateCreditsBalanceCache(identityId) {
     }
   } catch (err) {
     // Don't throw - cache update is best effort
-    console.error('[EventService] Error updating credits cache:', err);
+    logger.error('[EventService] Error updating credits cache', {
+      error: err.message,
+      stack: err.stack,
+      identityId
+    });
   }
 }
 
@@ -217,13 +248,21 @@ async function getEvents(identityId, options = {}) {
     const { data: events, error } = await query;
 
     if (error) {
-      console.error('[EventService] Error fetching events:', error);
+      logger.error('[EventService] Error fetching events', {
+        error: error.message,
+        code: error.code,
+        identityId
+      });
       return { success: false, error: error.message || 'Failed to fetch events', events: [] };
     }
 
     return { success: true, events: events || [] };
   } catch (err) {
-    console.error('[EventService] Exception getting events:', err);
+    logger.error('[EventService] Exception getting events', {
+      error: err.message,
+      stack: err.stack,
+      identityId
+    });
     return { success: false, error: err.message || 'Unexpected error fetching events', events: [] };
   }
 }

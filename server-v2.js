@@ -702,9 +702,17 @@ function createApp() {
   }
   
   try {
+    logger.debug('Loading emailCompatibilityRoutes...');
     emailCompatibilityRoutes = require('./src/routes/emailCompatibility');
+    logger.debug('Successfully loaded emailCompatibilityRoutes', {
+      type: typeof emailCompatibilityRoutes,
+      hasStack: emailCompatibilityRoutes?.stack !== undefined
+    });
   } catch (e) {
-    logger.warn('Failed to load emailCompatibilityRoutes', { error: e.message });
+    logger.error('Failed to load emailCompatibilityRoutes', {
+      error: e.message,
+      stack: e.stack
+    });
     emailCompatibilityRoutes = null;
   }
   
@@ -1116,7 +1124,7 @@ try {
           middlewareValue: orgAuthMiddleware,
           routerType: typeof organizationRouter,
           routerValue: organizationRouter,
-          NODE_ENV: process.env.NODE_ENV
+          NODE_ENV: getEnv('NODE_ENV', 'development')
         });
         throw useError;
       }

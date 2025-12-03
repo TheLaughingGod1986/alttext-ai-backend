@@ -303,7 +303,11 @@ async function getSiteLicense(siteHash) {
 
     return license;
   } catch (error) {
-    console.error('[SiteService] Error in getSiteLicense:', error);
+    logger.error('[SiteService] Error in getSiteLicense', {
+      error: error.message,
+      stack: error.stack,
+      siteHash
+    });
     return null;
   }
 }
@@ -394,7 +398,12 @@ async function createFreeLicenseForSite(siteHash, siteUrl = null) {
       site
     };
   } catch (error) {
-    console.error('[SiteService] Error in createFreeLicenseForSite:', error);
+    logger.error('[SiteService] Error in createFreeLicenseForSite', {
+      error: error.message,
+      stack: error.stack,
+      siteHash,
+      siteUrl
+    });
     throw error;
   }
 }

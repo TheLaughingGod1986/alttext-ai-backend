@@ -8,6 +8,7 @@ const { authenticateToken } = require('../../auth/jwt');
 const billingService = require('../services/billingService');
 const { errors: httpErrors } = require('../utils/http');
 const logger = require('../utils/logger');
+const { getEnv } = require('../../config/loadEnv');
 // Optional: creditsService may not exist in all environments
 let creditsService;
 try {
@@ -135,8 +136,8 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
         },
       ],
       mode: 'subscription',
-      success_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/cancel`,
+      success_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/cancel`,
       metadata: {
         user_email: email.toLowerCase(),
         plugin_slug: plugin,
@@ -216,7 +217,7 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing`,
+      return_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing`,
     });
 
     return res.status(200).json({
@@ -417,7 +418,7 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
     }
 
     // Get credit price ID from environment (default to STRIPE_PRICE_CREDITS)
-    const creditPriceId = process.env.STRIPE_PRICE_CREDITS || process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS;
+    const creditPriceId = getEnv('STRIPE_PRICE_CREDITS') || getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS');
     if (!creditPriceId) {
       return res.status(500).json({
         ok: false,
@@ -436,8 +437,8 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
         },
       ],
       mode: 'payment', // One-time payment for credits
-      success_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/credits/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/credits/cancel`,
+      success_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/credits/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/credits/cancel`,
       metadata: {
         user_email: email.toLowerCase(),
         plugin_slug: plugin,
