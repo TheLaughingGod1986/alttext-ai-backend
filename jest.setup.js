@@ -31,30 +31,6 @@ jest.mock('./db/supabase-client', () => {
   return mock;
 });
 
-// Mock express-rate-limit globally for all tests
-// This prevents real rate limiting from running during tests
-// Must be at top level for Jest hoisting - placed here to ensure it loads before routes
-jest.mock('express-rate-limit', () => {
-  // Return a function that directly returns a middleware function
-  // This matches the actual express-rate-limit API: rateLimit(options) returns middleware
-  const mockMiddleware = (req, res, next) => {
-    // Always call next() to continue the request
-    if (typeof next === 'function') {
-      next();
-    }
-  };
-  
-  // Create the mock function that always returns a valid middleware
-  const mockRateLimiter = function(options) {
-    // Always return a valid middleware function, no matter what
-    return mockMiddleware;
-  };
-  
-  // Ensure the mock always returns a function, even if called incorrectly
-  mockRateLimiter.default = mockRateLimiter;
-  
-  // Also export as default for ES6 imports
-  // Make it a jest.fn so it can be tracked
-  return jest.fn(mockRateLimiter);
-});
+// express-rate-limit is mocked via manual mock file at tests/__mocks__/express-rate-limit.js
+// Jest automatically uses manual mocks when they exist in __mocks__ directory
 
