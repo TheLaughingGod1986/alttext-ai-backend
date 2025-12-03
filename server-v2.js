@@ -55,121 +55,18 @@ try {
   // Continue anyway - it will be loaded in createApp()
 }
 
-const authRoutes = require('./auth/routes');
-// Usage routes - handle potential undefined exports
-let usageRoutes, recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits, recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens;
-let clearCachedUsage = null;
-try {
-  const usageModule = require('./routes/usage');
-  usageRoutes = usageModule.router;
-  recordUsage = usageModule.recordUsage;
-  checkUserLimits = usageModule.checkUserLimits;
-  useCredit = usageModule.useCredit;
-  resetMonthlyTokens = usageModule.resetMonthlyTokens;
-  checkOrganizationLimits = usageModule.checkOrganizationLimits;
-  recordOrganizationUsage = usageModule.recordOrganizationUsage;
-  useOrganizationCredit = usageModule.useOrganizationCredit;
-  resetOrganizationTokens = usageModule.resetOrganizationTokens;
-  clearCachedUsage = usageModule.clearCachedUsage;
-} catch (e) {
-  logger.warn('Failed to load usage routes', { error: e.message });
-  usageRoutes = null;
-}
-const siteService = require('./src/services/siteService');
-// Load route files with error handling
-let billingRoutes, legacyBillingRoutes, licensesRoutes, licenseRoutes;
-try {
-  billingRoutes = require('./src/routes/billing'); // New billing routes using billingService
-} catch (e) {
-  logger.warn('Failed to load billingRoutes', { error: e.message });
-  billingRoutes = null;
-}
-try {
-  legacyBillingRoutes = require('./routes/billing'); // Legacy routes for backward compatibility
-} catch (e) {
-  logger.warn('Failed to load legacyBillingRoutes', { error: e.message });
-  legacyBillingRoutes = null;
-}
-try {
-  licensesRoutes = require('./routes/licenses');
-} catch (e) {
-  logger.warn('Failed to load licensesRoutes', { error: e.message });
-  licensesRoutes = null;
-}
-try {
-  licenseRoutes = require('./routes/license');
-} catch (e) {
-  logger.warn('Failed to load licenseRoutes', { error: e.message });
-  licenseRoutes = null;
-}
-// Organization routes imported below with destructuring
-// Load route files with error handling to identify which one fails
+// BEST PRACTICE: Route files are now loaded INSIDE createApp() to ensure mocks are applied first
+// This prevents "Router.use() requires a middleware function" errors in tests
+// Routes are loaded lazily when createApp() is called, not at module top level
+//
+// Variables declared here for scope, but routes are loaded inside createApp()
+let authRoutes, usageRoutes, billingRoutes, legacyBillingRoutes, licensesRoutes, licenseRoutes;
 let emailRoutes, newEmailRoutes, emailCompatibilityRoutes, waitlistRoutes, accountRoutes;
-try {
-  emailRoutes = require('./routes/email'); // Legacy routes
-} catch (e) {
-  logger.warn('Failed to load emailRoutes', { error: e.message });
-  emailRoutes = null;
-}
-try {
-  newEmailRoutes = require('./src/routes/email'); // New email routes
-} catch (e) {
-  logger.warn('Failed to load newEmailRoutes', { error: e.message });
-  newEmailRoutes = null;
-}
-try {
-  emailCompatibilityRoutes = require('./src/routes/emailCompatibility'); // Backward compatibility routes
-} catch (e) {
-  logger.warn('Failed to load emailCompatibilityRoutes', { error: e.message });
-  emailCompatibilityRoutes = null;
-}
-try {
-  waitlistRoutes = require('./src/routes/waitlist'); // Waitlist routes
-} catch (e) {
-  logger.warn('Failed to load waitlistRoutes', { error: e.message });
-  waitlistRoutes = null;
-}
-try {
-  accountRoutes = require('./src/routes/account'); // Account routes
-} catch (e) {
-  logger.warn('Failed to load accountRoutes', { error: e.message });
-  accountRoutes = null;
-}
-// Dashboard routes - handle potential undefined export
-let dashboardRoutes;
-try {
-  const dashboardModule = require('./src/routes/dashboard');
-  dashboardRoutes = dashboardModule.router;
-} catch (e) {
-  logger.warn('Failed to load dashboard routes', { error: e.message });
-  dashboardRoutes = null;
-}
-// Load route files with error handling
-let dashboardChartsRoutes, pluginAuthRoutes, identityRoutes, analyticsRoutes;
-try {
-  dashboardChartsRoutes = require('./src/routes/dashboardCharts'); // Dashboard charts routes
-} catch (e) {
-  logger.warn('Failed to load dashboardChartsRoutes', { error: e.message });
-  dashboardChartsRoutes = null;
-}
-try {
-  pluginAuthRoutes = require('./src/routes/pluginAuth'); // Plugin authentication routes
-} catch (e) {
-  logger.warn('Failed to load pluginAuthRoutes', { error: e.message });
-  pluginAuthRoutes = null;
-}
-try {
-  identityRoutes = require('./src/routes/identity'); // Identity routes
-} catch (e) {
-  logger.warn('Failed to load identityRoutes', { error: e.message });
-  identityRoutes = null;
-}
-try {
-  analyticsRoutes = require('./src/routes/analytics'); // Analytics routes
-} catch (e) {
-  logger.warn('Failed to load analyticsRoutes', { error: e.message });
-  analyticsRoutes = null;
-}
+let dashboardRoutes, dashboardChartsRoutes, pluginAuthRoutes, identityRoutes, analyticsRoutes;
+let recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits;
+let recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens, clearCachedUsage;
+
+const siteService = require('./src/services/siteService');
 const billingService = require('./src/services/billingService'); // Billing service for quota enforcement
 const creditsService = require('./src/services/creditsService'); // Credits service for credit transactions
 const plansConfig = require('./src/config/plans'); // Plan configuration
