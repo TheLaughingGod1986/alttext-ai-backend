@@ -1026,15 +1026,105 @@ try {
   }
 
   // Register routes with defensive checks to prevent undefined middleware errors
-if (newEmailRoutes) app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
-if (emailRoutes) app.use('/email', emailRoutes); // Legacy routes (DEPRECATED - for backward compatibility only, only used if new routes don't match)
-if (waitlistRoutes) app.use('/waitlist', waitlistRoutes); // Waitlist routes
-if (accountRoutes) app.use('/account', accountRoutes); // Account routes
-if (dashboardRoutes) app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
-if (dashboardChartsRoutes) app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usage/daily, /dashboard/usage/monthly, etc.)
-if (pluginAuthRoutes) app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
-if (identityRoutes) app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
-if (analyticsRoutes) app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
+try {
+  if (newEmailRoutes) {
+    if (typeof newEmailRoutes !== 'function' && !newEmailRoutes.stack) {
+      logger.warn('Skipping newEmailRoutes - invalid router');
+    } else {
+      app.use('/email', newEmailRoutes); // New email routes (registered first to take precedence)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register newEmailRoutes', { error: e.message });
+}
+try {
+  if (emailRoutes) {
+    if (typeof emailRoutes !== 'function' && !emailRoutes.stack) {
+      logger.warn('Skipping emailRoutes - invalid router');
+    } else {
+      app.use('/email', emailRoutes); // Legacy routes (DEPRECATED - for backward compatibility only, only used if new routes don't match)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register emailRoutes', { error: e.message });
+}
+try {
+  if (waitlistRoutes) {
+    if (typeof waitlistRoutes !== 'function' && !waitlistRoutes.stack) {
+      logger.warn('Skipping waitlistRoutes - invalid router');
+    } else {
+      app.use('/waitlist', waitlistRoutes); // Waitlist routes
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register waitlistRoutes', { error: e.message });
+}
+try {
+  if (accountRoutes) {
+    if (typeof accountRoutes !== 'function' && !accountRoutes.stack) {
+      logger.warn('Skipping accountRoutes - invalid router');
+    } else {
+      app.use('/account', accountRoutes); // Account routes
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register accountRoutes', { error: e.message });
+}
+try {
+  if (dashboardRoutes) {
+    if (typeof dashboardRoutes !== 'function' && !dashboardRoutes.stack) {
+      logger.warn('Skipping dashboardRoutes - invalid router');
+    } else {
+      app.use('/', dashboardRoutes); // Dashboard routes (/, /me, /dashboard)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register dashboardRoutes', { error: e.message });
+}
+try {
+  if (dashboardChartsRoutes) {
+    if (typeof dashboardChartsRoutes !== 'function' && !dashboardChartsRoutes.stack) {
+      logger.warn('Skipping dashboardChartsRoutes - invalid router');
+    } else {
+      app.use('/', dashboardChartsRoutes); // Dashboard charts routes (/dashboard/usage/daily, /dashboard/usage/monthly, etc.)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register dashboardChartsRoutes', { error: e.message });
+}
+try {
+  if (pluginAuthRoutes) {
+    if (typeof pluginAuthRoutes !== 'function' && !pluginAuthRoutes.stack) {
+      logger.warn('Skipping pluginAuthRoutes - invalid router');
+    } else {
+      app.use('/', pluginAuthRoutes); // Plugin authentication routes (/auth/plugin-init, /auth/refresh-token, /auth/me)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register pluginAuthRoutes', { error: e.message });
+}
+try {
+  if (identityRoutes) {
+    if (typeof identityRoutes !== 'function' && !identityRoutes.stack) {
+      logger.warn('Skipping identityRoutes - invalid router');
+    } else {
+      app.use('/identity', identityRoutes); // Identity routes (/identity/sync, /identity/me)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register identityRoutes', { error: e.message });
+}
+try {
+  if (analyticsRoutes) {
+    if (typeof analyticsRoutes !== 'function' && !analyticsRoutes.stack) {
+      logger.warn('Skipping analyticsRoutes - invalid router');
+    } else {
+      app.use('/analytics', analyticsRoutes); // Analytics routes (/analytics/log)
+    }
+  }
+} catch (e) {
+  logger.error('Failed to register analyticsRoutes', { error: e.message });
+}
 try {
   const eventsRoutes = require('./src/routes/events');
   if (eventsRoutes) app.use('/events', eventsRoutes); // Unified events routes (/events/log)
@@ -1579,3 +1669,4 @@ if (require.main === module) {
     process.exit(0);
   });
 }
+
