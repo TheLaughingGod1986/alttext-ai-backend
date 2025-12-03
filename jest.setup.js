@@ -31,6 +31,8 @@ jest.mock('./db/supabase-client', () => {
   return mock;
 });
 
-// express-rate-limit is mocked via manual mock file at tests/__mocks__/express-rate-limit.js
-// Jest automatically uses manual mocks when they exist in __mocks__ directory
+// Mock express-rate-limit globally for all tests
+// Use manual mock file at __mocks__/express-rate-limit.js
+// This must be here to ensure it's applied before any route files are loaded
+jest.mock('express-rate-limit');
 
