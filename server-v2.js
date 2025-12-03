@@ -729,6 +729,138 @@ function createApp() {
   
   const app = express();
 
+  // BEST PRACTICE: Load route files INSIDE createApp() to ensure mocks are applied first
+  // This prevents "Router.use() requires a middleware function" errors in tests
+  // Routes are loaded lazily here instead of at module top level
+  let authRoutes, usageRoutes, billingRoutes, legacyBillingRoutes, licensesRoutes, licenseRoutes;
+  let emailRoutes, newEmailRoutes, emailCompatibilityRoutes, waitlistRoutes, accountRoutes;
+  let dashboardRoutes, dashboardChartsRoutes, pluginAuthRoutes, identityRoutes, analyticsRoutes;
+  let recordUsage, checkUserLimits, useCredit, resetMonthlyTokens, checkOrganizationLimits;
+  let recordOrganizationUsage, useOrganizationCredit, resetOrganizationTokens, clearCachedUsage;
+  
+  try {
+    authRoutes = require('./auth/routes');
+  } catch (e) {
+    logger.warn('Failed to load authRoutes', { error: e.message });
+    authRoutes = null;
+  }
+  
+  try {
+    const usageModule = require('./routes/usage');
+    usageRoutes = usageModule.router;
+    recordUsage = usageModule.recordUsage;
+    checkUserLimits = usageModule.checkUserLimits;
+    useCredit = usageModule.useCredit;
+    resetMonthlyTokens = usageModule.resetMonthlyTokens;
+    checkOrganizationLimits = usageModule.checkOrganizationLimits;
+    recordOrganizationUsage = usageModule.recordOrganizationUsage;
+    useOrganizationCredit = usageModule.useOrganizationCredit;
+    resetOrganizationTokens = usageModule.resetOrganizationTokens;
+    clearCachedUsage = usageModule.clearCachedUsage;
+  } catch (e) {
+    logger.warn('Failed to load usage routes', { error: e.message });
+    usageRoutes = null;
+  }
+  
+  try {
+    billingRoutes = require('./src/routes/billing');
+  } catch (e) {
+    logger.warn('Failed to load billingRoutes', { error: e.message });
+    billingRoutes = null;
+  }
+  
+  try {
+    legacyBillingRoutes = require('./routes/billing');
+  } catch (e) {
+    logger.warn('Failed to load legacyBillingRoutes', { error: e.message });
+    legacyBillingRoutes = null;
+  }
+  
+  try {
+    licensesRoutes = require('./routes/licenses');
+  } catch (e) {
+    logger.warn('Failed to load licensesRoutes', { error: e.message });
+    licensesRoutes = null;
+  }
+  
+  try {
+    licenseRoutes = require('./routes/license');
+  } catch (e) {
+    logger.warn('Failed to load licenseRoutes', { error: e.message });
+    licenseRoutes = null;
+  }
+  
+  try {
+    emailRoutes = require('./routes/email');
+  } catch (e) {
+    logger.warn('Failed to load emailRoutes', { error: e.message });
+    emailRoutes = null;
+  }
+  
+  try {
+    newEmailRoutes = require('./src/routes/email');
+  } catch (e) {
+    logger.warn('Failed to load newEmailRoutes', { error: e.message });
+    newEmailRoutes = null;
+  }
+  
+  try {
+    emailCompatibilityRoutes = require('./src/routes/emailCompatibility');
+  } catch (e) {
+    logger.warn('Failed to load emailCompatibilityRoutes', { error: e.message });
+    emailCompatibilityRoutes = null;
+  }
+  
+  try {
+    waitlistRoutes = require('./src/routes/waitlist');
+  } catch (e) {
+    logger.warn('Failed to load waitlistRoutes', { error: e.message });
+    waitlistRoutes = null;
+  }
+  
+  try {
+    accountRoutes = require('./src/routes/account');
+  } catch (e) {
+    logger.warn('Failed to load accountRoutes', { error: e.message });
+    accountRoutes = null;
+  }
+  
+  try {
+    const dashboardModule = require('./src/routes/dashboard');
+    dashboardRoutes = dashboardModule.router;
+  } catch (e) {
+    logger.warn('Failed to load dashboard routes', { error: e.message });
+    dashboardRoutes = null;
+  }
+  
+  try {
+    dashboardChartsRoutes = require('./src/routes/dashboardCharts');
+  } catch (e) {
+    logger.warn('Failed to load dashboardChartsRoutes', { error: e.message });
+    dashboardChartsRoutes = null;
+  }
+  
+  try {
+    pluginAuthRoutes = require('./src/routes/pluginAuth');
+  } catch (e) {
+    logger.warn('Failed to load pluginAuthRoutes', { error: e.message });
+    pluginAuthRoutes = null;
+  }
+  
+  try {
+    identityRoutes = require('./src/routes/identity');
+  } catch (e) {
+    logger.warn('Failed to load identityRoutes', { error: e.message });
+    identityRoutes = null;
+  }
+  
+  try {
+    analyticsRoutes = require('./src/routes/analytics');
+  } catch (e) {
+    logger.warn('Failed to load analyticsRoutes', { error: e.message });
+    analyticsRoutes = null;
+  }
+
 // Middleware
 app.set('trust proxy', 1); // Trust proxy for rate limiting behind Render
 app.use(helmet());
