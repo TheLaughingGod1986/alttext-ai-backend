@@ -22,7 +22,10 @@ const emailRateLimiter = rateLimit({
 });
 
 // Apply rate limiting to all email routes
-router.use(emailRateLimiter);
+// Apply rate limiting (defensive check for test environment)
+if (emailRateLimiter && typeof emailRateLimiter === 'function') {
+  router.use(emailRateLimiter);
+}
 
 /**
  * POST /email/welcome

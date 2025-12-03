@@ -19,8 +19,10 @@ const compatibilityRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiting to all compatibility routes
-router.use(compatibilityRateLimiter);
+// Apply rate limiting to all compatibility routes (defensive check for test environment)
+if (compatibilityRateLimiter && typeof compatibilityRateLimiter === 'function') {
+  router.use(compatibilityRateLimiter);
+}
 
 /**
  * Zod schema for plugin register/wp-signup validation

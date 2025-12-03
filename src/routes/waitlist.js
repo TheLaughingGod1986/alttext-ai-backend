@@ -20,7 +20,10 @@ const waitlistRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.use(waitlistRateLimiter);
+// Apply rate limiting (defensive check for test environment)
+if (waitlistRateLimiter && typeof waitlistRateLimiter === 'function') {
+  router.use(waitlistRateLimiter);
+}
 
 /**
  * Zod schema for waitlist submission validation

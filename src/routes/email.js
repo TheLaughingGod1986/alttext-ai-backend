@@ -22,8 +22,10 @@ const emailRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiting to all email routes
-router.use(emailRateLimiter);
+// Apply rate limiting to all email routes (defensive check for test environment)
+if (emailRateLimiter && typeof emailRateLimiter === 'function') {
+  router.use(emailRateLimiter);
+}
 
 /**
  * POST /email/waitlist

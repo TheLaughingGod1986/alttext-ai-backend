@@ -21,8 +21,10 @@ const accountRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Apply rate limiting to all account routes
-router.use(accountRateLimiter);
+// Apply rate limiting to all account routes (defensive check for test environment)
+if (accountRateLimiter && typeof accountRateLimiter === 'function') {
+  router.use(accountRateLimiter);
+}
 
 /**
  * POST /account/overview
