@@ -37,9 +37,6 @@ jest.mock('./db/supabase-client', () => {
 jest.mock('express-rate-limit', () => {
   // Create the mock factory function that ALWAYS returns a valid, NO-OP middleware instance
   function mockRateLimiter(options = {}) {
-    // Log to verify mock is being used
-    console.log('[MOCK] express-rate-limit mock is being used! Options:', Object.keys(options || {}));
-
     // Return a NEW middleware function instance every time
     // This prevents issues with Express rejecting reused middleware
     // CRITICAL: This middleware does NOTHING - no rate limiting at all
