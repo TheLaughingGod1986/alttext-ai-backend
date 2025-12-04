@@ -4,13 +4,11 @@
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const { getEnv, requireEnv } = require('../config/loadEnv');
-const crypto = require('crypto');
-const { errors: httpErrors } = require('../src/utils/http');
 
-const JWT_SECRET = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
-const JWT_EXPIRES_IN = getEnv('JWT_EXPIRES_IN', '7d');
-const REFRESH_TOKEN_EXPIRES_IN = getEnv('REFRESH_TOKEN_EXPIRES_IN', '30d');
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '30d';
+const crypto = require('crypto');
 
 /**
  * Generate JWT token for user
@@ -87,7 +85,10 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
-    return httpErrors.authenticationRequired(res, 'Access token required', { code: 'MISSING_TOKEN' });
+    return res.status(401).json({ 
+      error: 'Access token required',
+      code: 'MISSING_TOKEN'
+    });
   }
 
   try {
@@ -95,7 +96,10 @@ function authenticateToken(req, res, next) {
     req.user = decoded;
     next();
   } catch (error) {
-    return httpErrors.forbidden(res, 'Invalid or expired token', 'INVALID_TOKEN');
+    return res.status(403).json({ 
+      error: 'Invalid or expired token',
+      code: 'INVALID_TOKEN'
+    });
   }
 }
 

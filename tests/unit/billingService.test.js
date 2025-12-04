@@ -8,10 +8,10 @@ const { supabase } = require('../../db/supabase-client');
 // Mock dependencies
 jest.mock('../../db/supabase-client');
 jest.mock('../../src/utils/stripeClient');
-jest.mock('../../src/services/emailService');
+jest.mock('../../services/emailService');
 
 const { getStripe } = require('../../src/utils/stripeClient');
-const emailService = require('../../src/services/emailService');
+const emailService = require('../../services/emailService');
 
 describe('billingService', () => {
   beforeEach(() => {

@@ -5,8 +5,6 @@
 
 const express = require('express');
 const { supabase } = require('../db/supabase-client');
-const logger = require('../src/utils/logger');
-const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -16,7 +14,10 @@ const router = express.Router();
 async function getMyOrganizations(req, res) {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     // Get memberships
@@ -25,21 +26,11 @@ async function getMyOrganizations(req, res) {
       .select('organizationId, role')
       .eq('userId', req.user.id);
 
-    // Handle table not found error gracefully (PGRST205)
-    if (membershipsError) {
-      if (membershipsError.code === 'PGRST205' || membershipsError.message?.includes('Could not find the table')) {
-        logger.warn('organization_members table not found, returning empty array', { error: membershipsError.message });
-        return res.status(200).json({
-          ok: true,
-          organizations: []
-        });
-      }
-      throw membershipsError;
-    }
+    if (membershipsError) throw membershipsError;
 
     if (!memberships || memberships.length === 0) {
-      return res.status(200).json({
-        ok: true,
+      return res.json({
+        success: true,
         organizations: []
       });
     }
@@ -81,31 +72,11 @@ async function getMyOrganizations(req, res) {
 
     if (usersError) throw usersError;
 
-    // Format response (optimized: use Maps for O(1) lookups instead of O(n) filters)
+    // Format response
     const userMap = new Map((users || []).map(u => [u.id, u.email]));
-    
-    // Pre-build maps for O(1) lookups instead of filtering in loop
-    const sitesByOrgId = new Map();
-    (allSites || []).forEach(site => {
-      const orgId = site.organizationId;
-      if (!sitesByOrgId.has(orgId)) {
-        sitesByOrgId.set(orgId, []);
-      }
-      sitesByOrgId.get(orgId).push(site);
-    });
-    
-    const membersByOrgId = new Map();
-    (allMembers || []).forEach(member => {
-      const orgId = member.organizationId;
-      if (!membersByOrgId.has(orgId)) {
-        membersByOrgId.set(orgId, []);
-      }
-      membersByOrgId.get(orgId).push(member);
-    });
-    
     const formattedOrgs = (organizations || []).map(org => {
-      const orgSites = sitesByOrgId.get(org.id) || [];
-      const orgMembers = membersByOrgId.get(org.id) || [];
+      const orgSites = (allSites || []).filter(s => s.organizationId === org.id);
+      const orgMembers = (allMembers || []).filter(m => m.organizationId === org.id);
       
       return {
         ...org,
@@ -118,22 +89,16 @@ async function getMyOrganizations(req, res) {
       };
     });
 
-    return res.status(200).json({
-      ok: true,
+    return res.json({
+      success: true,
       organizations: formattedOrgs
     });
   } catch (error) {
-    logger.error('Error fetching organizations:', { error: error.message, code: error.code });
-    
-    // Handle table not found errors gracefully
-    if (error.code === 'PGRST205' || error.message?.includes('Could not find the table')) {
-      return res.status(200).json({
-        ok: true,
-        organizations: []
-      });
-    }
-    
-    return httpErrors.internalError(res, 'Failed to fetch organizations', { code: 'ORGANIZATIONS_FETCH_ERROR' });
+    console.error('Error fetching organizations:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch organizations'
+    });
   }
 }
 
@@ -161,7 +126,10 @@ router.get('/my-organizations', getMyOrganizations);
 router.get('/:orgId/sites', async (req, res) => {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -189,8 +157,8 @@ router.get('/:orgId/sites', async (req, res) => {
 
     if (sitesError) throw sitesError;
 
-    res.status(200).json({
-      ok: true,
+    res.json({
+      success: true,
       sites: (sites || []).map(s => ({
         id: s.id,
         siteUrl: s.siteUrl,
@@ -206,8 +174,11 @@ router.get('/:orgId/sites', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Error fetching sites:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to fetch sites', { code: 'SITES_FETCH_ERROR' });
+    console.error('Error fetching sites:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch sites'
+    });
   }
 });
 
@@ -220,28 +191,21 @@ router.get('/:orgId/sites', async (req, res) => {
 router.get('/:orgId/usage', async (req, res) => {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     const orgId = parseInt(req.params.orgId);
 
     // Check if user is a member
-    // Handle missing table gracefully (PGRST205 = table not found)
     const { data: membership, error: membershipError } = await supabase
       .from('organization_members')
       .select('id')
       .eq('organizationId', orgId)
       .eq('userId', req.user.id)
       .single();
-
-    // Handle missing table error gracefully
-    if (membershipError && (membershipError.code === 'PGRST205' || membershipError.message?.includes('Could not find the table'))) {
-      logger.warn('organization_members table not found for usage check', { error: membershipError.message });
-      return res.status(403).json({
-        success: false,
-        error: 'You do not have access to this organization'
-      });
-    }
 
     if (membershipError || !membership) {
       return res.status(403).json({
@@ -281,8 +245,8 @@ router.get('/:orgId/usage', async (req, res) => {
       usageByDay[day] = (usageByDay[day] || 0) + (log.used || 0);
     });
 
-    res.status(200).json({
-      ok: true,
+    res.json({
+      success: true,
       usage: {
         tokensRemaining: organization.tokens_remaining !== undefined ? organization.tokens_remaining : (organization.tokensRemaining !== undefined ? organization.tokensRemaining : 0),
         tokensUsed: totalUsed,
@@ -301,8 +265,11 @@ router.get('/:orgId/usage', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Error fetching usage:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to fetch usage', { code: 'USAGE_FETCH_ERROR' });
+    console.error('Error fetching usage:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch usage'
+    });
   }
 });
 
@@ -321,7 +288,10 @@ router.get('/:orgId/usage', async (req, res) => {
 router.post('/:orgId/invite', async (req, res) => {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -336,7 +306,10 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
-      return httpErrors.forbidden(res, 'Only owners and admins can invite members', 'INSUFFICIENT_PERMISSIONS');
+      return res.status(403).json({
+        success: false,
+        error: 'Only owners and admins can invite members'
+      });
     }
 
     // Find the user to invite
@@ -347,7 +320,10 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (userError || !invitedUser) {
-      return httpErrors.notFound(res, 'User not found. They need to create an account first.');
+      return res.status(404).json({
+        success: false,
+        error: 'User not found. They need to create an account first.'
+      });
     }
 
     // Check if already a member
@@ -359,7 +335,10 @@ router.post('/:orgId/invite', async (req, res) => {
       .single();
 
     if (existingMembership) {
-      return httpErrors.conflict(res, 'User is already a member of this organization', 'ALREADY_MEMBER');
+      return res.status(400).json({
+        success: false,
+        error: 'User is already a member of this organization'
+      });
     }
 
     // Create membership
@@ -373,14 +352,17 @@ router.post('/:orgId/invite', async (req, res) => {
 
     if (createError) throw createError;
 
-    res.status(200).json({
-      ok: true,
+    res.json({
+      success: true,
       message: `${email} has been added to the organization`
     });
 
   } catch (error) {
-    logger.error('Error inviting member:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to invite member', { code: 'INVITE_MEMBER_ERROR' });
+    console.error('Error inviting member:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to invite member'
+    });
   }
 });
 
@@ -393,7 +375,10 @@ router.post('/:orgId/invite', async (req, res) => {
 router.delete('/:orgId/members/:userId', async (req, res) => {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -408,7 +393,10 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
       .single();
 
     if (membershipError || !membership || !['owner', 'admin'].includes(membership.role)) {
-      return httpErrors.forbidden(res, 'Only owners and admins can remove members', 'INSUFFICIENT_PERMISSIONS');
+      return res.status(403).json({
+        success: false,
+        error: 'Only owners and admins can remove members'
+      });
     }
 
     // Don't allow removing the owner
@@ -420,7 +408,10 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
       .single();
 
     if (memberToRemove?.role === 'owner') {
-      return httpErrors.forbidden(res, 'Cannot remove the organization owner', 'CANNOT_REMOVE_OWNER');
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot remove the organization owner'
+      });
     }
 
     // Remove the member
@@ -432,14 +423,17 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
 
     if (deleteError) throw deleteError;
 
-    res.status(200).json({
-      ok: true,
+    res.json({
+      success: true,
       message: 'Member removed successfully'
     });
 
   } catch (error) {
-    logger.error('Error removing member:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to remove member', { code: 'REMOVE_MEMBER_ERROR' });
+    console.error('Error removing member:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to remove member'
+    });
   }
 });
 
@@ -452,7 +446,10 @@ router.delete('/:orgId/members/:userId', async (req, res) => {
 router.get('/:orgId/members', async (req, res) => {
   try {
     if (!req.user) {
-      return httpErrors.authenticationRequired(res, 'Authentication required');
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
     }
 
     const orgId = parseInt(req.params.orgId);
@@ -488,11 +485,11 @@ router.get('/:orgId/members', async (req, res) => {
 
     if (usersError) throw usersError;
 
-    // Build user map (optimized: single pass O(n) instead of multiple lookups)
+    // Build user map
     const userMap = new Map((users || []).map(u => [u.id, u]));
 
-    res.status(200).json({
-      ok: true,
+    res.json({
+      success: true,
       members: (members || []).map(m => ({
         userId: m.userId,
         email: userMap.get(m.userId)?.email || null,
@@ -502,8 +499,11 @@ router.get('/:orgId/members', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Error fetching members:', { error: error.message, code: error.code });
-    return httpErrors.internalError(res, 'Failed to fetch members', { code: 'MEMBERS_FETCH_ERROR' });
+    console.error('Error fetching members:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch members'
+    });
   }
 });
 

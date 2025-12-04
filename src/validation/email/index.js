@@ -4,7 +4,6 @@
  */
 
 const { validateEmail } = require('../validators');
-const { isTest } = require('../../../config/loadEnv');
 
 // Rate limiting storage (in-memory, could be moved to Redis in production)
 const rateLimitStore = new Map();
@@ -13,7 +12,7 @@ const rateLimitStore = new Map();
  * Clear old rate limit entries (runs every hour)
  * Skip scheduling in test to avoid hanging Jest open handles.
  */
-if (!isTest()) {
+if (process.env.NODE_ENV !== 'test') {
   setInterval(() => {
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     for (const [key, timestamp] of rateLimitStore.entries()) {
@@ -33,7 +32,7 @@ if (!isTest()) {
  */
 function checkRateLimit(emailType, email, maxPerHour = 5) {
   // Disable rate limiting entirely in tests to prevent flaky failures and allow clean Jest shutdown.
-  if (isTest()) {
+  if (process.env.NODE_ENV === 'test') {
     return true;
   }
   const key = `${emailType}:${email.toLowerCase()}`;

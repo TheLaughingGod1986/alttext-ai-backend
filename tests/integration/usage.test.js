@@ -45,16 +45,6 @@ describe('Usage routes', () => {
     supabaseMock.__reset();
     jest.clearAllMocks();
 
-    // Clear usage cache to prevent test interference
-    try {
-      const usageModule = require('../../routes/usage');
-      if (usageModule.clearCachedUsage) {
-        usageModule.clearCachedUsage(); // Clear all cached usage
-      }
-    } catch (e) {
-      // Ignore if module not available
-    }
-
     // Default mocks for siteService
     siteService.getOrCreateSite.mockResolvedValue({
       id: 'site_123',

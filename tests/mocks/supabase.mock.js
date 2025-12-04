@@ -81,14 +81,9 @@ function createQueryBuilder(table) {
     maybeSingle: jestMock.fn(() => Promise.resolve(getNextResponse(table, state.lastMethod))),
     selectOne: jestMock.fn(() => Promise.resolve(getNextResponse(table, state.lastMethod)))
   };
-  // Make the builder thenable for await support
-  builder.then = function(resolve, reject) {
+  builder.then = (resolve, reject) => {
     const response = getNextResponse(table, state.lastMethod);
-    const promise = Promise.resolve(response);
-    if (resolve) {
-      return promise.then(resolve, reject);
-    }
-    return promise;
+    return Promise.resolve(response).then(resolve, reject);
   };
   builder.catch = (reject) => {
     const response = getNextResponse(table, state.lastMethod);

@@ -6,7 +6,6 @@
 
 const { supabase } = require('../../db/supabase-client');
 const { randomUUID } = require('crypto');
-const logger = require('../utils/logger');
 
 /**
  * Service-specific plan limits
@@ -101,7 +100,7 @@ async function getOrCreateSite(siteHash, siteUrl = null) {
 
     return site;
   } catch (error) {
-    logger.error('[SiteService] Error in getOrCreateSite', { error: error.message });
+    console.error('[SiteService] Error in getOrCreateSite:', error);
     throw error;
   }
 }
@@ -171,7 +170,7 @@ async function getSiteUsage(siteHash) {
       resetTimestamp
     };
   } catch (error) {
-    logger.error('[SiteService] Error in getSiteUsage', { error: error.message });
+    console.error('[SiteService] Error in getSiteUsage:', error);
     throw error;
   }
 }
@@ -190,7 +189,7 @@ async function checkSiteQuota(siteHash) {
       ...usage
     };
   } catch (error) {
-    logger.error('[SiteService] Error in checkSiteQuota', { error: error.message });
+    console.error('[SiteService] Error in checkSiteQuota:', error);
     return {
       hasAccess: false,
       hasQuota: false,
@@ -268,7 +267,7 @@ async function deductSiteQuota(siteHash, tokens = 1) {
 
     return updatedSite;
   } catch (error) {
-    logger.error('[SiteService] Error in deductSiteQuota', { error: error.message });
+    console.error('[SiteService] Error in deductSiteQuota:', error);
     throw error;
   }
 }
@@ -303,11 +302,7 @@ async function getSiteLicense(siteHash) {
 
     return license;
   } catch (error) {
-    logger.error('[SiteService] Error in getSiteLicense', {
-      error: error.message,
-      stack: error.stack,
-      siteHash
-    });
+    console.error('[SiteService] Error in getSiteLicense:', error);
     return null;
   }
 }
@@ -398,12 +393,7 @@ async function createFreeLicenseForSite(siteHash, siteUrl = null) {
       site
     };
   } catch (error) {
-    logger.error('[SiteService] Error in createFreeLicenseForSite', {
-      error: error.message,
-      stack: error.stack,
-      siteHash,
-      siteUrl
-    });
+    console.error('[SiteService] Error in createFreeLicenseForSite:', error);
     throw error;
   }
 }

@@ -6,9 +6,6 @@
 const express = require('express');
 const { authenticateToken } = require('../../auth/jwt');
 const billingService = require('../services/billingService');
-const { errors: httpErrors } = require('../utils/http');
-const logger = require('../utils/logger');
-const { getEnv } = require('../../config/loadEnv');
 // Optional: creditsService may not exist in all environments
 let creditsService;
 try {
@@ -23,23 +20,12 @@ const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
-// Rate limiting for billing endpoints (defensive check for test environment)
-let billingRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    billingRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 20, // Limit each IP to 20 requests per windowMs
-      message: 'Too many billing requests, please try again later.',
-    });
-  } catch (e) {
-    billingRateLimiter = null;
-  }
-}
-// Fallback: no-op middleware if rateLimit is not available
-if (!billingRateLimiter || typeof billingRateLimiter !== 'function') {
-  billingRateLimiter = (req, res, next) => next();
-}
+// Rate limiting for billing endpoints
+const billingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 requests per windowMs
+  message: 'Too many billing requests, please try again later.',
+});
 
 // Validation schemas
 const createCheckoutSchema = z.object({
@@ -77,13 +63,19 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     // Validate input
     const parsed = createCheckoutSchema.safeParse(req.body);
     if (!parsed.success) {
-      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: parsed.error.issues[0]?.message || 'Validation failed',
+      });
     }
 
     const { email, plugin, priceId } = parsed.data;
@@ -93,15 +85,20 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
-      return httpErrors.forbidden(res, 'You can only create checkout sessions for your own email address');
+      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      return res.status(403).json({
+        ok: false,
+        error: 'You can only create checkout sessions for your own email address',
+      });
     }
 
     // Get or create customer
     const customerResult = await billingService.createOrGetCustomer(email);
     if (!customerResult || !customerResult.success) {
-      logger.error('[Billing Routes] Failed to create or get customer', { error: customerResult?.error, email });
-      return httpErrors.internalError(res, customerResult?.error || 'Failed to create or get customer');
+      return res.status(500).json({
+        ok: false,
+        error: customerResult?.error || 'Failed to create or get customer',
+      });
     }
 
     const customerId = customerResult.data.customerId;
@@ -109,8 +106,10 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
     // Create checkout session
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Billing Routes] Stripe not configured');
-      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe not configured',
+      });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -123,8 +122,8 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
         },
       ],
       mode: 'subscription',
-      success_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/cancel`,
+      success_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/cancel`,
       metadata: {
         user_email: email.toLowerCase(),
         plugin_slug: plugin,
@@ -136,8 +135,11 @@ router.post('/create-checkout', billingRateLimiter, authenticateToken, async (re
       url: session.url,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error creating checkout', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to create checkout session');
+    console.error('[Billing Routes] Error creating checkout:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to create checkout session',
+    });
   }
 });
 
@@ -150,13 +152,19 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     // Validate input
     const parsed = createPortalSchema.safeParse(req.body);
     if (!parsed.success) {
-      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: parsed.error.issues[0]?.message || 'Validation failed',
+      });
     }
 
     const { email } = parsed.data;
@@ -166,15 +174,20 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
-      return httpErrors.forbidden(res, 'You can only access the billing portal for your own email address');
+      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      return res.status(403).json({
+        ok: false,
+        error: 'You can only access the billing portal for your own email address',
+      });
     }
 
     // Get or create customer
     const customerResult = await billingService.createOrGetCustomer(email);
     if (!customerResult || !customerResult.success) {
-      logger.error('[Billing Routes] Failed to create or get customer', { error: customerResult?.error, email });
-      return httpErrors.internalError(res, customerResult?.error || 'Failed to create or get customer');
+      return res.status(500).json({
+        ok: false,
+        error: customerResult?.error || 'Failed to create or get customer',
+      });
     }
 
     const customerId = customerResult.data.customerId;
@@ -182,13 +195,15 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
     // Create portal session
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Billing Routes] Stripe not configured');
-      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe not configured',
+      });
     }
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing`,
+      return_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing`,
     });
 
     return res.status(200).json({
@@ -196,8 +211,11 @@ router.post('/create-portal', billingRateLimiter, authenticateToken, async (req,
       url: session.url,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error creating portal', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to create portal session');
+    console.error('[Billing Routes] Error creating portal:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to create portal session',
+    });
   }
 });
 
@@ -210,13 +228,19 @@ router.post('/subscriptions', billingRateLimiter, authenticateToken, async (req,
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     // Validate input
     const parsed = subscriptionsSchema.safeParse(req.body);
     if (!parsed.success) {
-      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: parsed.error.issues[0]?.message || 'Validation failed',
+      });
     }
 
     const { email } = parsed.data;
@@ -226,15 +250,21 @@ router.post('/subscriptions', billingRateLimiter, authenticateToken, async (req,
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
-      return httpErrors.forbidden(res, 'You can only view subscriptions for your own email address');
+      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      return res.status(403).json({
+        ok: false,
+        error: 'You can only view subscriptions for your own email address',
+      });
     }
 
     // Get subscriptions
     const result = await billingService.getUserSubscriptions(email);
     if (!result || !result.success) {
-      logger.error('[Billing Routes] Failed to fetch subscriptions', { error: result?.error, email });
-      return httpErrors.internalError(res, result?.error || 'Failed to fetch subscriptions');
+      return res.status(500).json({
+        ok: false,
+        error: result?.error || 'Failed to fetch subscriptions',
+        subscriptions: [],
+      });
     }
 
     return res.status(200).json({
@@ -242,8 +272,12 @@ router.post('/subscriptions', billingRateLimiter, authenticateToken, async (req,
       subscriptions: result.subscriptions || [],
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error fetching subscriptions', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to fetch subscriptions');
+    console.error('[Billing Routes] Error fetching subscriptions:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to fetch subscriptions',
+      subscriptions: [],
+    });
   }
 });
 
@@ -257,7 +291,10 @@ router.get('/subscription-status', billingRateLimiter, authenticateToken, async 
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     const email = req.user.email.toLowerCase();
@@ -267,8 +304,13 @@ router.get('/subscription-status', billingRateLimiter, authenticateToken, async 
     const subscriptionCheck = await billingService.checkSubscription(email, plugin);
     
     if (!subscriptionCheck.success) {
-      logger.error('[Billing Routes] Failed to check subscription', { error: subscriptionCheck.error, email, plugin });
-      return httpErrors.internalError(res, subscriptionCheck.error || 'Failed to check subscription');
+      return res.status(500).json({
+        ok: false,
+        error: subscriptionCheck.error || 'Failed to check subscription',
+        tier: 'free',
+        plan: 'free',
+        limits: subscriptionCheck.limits,
+      });
     }
 
     // Get usage summary
@@ -295,8 +337,11 @@ router.get('/subscription-status', billingRateLimiter, authenticateToken, async 
       unlimited: subscriptionCheck.tier === 'agency',
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error fetching subscription status', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to fetch subscription status');
+    console.error('[Billing Routes] Error fetching subscription status:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to fetch subscription status',
+    });
   }
 });
 
@@ -309,13 +354,19 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     // Validate input
     const parsed = addCreditsSchema.safeParse(req.body);
     if (!parsed.success) {
-      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: parsed.error.issues[0]?.message || 'Validation failed',
+      });
     }
 
     const { email, amount, plugin = 'alttext-ai' } = parsed.data;
@@ -325,15 +376,20 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
     const requestedEmail = email.toLowerCase();
     
     if (authenticatedEmail !== requestedEmail) {
-      logger.warn('[Billing Security] Email mismatch', { authenticated: authenticatedEmail, requested: requestedEmail, userId: req.user.id });
-      return httpErrors.forbidden(res, 'You can only purchase credits for your own email address');
+      console.warn(`[Billing Security] Email mismatch: authenticated=${authenticatedEmail}, requested=${requestedEmail}, userId=${req.user.id}`);
+      return res.status(403).json({
+        ok: false,
+        error: 'You can only purchase credits for your own email address',
+      });
     }
 
     // Get or create customer
     const customerResult = await billingService.createOrGetCustomer(email);
     if (!customerResult || !customerResult.success) {
-      logger.error('[Billing Routes] Failed to create or get customer', { error: customerResult?.error, email });
-      return httpErrors.internalError(res, customerResult?.error || 'Failed to create or get customer');
+      return res.status(500).json({
+        ok: false,
+        error: customerResult?.error || 'Failed to create or get customer',
+      });
     }
 
     const customerId = customerResult.data.customerId;
@@ -341,15 +397,19 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
     // Get Stripe client
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Billing Routes] Stripe not configured');
-      return httpErrors.serviceUnavailable(res, 'Stripe not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'Stripe not configured',
+      });
     }
 
     // Get credit price ID from environment (default to STRIPE_PRICE_CREDITS)
-    const creditPriceId = getEnv('STRIPE_PRICE_CREDITS') || getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS');
+    const creditPriceId = process.env.STRIPE_PRICE_CREDITS || process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS;
     if (!creditPriceId) {
-      logger.error('[Billing Routes] Credit price not configured');
-      return httpErrors.serviceUnavailable(res, 'Credit price not configured');
+      return res.status(500).json({
+        ok: false,
+        error: 'Credit price not configured',
+      });
     }
 
     // Create checkout session for one-time payment (credits)
@@ -363,8 +423,8 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
         },
       ],
       mode: 'payment', // One-time payment for credits
-      success_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/credits/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${getEnv('FRONTEND_DASHBOARD_URL', getEnv('FRONTEND_URL', 'http://localhost:3000'))}/billing/credits/cancel`,
+      success_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/credits/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_DASHBOARD_URL || process.env.FRONTEND_URL || 'http://localhost:3000'}/billing/credits/cancel`,
       metadata: {
         user_email: email.toLowerCase(),
         plugin_slug: plugin,
@@ -379,8 +439,11 @@ router.post('/credits/add', billingRateLimiter, authenticateToken, async (req, r
       sessionId: session.id,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error creating credit checkout', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to create credit checkout session');
+    console.error('[Billing Routes] Error creating credit checkout:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to create credit checkout session',
+    });
   }
 });
 
@@ -394,7 +457,10 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
     // Validate input
     const parsed = spendCreditsSchema.safeParse(req.body);
     if (!parsed.success) {
-      return httpErrors.validationFailed(res, parsed.error.issues[0]?.message || 'Validation failed', parsed.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        error: parsed.error.issues[0]?.message || 'Validation failed',
+      });
     }
 
     const { identityId, amount = 1, metadata = {} } = parsed.data;
@@ -409,7 +475,10 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
       .single();
 
     if (identityError || !identity) {
-      return httpErrors.notFound(res, 'Identity');
+      return res.status(404).json({
+        ok: false,
+        error: 'Identity not found',
+      });
     }
 
     // Verify email ownership
@@ -418,24 +487,36 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
       const identityEmail = identity.email.toLowerCase();
       
       if (authenticatedEmail !== identityEmail) {
-        logger.warn('[Billing Security] Email mismatch for credit spend', { authenticated: authenticatedEmail, identity: identityEmail, identityId });
-        return httpErrors.forbidden(res, 'You can only spend credits for your own account');
+        console.warn(`[Billing Security] Email mismatch for credit spend: authenticated=${authenticatedEmail}, identity=${identityEmail}, identityId=${identityId}`);
+        return res.status(403).json({
+          ok: false,
+          error: 'You can only spend credits for your own account',
+        });
       }
     }
 
     // Spend credits
     if (!creditsService) {
-      logger.error('[Billing Routes] Credits service not available');
-      return httpErrors.serviceUnavailable(res, 'Credits service not available');
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
     }
     const result = await creditsService.spendCredits(identityId, amount, metadata);
 
     if (!result.success) {
       if (result.error === 'INSUFFICIENT_CREDITS') {
-        return httpErrors.quotaExceeded(res, 'Insufficient credits');
+        return res.status(402).json({
+          ok: false,
+          error: 'Insufficient credits',
+          currentBalance: result.currentBalance,
+          requested: result.requested,
+        });
       }
-      logger.error('[Billing Routes] Failed to spend credits', { error: result.error, identityId, amount });
-      return httpErrors.internalError(res, result.error);
+      return res.status(500).json({
+        ok: false,
+        error: result.error,
+      });
     }
 
     return res.status(200).json({
@@ -444,8 +525,11 @@ router.post('/credits/spend', billingRateLimiter, authenticateToken, async (req,
       transactionId: result.transactionId,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error spending credits', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to spend credits');
+    console.error('[Billing Routes] Error spending credits:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to spend credits',
+    });
   }
 });
 
@@ -458,27 +542,38 @@ router.get('/credits/balance', billingRateLimiter, authenticateToken, async (req
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     const email = req.user.email.toLowerCase();
 
     // Get or create identity
     if (!creditsService) {
-      logger.error('[Billing Routes] Credits service not available');
-      return httpErrors.serviceUnavailable(res, 'Credits service not available');
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
     }
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      logger.error('[Billing Routes] Failed to get/create identity', { error: identityResult.error, email });
-      return httpErrors.internalError(res, identityResult.error);
+      return res.status(500).json({
+        ok: false,
+        error: identityResult.error,
+        balance: 0,
+      });
     }
 
     // Get balance
     const balanceResult = await creditsService.getBalance(identityResult.identityId);
     if (!balanceResult.success) {
-      logger.error('[Billing Routes] Failed to get balance', { error: balanceResult.error, identityId: identityResult.identityId });
-      return httpErrors.internalError(res, balanceResult.error);
+      return res.status(500).json({
+        ok: false,
+        error: balanceResult.error,
+        balance: 0,
+      });
     }
 
     return res.status(200).json({
@@ -487,8 +582,12 @@ router.get('/credits/balance', billingRateLimiter, authenticateToken, async (req
       identityId: identityResult.identityId,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error getting credit balance', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to get credit balance');
+    console.error('[Billing Routes] Error getting credit balance:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to get credit balance',
+      balance: 0,
+    });
   }
 });
 
@@ -502,7 +601,10 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
   try {
     // Require authentication
     if (!req.user || !req.user.email) {
-      return httpErrors.authenticationRequired(res);
+      return res.status(401).json({
+        ok: false,
+        error: 'Authentication required',
+      });
     }
 
     const email = req.user.email.toLowerCase();
@@ -511,13 +613,19 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
 
     // Get or create identity
     if (!creditsService) {
-      logger.error('[Billing Routes] Credits service not available');
-      return httpErrors.serviceUnavailable(res, 'Credits service not available');
+      return res.status(503).json({
+        ok: false,
+        error: 'Credits service not available',
+      });
     }
     const identityResult = await creditsService.getOrCreateIdentity(email);
     if (!identityResult.success) {
-      logger.error('[Billing Routes] Failed to get/create identity', { error: identityResult.error, email });
-      return httpErrors.internalError(res, identityResult.error);
+      return res.status(500).json({
+        ok: false,
+        error: identityResult.error,
+        transactions: [],
+        pagination: { page, limit, total: 0, pages: 0 },
+      });
     }
 
     // Get transaction history
@@ -542,8 +650,13 @@ router.get('/credits/transactions', billingRateLimiter, authenticateToken, async
       pagination: historyResult.pagination,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error getting credit transactions', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to get credit transactions');
+    console.error('[Billing Routes] Error getting credit transactions:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to get credit transactions',
+      transactions: [],
+      pagination: { page: 1, limit: 50, total: 0, pages: 0 },
+    });
   }
 });
 
@@ -556,7 +669,10 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
     const email = req.user.email;
     
     if (!email) {
-      return httpErrors.validationFailed(res, 'User email not found in token');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
     // Get subscription to find Stripe customer ID
@@ -576,7 +692,7 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
           });
           invoices = stripeInvoices.data || [];
         } catch (stripeError) {
-          logger.error('[Billing Routes] Error fetching Stripe invoices', { error: stripeError.message });
+          console.error('[Billing Routes] Error fetching Stripe invoices:', stripeError);
         }
       }
     }
@@ -592,7 +708,7 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
           }
         }
       } catch (transError) {
-        logger.error('[Billing Routes] Error fetching transactions', { error: transError.message });
+        console.error('[Billing Routes] Error fetching transactions:', transError);
       }
     }
 
@@ -602,8 +718,13 @@ router.get('/history', billingRateLimiter, authenticateToken, async (req, res) =
       transactions: transactions,
     });
   } catch (error) {
-    logger.error('[Billing Routes] Error getting billing history', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, error.message || 'Failed to get billing history');
+    console.error('[Billing Routes] Error getting billing history:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message || 'Failed to get billing history',
+      invoices: [],
+      transactions: [],
+    });
   }
 });
 

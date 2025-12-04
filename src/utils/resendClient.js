@@ -5,27 +5,16 @@
 
 const { Resend } = require('resend');
 const { transactionalFromEmail } = require('../emails/emailConfig');
-const { getEnv } = require('../../config/loadEnv');
-const logger = require('../utils/logger');
 
 let resendInstance = null;
-let cachedApiKey = null;
 
 /**
  * Initialize Resend client if API key is available
  */
 function initResend() {
-  const apiKey = getEnv('RESEND_API_KEY');
-  
-  // If API key changed or instance doesn't exist, recreate
-  if (!resendInstance || cachedApiKey !== apiKey) {
-    resendInstance = null;
-    cachedApiKey = apiKey;
-    if (apiKey) {
-      resendInstance = new Resend(apiKey);
-    }
+  if (!resendInstance && process.env.RESEND_API_KEY) {
+    resendInstance = new Resend(process.env.RESEND_API_KEY);
   }
-  
   return resendInstance;
 }
 
@@ -45,7 +34,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
 
   if (!client) {
     const error = 'Resend API key not configured';
-    logger.error('[Resend Client] Resend API key not configured');
+    console.error(`[Resend Client] ${error}`);
     return {
       success: false,
       error,
@@ -54,7 +43,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
 
   if (!to || !subject || !html) {
     const error = 'Missing required email fields: to, subject, and html are required';
-    logger.error('[Resend Client] Missing required email fields', { to: !!to, subject: !!subject, html: !!html });
+    console.error(`[Resend Client] ${error}`);
     return {
       success: false,
       error,
@@ -62,7 +51,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
   }
 
   try {
-    logger.info('[Resend Client] Sending email', { to, subject });
+    console.log(`[Resend Client] Sending email to ${to} with subject: ${subject}`);
 
     const emailData = {
       from: from || transactionalFromEmail,
@@ -82,11 +71,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
     const result = await client.emails.send(emailData);
 
     if (result.error) {
-      logger.error('[Resend Client] Error sending email', {
-        error: result.error.message || result.error,
-        to,
-        subject
-      });
+      console.error(`[Resend Client] Error sending email:`, result.error);
       return {
         success: false,
         error: result.error.message || 'Failed to send email',
@@ -94,10 +79,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
       };
     }
 
-    logger.info('[Resend Client] Email sent successfully', {
-      emailId: result.data?.id || 'unknown',
-      to
-    });
+    console.log(`[Resend Client] Email sent successfully. ID: ${result.data?.id || 'unknown'}`);
 
     return {
       success: true,
@@ -105,12 +87,7 @@ async function sendEmail({ to, subject, html, text, tags = [], from = null }) {
       data: result.data,
     };
   } catch (error) {
-    logger.error('[Resend Client] Exception sending email', {
-      error: error.message,
-      stack: error.stack,
-      to,
-      subject
-    });
+    console.error(`[Resend Client] Exception sending email:`, error);
     return {
       success: false,
       error: error.message || 'Failed to send email',

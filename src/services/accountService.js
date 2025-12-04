@@ -8,7 +8,6 @@ const userAccountService = require('./userAccountService');
 const billingService = require('./billingService');
 const usageService = require('./usageService');
 const plansConfig = require('../config/plans');
-const logger = require('../utils/logger');
 
 /**
  * Get unified account summary for dashboard
@@ -103,11 +102,7 @@ async function getAccountSummary(email) {
       },
     };
   } catch (err) {
-    logger.error('[AccountService] Exception getting account summary', {
-      error: err.message,
-      stack: err.stack,
-      email
-    });
+    console.error('[AccountService] Exception getting account summary:', err);
     return {
       ok: false,
       error: err.message || 'Failed to get account summary',

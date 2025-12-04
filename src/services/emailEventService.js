@@ -4,7 +4,6 @@
  */
 
 const { supabase } = require('../../db/supabase-client');
-const logger = require('../utils/logger');
 
 /**
  * Check if a recent event exists for the given email and event type
@@ -28,24 +27,14 @@ async function hasRecentEvent({ email, eventType, windowMinutes = 60 }) {
       .limit(1);
 
     if (error) {
-      logger.error('[EmailEventService] Error checking recent event', {
-        error: error.message,
-        code: error.code,
-        email,
-        eventType
-      });
+      console.error('[EmailEventService] Error checking recent event:', error);
       // Don't throw - return false to allow email to be sent
       return false;
     }
 
     return (data && data.length > 0);
   } catch (error) {
-    logger.error('[EmailEventService] Exception checking recent event', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      eventType
-    });
+    console.error('[EmailEventService] Exception checking recent event:', error);
     // Don't throw - return false to allow email to be sent
     return false;
   }
@@ -76,26 +65,14 @@ async function hasRecentEventForPlugin({ email, pluginSlug, eventType, windowMin
       .limit(1);
 
     if (error) {
-      logger.error('[EmailEventService] Error checking recent plugin event', {
-        error: error.message,
-        code: error.code,
-        email,
-        pluginSlug,
-        eventType
-      });
+      console.error('[EmailEventService] Error checking recent plugin event:', error);
       // Don't throw - return false to allow email to be sent
       return false;
     }
 
     return (data && data.length > 0);
   } catch (error) {
-    logger.error('[EmailEventService] Exception checking recent plugin event', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      pluginSlug,
-      eventType
-    });
+    console.error('[EmailEventService] Exception checking recent plugin event:', error);
     // Don't throw - return false to allow email to be sent
     return false;
   }
@@ -142,24 +119,14 @@ async function logEvent({
       .single();
 
     if (error) {
-      logger.error('[EmailEventService] Error logging event', {
-        error: error.message,
-        code: error.code,
-        email,
-        eventType
-      });
+      console.error('[EmailEventService] Error logging event:', error);
       // Don't throw - logging failures shouldn't break email sending
       return { success: false, error: error.message };
     }
 
     return { success: true, eventId: data?.id || null };
   } catch (error) {
-    logger.error('[EmailEventService] Exception logging event', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      eventType
-    });
+    console.error('[EmailEventService] Exception logging event:', error);
     // Don't throw - logging failures shouldn't break email sending
     return { success: false, error: error.message };
   }

@@ -9,7 +9,6 @@ const { getStripe } = require('../utils/stripeClient');
 const emailService = require('./emailService');
 const usageService = require('./usageService');
 const plansConfig = require('../config/plans');
-const logger = require('../utils/logger');
 
 // Simple in-memory cache for subscription lookups
 // Key: email, Value: { data, timestamp }
@@ -68,7 +67,7 @@ async function createOrGetCustomer(email) {
     });
 
     if (customers.data.length > 0) {
-      logger.info('[BillingService] Found existing Stripe customer', { email });
+      console.log(`[BillingService] Found existing Stripe customer for ${email}`);
       return {
         success: true,
         data: { customerId: customers.data[0].id, customer: customers.data[0] },
@@ -83,17 +82,13 @@ async function createOrGetCustomer(email) {
       },
     });
 
-    logger.info('[BillingService] Created new Stripe customer', { email, customerId: customer.id });
+    console.log(`[BillingService] Created new Stripe customer for ${email}: ${customer.id}`);
     return {
       success: true,
       data: { customerId: customer.id, customer },
     };
   } catch (error) {
-    logger.error('[BillingService] Error creating/getting customer', {
-      error: error.message,
-      stack: error.stack,
-      email
-    });
+    console.error('[BillingService] Error creating/getting customer:', error);
     return { success: false, error: error.message || 'Failed to create/get customer' };
   }
 }
@@ -130,7 +125,7 @@ async function createSubscription({ email, plugin, priceId }) {
       .single();
 
     if (existing && existing.status === 'active') {
-      logger.info('[BillingService] Active subscription already exists', { email, plugin });
+      console.log(`[BillingService] Active subscription already exists for ${email} and ${plugin}`);
       return {
         success: true,
         data: { subscription: existing, isNew: false },
@@ -178,16 +173,11 @@ async function createSubscription({ email, plugin, priceId }) {
       .single();
 
     if (error) {
-      logger.error('[BillingService] Error storing subscription', {
-        error: error.message,
-        stack: error.stack,
-        email,
-        plugin
-      });
+      console.error('[BillingService] Error storing subscription:', error);
       return { success: false, error: error.message };
     }
 
-    logger.info('[BillingService] Created subscription', { email, plugin, subscriptionId: inserted.id });
+    console.log(`[BillingService] Created subscription for ${email} and ${plugin}`);
     
     // Clear cache for this user
     clearCachedSubscription(email.toLowerCase());
@@ -197,12 +187,7 @@ async function createSubscription({ email, plugin, priceId }) {
       data: { subscription: inserted, isNew: true },
     };
   } catch (error) {
-    logger.error('[BillingService] Exception creating subscription', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      plugin
-    });
+    console.error('[BillingService] Exception creating subscription:', error);
     return { success: false, error: error.message || 'Failed to create subscription' };
   }
 }
@@ -240,11 +225,7 @@ async function cancelSubscription(subscriptionId) {
       .eq('stripe_subscription_id', subscriptionId);
 
     if (error) {
-      logger.error('[BillingService] Error updating canceled subscription', {
-        error: error.message,
-        stack: error.stack,
-        subscriptionId
-      });
+      console.error('[BillingService] Error updating canceled subscription:', error);
       // Don't fail if DB update fails - Stripe cancellation succeeded
     }
 
@@ -253,14 +234,10 @@ async function cancelSubscription(subscriptionId) {
       clearCachedSubscription(existingSub.user_email.toLowerCase());
     }
 
-    logger.info('[BillingService] Canceled subscription', { subscriptionId });
+    console.log(`[BillingService] Canceled subscription ${subscriptionId}`);
     return { success: true, data: { subscription } };
   } catch (error) {
-    logger.error('[BillingService] Exception canceling subscription', {
-      error: error.message,
-      stack: error.stack,
-      subscriptionId
-    });
+    console.error('[BillingService] Exception canceling subscription:', error);
     return { success: false, error: error.message || 'Failed to cancel subscription' };
   }
 }
@@ -301,23 +278,13 @@ async function updateSubscriptionQuantity(subscriptionId, quantity) {
       .eq('stripe_subscription_id', subscriptionId);
 
     if (error) {
-      logger.error('[BillingService] Error updating subscription quantity', {
-        error: error.message,
-        stack: error.stack,
-        subscriptionId,
-        quantity
-      });
+      console.error('[BillingService] Error updating subscription quantity:', error);
     }
 
-    logger.info('[BillingService] Updated subscription quantity', { subscriptionId, quantity });
+    console.log(`[BillingService] Updated subscription ${subscriptionId} quantity to ${quantity}`);
     return { success: true, data: { subscription: updated } };
   } catch (error) {
-    logger.error('[BillingService] Exception updating subscription quantity', {
-      error: error.message,
-      stack: error.stack,
-      subscriptionId,
-      quantity
-    });
+    console.error('[BillingService] Exception updating subscription quantity:', error);
     return { success: false, error: error.message || 'Failed to update subscription quantity' };
   }
 }
@@ -392,25 +359,17 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
       .single();
 
     if (error) {
-      logger.error('[BillingService] Error syncing subscription from webhook', {
-        error: error.message,
-        stack: error.stack,
-        subscriptionId
-      });
+      console.error('[BillingService] Error syncing subscription from webhook:', error);
       return { success: false, error: error.message };
     }
 
     // Clear cache for this user
     clearCachedSubscription(email);
     
-    logger.info('[BillingService] Synced subscription from webhook', { subscriptionId, email });
+    console.log(`[BillingService] Synced subscription ${subscriptionId} from webhook`);
     return { success: true, data: { subscription: inserted } };
   } catch (error) {
-    logger.error('[BillingService] Exception syncing subscription from webhook', {
-      error: error.message,
-      stack: error.stack,
-      subscriptionId
-    });
+    console.error('[BillingService] Exception syncing subscription from webhook:', error);
     return { success: false, error: error.message || 'Failed to sync subscription' };
   }
 }
@@ -446,11 +405,7 @@ async function getUserSubscriptionStatus(email) {
           raw: null,
         };
       }
-      logger.error('[BillingService] Error fetching subscription status', {
-        error: error.message,
-        stack: error.stack,
-        email: emailLower
-      });
+      console.error('[BillingService] Error fetching subscription status:', error);
       // On error, return free plan (fail-safe)
       return {
         plan: 'free',
@@ -500,11 +455,7 @@ async function getUserSubscriptionStatus(email) {
       raw: data,
     };
   } catch (error) {
-    logger.error('[BillingService] Exception getting subscription status', {
-      error: error.message,
-      stack: error.stack,
-      email
-    });
+    console.error('[BillingService] Exception getting subscription status:', error);
     // Fail-safe: return free plan
     return {
       plan: 'free',
@@ -547,11 +498,7 @@ async function getSubscriptionForEmail(email) {
         // No subscription found
         result = { success: true, subscription: null };
       } else {
-        logger.error('[BillingService] Error fetching subscription', {
-          error: error.message,
-          stack: error.stack,
-          email: emailLower
-        });
+        console.error('[BillingService] Error fetching subscription:', error);
         result = { success: false, error: error.message, subscription: null };
       }
     } else {
@@ -563,11 +510,7 @@ async function getSubscriptionForEmail(email) {
     
     return result;
   } catch (error) {
-    logger.error('[BillingService] Exception fetching subscription', {
-      error: error.message,
-      stack: error.stack,
-      email
-    });
+    console.error('[BillingService] Exception fetching subscription:', error);
     return { success: false, error: error.message, subscription: null };
   }
 }
@@ -586,21 +529,13 @@ async function getUserSubscriptions(email) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      logger.error('[BillingService] Error fetching subscriptions', {
-        error: error.message,
-        stack: error.stack,
-        email
-      });
+      console.error('[BillingService] Error fetching subscriptions:', error);
       return { success: false, error: error.message, subscriptions: [] };
     }
 
     return { success: true, subscriptions: data || [] };
   } catch (error) {
-    logger.error('[BillingService] Exception fetching subscriptions', {
-      error: error.message,
-      stack: error.stack,
-      email
-    });
+    console.error('[BillingService] Exception fetching subscriptions:', error);
     return { success: false, error: error.message, subscriptions: [] };
   }
 }
@@ -626,23 +561,13 @@ async function getSubscriptionByPlugin(email, plugin) {
         // No subscription found
         return { success: true, subscription: null };
       }
-      logger.error('[BillingService] Error fetching subscription', {
-        error: error.message,
-        stack: error.stack,
-        email,
-        plugin
-      });
+      console.error('[BillingService] Error fetching subscription:', error);
       return { success: false, error: error.message, subscription: null };
     }
 
     return { success: true, subscription: data };
   } catch (error) {
-    logger.error('[BillingService] Exception fetching subscription', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      plugin
-    });
+    console.error('[BillingService] Exception fetching subscription:', error);
     return { success: false, error: error.message, subscription: null };
   }
 }
@@ -707,12 +632,7 @@ async function checkSubscription(email, plugin = 'alttext-ai') {
       subscription: subscription,
     };
   } catch (error) {
-    logger.error('[BillingService] Exception checking subscription', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      plugin
-    });
+    console.error('[BillingService] Exception checking subscription:', error);
     return {
       success: false,
       error: error.message,
@@ -790,13 +710,7 @@ async function enforceSubscriptionLimits(email, plugin = 'alttext-ai', requested
       used: monthlyImages,
     };
   } catch (error) {
-    logger.error('[BillingService] Exception enforcing subscription limits', {
-      error: error.message,
-      stack: error.stack,
-      email,
-      plugin,
-      requestedCount
-    });
+    console.error('[BillingService] Exception enforcing subscription limits:', error);
     // On error, be conservative and deny
     const freeLimits = plansConfig[plugin]?.free || { tokens: 50 };
     return {

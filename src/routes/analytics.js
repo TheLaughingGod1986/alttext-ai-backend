@@ -7,8 +7,6 @@ const express = require('express');
 const router = express.Router();
 const { analyticsEventSchema, analyticsEventOrArraySchema } = require('../validation/analyticsEventSchema');
 const analyticsService = require('../services/analyticsService');
-const logger = require('../utils/logger');
-const { errors: httpErrors } = require('../utils/http');
 
 /**
  * Helper to get client IP address
@@ -64,10 +62,7 @@ router.post('/log', async (req, res) => {
     });
   } catch (error) {
     // Catch any unexpected errors - always return 200
-    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/log', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('[AnalyticsRoutes] Unexpected error in /analytics/log:', error);
     return res.status(200).json({
       ok: false,
       error: 'UNEXPECTED_ERROR',
@@ -143,10 +138,7 @@ router.post('/event', async (req, res) => {
     });
   } catch (error) {
     // Catch any unexpected errors - always return 200
-    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/event', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('[AnalyticsRoutes] Unexpected error in /analytics/event:', error);
     return res.status(200).json({
       ok: false,
       error: 'UNEXPECTED_ERROR',
@@ -165,7 +157,10 @@ router.get('/summary', async (req, res) => {
     const { email, days, startDate, endDate, eventNames } = req.query;
 
     if (!email) {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        ok: false,
+        error: 'Email query parameter is required',
+      });
     }
 
     // Parse date range
@@ -173,19 +168,28 @@ router.get('/summary', async (req, res) => {
     if (days) {
       options.days = parseInt(days, 10);
       if (isNaN(options.days) || options.days < 1) {
-        return httpErrors.invalidInput(res, 'Days must be a positive integer');
+        return res.status(400).json({
+          ok: false,
+          error: 'Days must be a positive integer',
+        });
       }
     }
     if (startDate) {
       options.startDate = new Date(startDate);
       if (isNaN(options.startDate.getTime())) {
-        return httpErrors.invalidInput(res, 'Invalid startDate format');
+        return res.status(400).json({
+          ok: false,
+          error: 'Invalid startDate format',
+        });
       }
     }
     if (endDate) {
       options.endDate = new Date(endDate);
       if (isNaN(options.endDate.getTime())) {
-        return httpErrors.invalidInput(res, 'Invalid endDate format');
+        return res.status(400).json({
+          ok: false,
+          error: 'Invalid endDate format',
+        });
       }
     }
 
@@ -197,7 +201,10 @@ router.get('/summary', async (req, res) => {
         : eventNames.split(',').map(name => name.trim()).filter(Boolean);
       
       if (eventNamesArray.length === 0) {
-        return httpErrors.invalidInput(res, 'eventNames must contain at least one event name');
+        return res.status(400).json({
+          ok: false,
+          error: 'eventNames must contain at least one event name',
+        });
       }
 
       const result = await analyticsService.getEventCounts(email, eventNamesArray, options);
@@ -231,11 +238,12 @@ router.get('/summary', async (req, res) => {
       summary: result.summary,
     });
   } catch (error) {
-    logger.error('[AnalyticsRoutes] Unexpected error in /analytics/summary', {
-      error: error.message,
-      stack: error.stack
+    console.error('[AnalyticsRoutes] Unexpected error in /analytics/summary:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'UNEXPECTED_ERROR',
+      message: error.message || 'An unexpected error occurred',
     });
-    return httpErrors.internalError(res, error.message || 'An unexpected error occurred', { code: 'UNEXPECTED_ERROR' });
   }
 });
 

@@ -3,11 +3,7 @@
  * Loads environment variables from .env files based on NODE_ENV
  */
 
-// Only load .env file if not in test mode (tests should control their own env vars)
-// This prevents .env file from interfering with test expectations
-if (process.env.NODE_ENV !== 'test') {
-  require('dotenv').config();
-}
+require('dotenv').config();
 
 /**
  * Get environment variable with optional default

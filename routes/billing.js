@@ -1,12 +1,6 @@
 /**
- * Billing routes for Stripe integration (LEGACY)
+ * Billing routes for Stripe integration
  * SECURITY: All routes require authentication and validate user ownership
- * 
- * NOTE: This file contains legacy routes. New routes are in src/routes/billing.js
- * Legacy routes are kept for backward compatibility but should be migrated to new routes:
- * - /billing/checkout → /billing/create-checkout
- * - /billing/portal → /billing/create-portal
- * - /billing/subscription → /billing/subscriptions (POST) or /billing/subscription-status (GET)
  */
 
 const express = require('express');
@@ -15,30 +9,17 @@ const { supabase } = require('../db/supabase-client');
 const { authenticateToken } = require('../auth/jwt');
 const { createCheckoutSession, createCustomerPortalSession } = require('../src/stripe/checkout');
 const { webhookMiddleware, webhookHandler, testWebhook } = require('../src/stripe/webhooks');
-const logger = require('../src/utils/logger');
-const { getEnv, requireEnv, isProduction } = require('../config/loadEnv');
 
 const router = express.Router();
 
-// Rate limiting for billing endpoints to prevent abuse (defensive check for test environment)
-let billingRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    billingRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 10, // Limit each IP to 10 checkout requests per 15 minutes
-      message: 'Too many billing requests, please try again later.',
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-  } catch (e) {
-    billingRateLimiter = null;
-  }
-}
-// Fallback: no-op middleware if rateLimit is not available
-if (!billingRateLimiter || typeof billingRateLimiter !== 'function') {
-  billingRateLimiter = (req, res, next) => next();
-}
+// Rate limiting for billing endpoints to prevent abuse
+const billingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 checkout requests per 15 minutes
+  message: 'Too many billing requests, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /**
  * Create Stripe Checkout Session
@@ -47,7 +28,7 @@ if (!billingRateLimiter || typeof billingRateLimiter !== 'function') {
 router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res) => {
   try {
     // Log user info for debugging
-    logger.info('[Billing Security] Checkout request received', {
+    console.log('[Billing Security] Checkout request received:', {
       userId: req.user?.id,
       userIdType: typeof req.user?.id,
       userEmail: req.user?.email,
@@ -56,7 +37,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     });
 
     if (!req.user || !req.user.id) {
-      logger.warn('[Billing Security] Unauthenticated checkout attempt');
+      console.warn('[Billing Security] Unauthenticated checkout attempt');
       return res.status(401).json({
         error: 'User authentication required',
         code: 'AUTHENTICATION_REQUIRED'
@@ -71,7 +52,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
       const requestedEmail = email.toLowerCase();
       
       if (authenticatedEmail !== requestedEmail) {
-        logger.error('[Billing Security] Email mismatch in checkout', {
+        console.error('[Billing Security] Email mismatch in checkout:', {
           authenticated: authenticatedEmail,
           requested: requestedEmail,
           userId: req.user.id,
@@ -97,13 +78,13 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     // Service-specific valid price IDs from environment variables
     const validPrices = {
       'alttext-ai': [
-        getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO'),
-        getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
-        getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')
+        process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
+        process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
+        process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS
       ].filter(Boolean), // Remove any undefined values
       'seo-ai-meta': [
-        getEnv('SEO_AI_META_STRIPE_PRICE_PRO'),
-        getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY')
+        process.env.SEO_AI_META_STRIPE_PRICE_PRO,
+        process.env.SEO_AI_META_STRIPE_PRICE_AGENCY
       ].filter(Boolean) // Remove any undefined values
     };
 
@@ -113,7 +94,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     const pricesToCheck = servicePrices;
 
     if (!pricesToCheck.includes(actualPriceId)) {
-      logger.warn('[Billing Security] Invalid price ID attempted', {
+      console.warn('[Billing Security] Invalid price ID attempted:', {
         userId: req.user.id,
         userEmail: req.user.email,
         priceId: actualPriceId,
@@ -129,7 +110,7 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     }
 
     // SECURITY: Log all checkout session creation attempts
-    logger.info('[Billing Security] Creating checkout session', {
+    console.log('[Billing Security] Creating checkout session:', {
       userId: req.user.id,
       userEmail: req.user.email,
       priceId: actualPriceId,
@@ -139,17 +120,16 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
       timestamp: new Date().toISOString()
     });
 
-    const frontendUrl = getEnv('FRONTEND_URL', '');
     const session = await createCheckoutSession(
       req.user.id,
       actualPriceId,
-      successUrl || `${frontendUrl}/success`,
-      cancelUrl || `${frontendUrl}/cancel`,
+      successUrl || `${process.env.FRONTEND_URL}/success`,
+      cancelUrl || `${process.env.FRONTEND_URL}/cancel`,
       service // Pass service to checkout
-    ) || { id: 'mock-session', url: successUrl || `${frontendUrl}/success` };
+    ) || { id: 'mock-session', url: successUrl || `${process.env.FRONTEND_URL}/success` };
 
     // SECURITY: Log successful checkout session creation
-    logger.info('[Billing Security] Checkout session created successfully', {
+    console.log('[Billing Security] Checkout session created successfully:', {
       sessionId: session.id,
       userId: req.user.id,
       userEmail: req.user.email,
@@ -164,8 +144,9 @@ router.post('/checkout', billingRateLimiter, authenticateToken, async (req, res)
     });
 
   } catch (error) {
-    logger.error('Checkout error', { 
-      error: error.message,
+    console.error('Checkout error:', error);
+    console.error('Error details:', {
+      message: error.message,
       stack: error.stack,
       type: error.type,
       code: error.code
@@ -185,11 +166,10 @@ router.post('/portal', authenticateToken, async (req, res) => {
   try {
     const { returnUrl } = req.body;
 
-    const frontendUrl = getEnv('FRONTEND_URL', '');
     const session = await createCustomerPortalSession(
       req.user.id,
-      returnUrl || `${frontendUrl}/dashboard`
-    ) || { url: returnUrl || `${frontendUrl}/dashboard` };
+      returnUrl || `${process.env.FRONTEND_URL}/dashboard`
+    ) || { url: returnUrl || `${process.env.FRONTEND_URL}/dashboard` };
 
     res.json({
       success: true,
@@ -197,11 +177,7 @@ router.post('/portal', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Portal error', {
-      error: error.message,
-      stack: error.stack,
-      userId: req.user?.id
-    });
+    console.error('Portal error:', error);
     res.status(500).json({
       error: 'Failed to create customer portal session',
       code: 'PORTAL_ERROR'
@@ -231,10 +207,10 @@ router.get('/info', authenticateToken, async (req, res) => {
     let subscription = null;
     if (user.stripe_subscription_id) {
       try {
-        const stripe = require('stripe')(requireEnv('STRIPE_SECRET_KEY'));
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
         subscription = await stripe.subscriptions.retrieve(user.stripe_subscription_id);
       } catch (error) {
-        logger.warn('Failed to fetch subscription from Stripe', { error: error.message });
+        console.warn('Failed to fetch subscription from Stripe:', error.message);
       }
     }
 
@@ -251,7 +227,7 @@ router.get('/info', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Billing info error', { error: error.message });
+    console.error('Billing info error:', error);
     res.status(500).json({
       error: 'Failed to get billing info',
       code: 'BILLING_INFO_ERROR'
@@ -298,7 +274,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
     }
 
     // Fetch subscription from Stripe
-    const stripe = require('stripe')(requireEnv('STRIPE_SECRET_KEY'));
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     let subscription;
     let paymentMethod = null;
 
@@ -381,7 +357,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
       });
 
     } catch (stripeError) {
-      logger.error('Stripe subscription fetch error', { error: stripeError.message });
+      console.error('Stripe subscription fetch error:', stripeError);
       
       // If Stripe fails, return basic info from database
       res.json({
@@ -402,7 +378,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
     }
 
   } catch (error) {
-    logger.error('Subscription info error', { error: error.message });
+    console.error('Subscription info error:', error);
     res.status(500).json({
       error: 'Failed to get subscription information',
       code: 'SUBSCRIPTION_INFO_ERROR'
@@ -419,7 +395,7 @@ router.post('/webhook', webhookMiddleware, webhookHandler);
  * Test webhook endpoint (development only)
  */
 router.post('/webhook/test', authenticateToken, async (req, res) => {
-  if (isProduction()) {
+  if (process.env.NODE_ENV === 'production') {
     return res.status(404).json({
       ok: false,
       code: 'NOT_FOUND',
@@ -431,7 +407,7 @@ router.post('/webhook/test', authenticateToken, async (req, res) => {
   try {
     await testWebhook(req, res);
   } catch (error) {
-    logger.error('Test webhook error', { error: error.message });
+    console.error('Test webhook error:', error);
     res.status(500).json({
       ok: false,
       code: 'WEBHOOK_ERROR',
@@ -473,7 +449,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 1000,
-          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO'),
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO,
           features: [
             '1000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -489,7 +465,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           images: 10000,
-          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY,
           features: [
             '10000 AI-generated alt texts per month',
             'Advanced quality scoring',
@@ -506,7 +482,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'one-time',
           images: 100,
-          priceId: getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS'),
+          priceId: process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS,
           features: [
             '100 AI-generated alt texts',
             'No expiration',
@@ -536,7 +512,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 100,
-          priceId: getEnv('SEO_AI_META_STRIPE_PRICE_PRO'),
+          priceId: process.env.SEO_AI_META_STRIPE_PRICE_PRO,
           features: [
             '100 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -551,7 +527,7 @@ router.get('/plans', async (req, res) => {
           currency: 'gbp',
           interval: 'month',
           posts: 1000,
-          priceId: getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY'),
+          priceId: process.env.SEO_AI_META_STRIPE_PRICE_AGENCY,
           features: [
             '1000 AI-generated meta tags per month',
             'GPT-4-turbo model',
@@ -572,7 +548,7 @@ router.get('/plans', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Plans error', { error: error.message });
+    console.error('Plans error:', error);
     res.status(500).json({
       error: 'Failed to get plans',
       code: 'PLANS_ERROR'
