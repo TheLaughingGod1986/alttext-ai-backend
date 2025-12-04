@@ -73,16 +73,9 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
     // Get or create site
     const site = await siteService.getOrCreateSite(siteHash, siteUrl);
 
-    // Check cache FIRST before querying database (1 second TTL to reduce duplicate requests)
-    // Only cache successful responses, not errors
-    const cached = getCachedUsage(siteHash);
-    if (cached) {
-      return res.json(cached);
-    }
-
-    // Get site usage (this handles monthly resets automatically)
-    // This is the same function used by authenticateBySiteHashForQuota middleware
-    // to ensure consistency between /usage and /api/generate endpoints
+    // ALWAYS query database first to get real-time usage data
+    // Cache is only used to reduce duplicate requests within 1 second
+    // This ensures we return fresh data after credit deduction
     let usage;
     try {
       usage = await siteService.getSiteUsage(siteHash);
@@ -94,6 +87,19 @@ router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage.
         code: 'USAGE_ERROR',
         message: error.message || 'Unknown error'
       });
+    }
+
+    // Check cache AFTER querying database (to avoid duplicate requests within 1 second)
+    // Only use cache if data was queried very recently (within 100ms) to reduce load
+    // This is a performance optimization, not a data source
+    const cached = getCachedUsage(siteHash);
+    if (cached) {
+      // Verify cached data is still fresh (within 100ms)
+      const cacheAge = Date.now() - (usageCache.get(siteHash)?.timestamp || 0);
+      if (cacheAge < 100) {
+        // Use cached response if it's very recent (within 100ms)
+        return res.json(cached);
+      }
     }
 
     // Determine quota source (priority order):

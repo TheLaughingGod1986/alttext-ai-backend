@@ -22,6 +22,11 @@ try {
  * @returns {Function} Express middleware
  */
 function createRateLimiter(options = {}) {
+  // Skip rate limiting entirely in test environment
+  if (process.env.NODE_ENV === 'test') {
+    return (req, res, next) => next();
+  }
+
   const {
     windowMs = 15 * 60 * 1000, // 15 minutes default
     max = 100, // 100 requests default

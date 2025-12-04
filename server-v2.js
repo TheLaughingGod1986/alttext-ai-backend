@@ -1436,15 +1436,40 @@ try {
               logger.info(`[Generate] Deducted 1 credit for meta generation`, { remainingCredits });
             } else {
               logger.error(`[Generate] Failed to deduct credits`, { error: spendResult.error });
-              // Continue anyway - generation succeeded, just log the error
+              // Fail the request if credit deduction fails
+              throw new Error(`Failed to record credit usage: ${spendResult.error || 'Unknown error'}`);
             }
           } else {
             // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
             // Do NOT deduct per user - all users on the same site share the quota
-            await siteService.deductSiteQuota(siteHash, 1);
-            // Clear usage cache so plugin gets fresh data immediately
-            if (clearCachedUsage) {
-              clearCachedUsage(siteHash);
+            try {
+              // Ensure site exists before quota deduction
+              logger.info('[Generate] Ensuring site exists before quota deduction (meta)', { siteHash: siteHash.substring(0, 8) + '...' });
+              const site = await siteService.getOrCreateSite(siteHash);
+              
+              // Deduct quota
+              logger.info('[Generate] Deducting quota from site (meta)', { 
+                siteHash: siteHash.substring(0, 8) + '...',
+                currentUsed: site.tokens_used || 0,
+                currentRemaining: site.tokens_remaining || 0
+              });
+              await siteService.deductSiteQuota(siteHash, 1);
+              logger.info('[Generate] Successfully deducted quota (meta)', { 
+                siteHash: siteHash.substring(0, 8) + '...'
+              });
+              
+              // Clear usage cache so plugin gets fresh data immediately
+              if (clearCachedUsage) {
+                clearCachedUsage(siteHash);
+              }
+            } catch (deductionError) {
+              logger.error('[Generate] Failed to deduct quota (meta)', { 
+                error: deductionError.message,
+                stack: deductionError.stack,
+                siteHash: siteHash.substring(0, 8) + '...'
+              });
+              // Fail the request if deduction fails (per user requirement)
+              throw new Error(`Failed to record usage: ${deductionError.message}`);
             }
           }
           
@@ -1455,6 +1480,8 @@ try {
           const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 10) : null;
           const remaining = updatedUsage ? updatedUsage.remaining : null;
           const used = updatedUsage ? updatedUsage.used : 0;
+          const resetDate = updatedUsage?.resetDate || getNextResetDate();
+          const resetTimestamp = updatedUsage?.resetTimestamp || Math.floor(new Date(resetDate).getTime() / 1000);
 
           // Return the raw content (JSON string) for meta generation
           return res.json({
@@ -1462,13 +1489,14 @@ try {
             alt_text: content, // Reusing alt_text field for backward compatibility
             content: content,  // Also include as content
             usage: {
-              used: used || 0,
-              limit: limit || Infinity,
-              remaining: usingCredits ? null : remaining,
-              plan: limits.plan,
+              used: used !== null && used !== undefined ? used : 0,
+              limit: limit !== null && limit !== undefined ? limit : 10,
+              remaining: usingCredits ? null : (remaining !== null && remaining !== undefined ? remaining : 10),
+              plan: limits.plan || 'free',
               credits: remainingCredits,
               usingCredits: usingCredits,
-              resetDate: getNextResetDate()
+              resetDate: resetDate,
+              resetTimestamp: resetTimestamp
             },
             tokens: openaiResponse.usage
           });
@@ -1570,15 +1598,40 @@ try {
             logger.info(`[Generate] Deducted 1 credit`, { remainingCredits });
           } else {
             logger.error(`[Generate] Failed to deduct credits`, { error: spendResult.error });
-            // Continue anyway - generation succeeded, just log the error
+            // Fail the request if credit deduction fails
+            throw new Error(`Failed to record credit usage: ${spendResult.error || 'Unknown error'}`);
           }
         } else {
           // CRITICAL: Deduct quota from site's quota (tracked by site_hash)
           // Do NOT deduct per user - all users on the same site share the quota
-          await siteService.deductSiteQuota(siteHash, 1);
-          // Clear usage cache so plugin gets fresh data immediately
-          if (clearCachedUsage) {
-            clearCachedUsage(siteHash);
+          try {
+            // Ensure site exists (should already exist from middleware, but double-check)
+            logger.info('[Generate] Ensuring site exists before quota deduction', { siteHash: siteHash.substring(0, 8) + '...' });
+            const site = await siteService.getOrCreateSite(siteHash);
+            
+            // Deduct quota
+            logger.info('[Generate] Deducting quota from site', { 
+              siteHash: siteHash.substring(0, 8) + '...',
+              currentUsed: site.tokens_used || 0,
+              currentRemaining: site.tokens_remaining || 0
+            });
+            await siteService.deductSiteQuota(siteHash, 1);
+            logger.info('[Generate] Successfully deducted quota', { 
+              siteHash: siteHash.substring(0, 8) + '...'
+            });
+            
+            // Clear usage cache so plugin gets fresh data immediately
+            if (clearCachedUsage) {
+              clearCachedUsage(siteHash);
+            }
+          } catch (deductionError) {
+            logger.error('[Generate] Failed to deduct quota', { 
+              error: deductionError.message,
+              stack: deductionError.stack,
+              siteHash: siteHash.substring(0, 8) + '...'
+            });
+            // Fail the request if deduction fails (per user requirement)
+            throw new Error(`Failed to record usage: ${deductionError.message}`);
           }
         }
         
@@ -1589,19 +1642,22 @@ try {
         const limit = updatedUsage ? (planLimits[updatedUsage.plan] || 50) : null;
         const remaining = updatedUsage ? updatedUsage.remaining : null;
         const used = updatedUsage ? updatedUsage.used : null;
+        const resetDate = updatedUsage?.resetDate || getNextResetDate();
+        const resetTimestamp = updatedUsage?.resetTimestamp || Math.floor(new Date(resetDate).getTime() / 1000);
         
         // Return response with usage data
         res.json({
           success: true,
           alt_text: altText,
           usage: {
-            used: used || 0,
-            limit: limit || Infinity,
-            remaining: usingCredits ? null : remaining,
-            plan: limits.plan,
+            used: used !== null && used !== undefined ? used : 0,
+            limit: limit !== null && limit !== undefined ? limit : 50,
+            remaining: usingCredits ? null : (remaining !== null && remaining !== undefined ? remaining : 50),
+            plan: limits.plan || 'free',
             credits: remainingCredits,
             usingCredits: usingCredits,
-            resetDate: getNextResetDate()
+            resetDate: resetDate,
+            resetTimestamp: resetTimestamp
           },
           tokens: openaiResponse.usage
         });
