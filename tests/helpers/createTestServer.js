@@ -1,16 +1,4 @@
 /**
- * Mock express-rate-limit globally for all tests
- * This prevents real rate limiting from running during tests
- * Must be at top level for Jest hoisting
- */
-jest.mock('express-rate-limit', () => {
-  return jest.fn(() => {
-    // Return a middleware function that just calls next() - no rate limiting
-    return (req, res, next) => next();
-  });
-});
-
-/**
  * Mock db/supabase-client globally for all tests
  * This prevents the real Supabase client from loading, which causes
  * dependency errors with @supabase/storage-js in test environment
@@ -24,8 +12,12 @@ jest.mock('../../db/supabase-client', () => {
   return require('../mocks/supabase.mock');
 });
 
+// Don't mock organization routes - use the real routes
+// The module loading issue was fixed by clearing cache and ensuring authenticateToken is loaded
+
 const http = require('http');
-const createApp = require('../../server-v2');
+// Don't require createApp at module level - require it inside the function
+// This prevents module caching issues with the mock state
 
 /** 
  * Create a test server instance
@@ -40,6 +32,16 @@ function createTestServer() {
   }
   
   try {
+    // Simply require createApp - don't clear cache
+    // The factory function createApp() returns a fresh Express app instance each time
+    // This avoids cache clearing issues that cause authenticateToken to be undefined
+    const createApp = require('../../server-v2');
+    
+    // Validate createApp is a function
+    if (typeof createApp !== 'function') {
+      throw new Error(`createApp is not a function. Type: ${typeof createApp}`);
+    }
+    
     // Create a fresh Express app instance using the factory
     const app = createApp();
     
@@ -51,18 +53,50 @@ function createTestServer() {
     // Create HTTP server from Express app
     // This is what Supertest needs - an HTTP Server instance, not an Express app
     const server = http.createServer(app);
-    
+
+    // Disable keep-alive to ensure connections close properly
+    // This prevents tests from hanging when closing the server
+    server.keepAliveTimeout = 0;
+    server.headersTimeout = 0;
+
+    // Track all active connections to forcefully close them on shutdown
+    const connections = new Set();
+    server.on('connection', (conn) => {
+      connections.add(conn);
+      conn.on('close', () => connections.delete(conn));
+    });
+
+    // Override close method to force-close all connections
+    const originalClose = server.close.bind(server);
+    server.close = function(callback) {
+      // Destroy all active connections immediately
+      for (const conn of connections) {
+        conn.destroy();
+      }
+      connections.clear();
+
+      // Call original close with callback
+      return originalClose(callback);
+    };
+
     // Start server on random available port (0 = OS chooses)
     // This allows Supertest to get the server address via server.address()
     server.listen(0);
-    
+
     return server;
   } catch (error) {
     console.error('[createTestServer] Error creating test server:', error.message);
     if (error.stack) {
       const stackLines = error.stack.split('\n');
-      console.error('[createTestServer] Stack (first 20 lines):');
-      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
+      console.error('[createTestServer] Full stack trace:');
+      stackLines.forEach(line => {
+        // Look for route files in the stack
+        if (line.includes('/routes/') || line.includes('router.use') || line.includes('Router.use')) {
+          console.error('  >>>', line);
+        } else {
+          console.error('  ', line);
+        }
+      });
     }
     throw new Error(`Failed to create test server: ${error.message}`);
   }
