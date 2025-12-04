@@ -53,11 +53,36 @@ function createTestServer() {
     // Create HTTP server from Express app
     // This is what Supertest needs - an HTTP Server instance, not an Express app
     const server = http.createServer(app);
-    
+
+    // Disable keep-alive to ensure connections close properly
+    // This prevents tests from hanging when closing the server
+    server.keepAliveTimeout = 0;
+    server.headersTimeout = 0;
+
+    // Track all active connections to forcefully close them on shutdown
+    const connections = new Set();
+    server.on('connection', (conn) => {
+      connections.add(conn);
+      conn.on('close', () => connections.delete(conn));
+    });
+
+    // Override close method to force-close all connections
+    const originalClose = server.close.bind(server);
+    server.close = function(callback) {
+      // Destroy all active connections immediately
+      for (const conn of connections) {
+        conn.destroy();
+      }
+      connections.clear();
+
+      // Call original close with callback
+      return originalClose(callback);
+    };
+
     // Start server on random available port (0 = OS chooses)
     // This allows Supertest to get the server address via server.address()
     server.listen(0);
-    
+
     return server;
   } catch (error) {
     console.error('[createTestServer] Error creating test server:', error.message);
