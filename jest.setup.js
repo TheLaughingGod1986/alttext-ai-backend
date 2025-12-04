@@ -32,9 +32,38 @@ jest.mock('./db/supabase-client', () => {
 });
 
 // Mock express-rate-limit globally for all tests
-// Use manual mock file at __mocks__/express-rate-limit.js
+// CRITICAL: Provide inline factory instead of relying on __mocks__ directory
 // This must be here to ensure it's applied before any route files are loaded
-jest.mock('express-rate-limit');
+jest.mock('express-rate-limit', () => {
+  // Create the mock factory function that ALWAYS returns a valid, NO-OP middleware instance
+  function mockRateLimiter(options = {}) {
+    // Log to verify mock is being used
+    console.log('[MOCK] express-rate-limit mock is being used! Options:', Object.keys(options || {}));
+
+    // Return a NEW middleware function instance every time
+    // This prevents issues with Express rejecting reused middleware
+    // CRITICAL: This middleware does NOTHING - no rate limiting at all
+    const middleware = (req, res, next) => {
+      // ALWAYS skip rate limiting in tests - just call next()
+      if (typeof next === 'function') {
+        next();
+      }
+    };
+
+    // Add properties that express-rate-limit middleware might have
+    middleware.resetKey = () => {};
+    middleware.getKey = () => 'test-key';
+
+    return middleware;
+  }
+
+  // Ensure the mock always returns a function, even if called incorrectly
+  mockRateLimiter.default = mockRateLimiter;
+  mockRateLimiter.rateLimit = mockRateLimiter;
+
+  // Return as both default and named export to handle all import styles
+  return mockRateLimiter;
+});
 
 // Mock auth/jwt module globally but preserve actual implementation for non-middleware functions
 // This ensures authenticateToken and optionalAuth work in tests while keeping real token functions
