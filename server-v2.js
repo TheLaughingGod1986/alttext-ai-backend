@@ -102,11 +102,27 @@ function buildUserMessage(prompt, imageData, options = {}) {
   // This uses more tokens (~170 vs 85) but provides much better quality
   const imageUrlConfig = { detail: 'high' };
 
-  // Check for base64-encoded image (from frontend for localhost URLs)
+  // PRIORITY 1: Check for base64-encoded image (from WordPress plugin - resized to max 1024px)
+  // When image_base64 is present, ALWAYS use it and ignore image_url to avoid processing full-resolution images
   // Support both 'base64' and 'image_base64' field names for compatibility
   const base64Data = imageData?.base64 || imageData?.image_base64;
-  if (allowImage && base64Data && imageData?.mime_type) {
-    const dataUrl = `data:${imageData.mime_type};base64,${base64Data}`;
+  if (allowImage && base64Data) {
+    // Use provided mime_type or default to image/jpeg (most common)
+    const mimeType = imageData?.mime_type || 'image/jpeg';
+    const dataUrl = `data:${mimeType};base64,${base64Data}`;
+    
+    // Log image source and dimensions for token cost tracking
+    const dimensions = imageData?.width && imageData?.height 
+      ? `${imageData.width}x${imageData.height}` 
+      : 'unknown';
+    logger.info('[Image Processing] Using base64 image (resized)', { 
+      source: 'image_base64',
+      dimensions,
+      mimeType,
+      hasImageUrl: !!imageData?.url,
+      ignoredImageUrl: !!imageData?.url // Log that URL is being ignored
+    });
+    
     return {
       role: 'user',
       content: [
@@ -116,8 +132,9 @@ function buildUserMessage(prompt, imageData, options = {}) {
     };
   }
 
-  // Check for inline data URL
+  // PRIORITY 2: Check for inline data URL
   if (allowImage && imageData?.inline?.data_url) {
+    logger.info('[Image Processing] Using inline data URL', { source: 'inline.data_url' });
     return {
       role: 'user',
       content: [
@@ -127,9 +144,14 @@ function buildUserMessage(prompt, imageData, options = {}) {
     };
   }
 
-  // Check for public URL
+  // PRIORITY 3: Check for public URL (only if base64 is NOT present)
+  // This ensures we never download full-resolution images when resized base64 is available
   const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
   if (hasUsableUrl) {
+    logger.info('[Image Processing] Using public URL (fallback - no base64 provided)', { 
+      source: 'image_url',
+      url: imageData.url.substring(0, 100) // Log first 100 chars of URL
+    });
     return {
       role: 'user',
       content: [
@@ -268,10 +290,14 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
     return null;
   }
 
+  // Prioritize base64 image (resized) over URL to avoid processing full-resolution images
+  const base64Data = imageData?.base64 || imageData?.image_base64;
+  const hasBase64 = Boolean(base64Data);
   const hasInline = Boolean(imageData?.inline?.data_url);
-  const hasPublicUrl = imageData?.url && isLikelyPublicUrl(imageData.url);
+  // Only check for public URL if base64 is NOT present (to avoid downloading full-res images)
+  const hasPublicUrl = !hasBase64 && imageData?.url && isLikelyPublicUrl(imageData.url);
 
-  if (!hasInline && !hasPublicUrl) {
+  if (!hasBase64 && !hasInline && !hasPublicUrl) {
     return null;
   }
 
@@ -828,8 +854,33 @@ app.post('/api/generate', combinedAuth, requireSubscription, async (req, res) =>
           openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
             apiKey
           });
+          const duration = Date.now() - startTime;
+          const tokenUsage = openaiResponse?.usage;
+          const totalTokens = tokenUsage?.total_tokens || 0;
+          const promptTokens = tokenUsage?.prompt_tokens || 0;
+          const completionTokens = tokenUsage?.completion_tokens || 0;
+          
+          // Log token usage with image dimensions for cost tracking
+          const imageDimensions = image_data?.width && image_data?.height 
+            ? `${image_data.width}x${image_data.height}` 
+            : 'unknown';
+          const imageSource = (image_data?.base64 || image_data?.image_base64) ? 'base64 (resized)' 
+            : image_data?.inline?.data_url ? 'inline' 
+            : image_data?.url ? 'url' 
+            : 'none';
+          
+          logger.info(`[Generate] OpenAI API call completed`, { 
+            duration: `${duration}ms`,
+            totalTokens,
+            promptTokens,
+            completionTokens,
+            imageDimensions,
+            imageSource,
+            // Warn if token count is unexpectedly high (suggests full-res image was processed)
+            highTokenUsage: totalTokens > 1000 ? `⚠️ High token usage (${totalTokens}). Expected ~170-340 for resized images.` : null
+          });
         } catch (fallbackError) {
-          console.error('[Generate] Fallback request also failed:', fallbackError.message);
+          logger.error('[Generate] Fallback request also failed', { error: fallbackError.message });
           throw fallbackError;
         }
       } else {
