@@ -5,8 +5,6 @@
  */
 
 const partnerApiService = require('../services/partnerApiService');
-const logger = require('../utils/logger');
-const { errors: httpErrors } = require('../utils/http');
 
 /**
  * Partner API authentication middleware
@@ -17,7 +15,11 @@ async function partnerApiAuth(req, res, next) {
     // Extract API key from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return httpErrors.authenticationRequired(res, 'Expected: Authorization: Bearer <api_key>');
+      return res.status(401).json({
+        ok: false,
+        error: 'Missing or invalid Authorization header',
+        message: 'Expected: Authorization: Bearer <api_key>',
+      });
     }
 
     const apiKey = authHeader.substring(7).trim(); // Remove "Bearer " prefix
@@ -25,8 +27,11 @@ async function partnerApiAuth(req, res, next) {
     // Validate API key
     const validationResult = await partnerApiService.validateApiKey(apiKey);
     if (!validationResult.success) {
-      logger.warn('[PartnerApiAuth] Invalid API key', { error: validationResult.error });
-      return httpErrors.authenticationRequired(res, validationResult.error || 'Invalid API key');
+      return res.status(401).json({
+        ok: false,
+        error: 'Invalid API key',
+        message: validationResult.error,
+      });
     }
 
     // Check rate limit
@@ -37,14 +42,9 @@ async function partnerApiAuth(req, res, next) {
 
     if (!rateLimitResult.allowed) {
       const resetAt = new Date(rateLimitResult.resetAt);
-      logger.warn('[PartnerApiAuth] Rate limit exceeded', {
-        apiKeyId: validationResult.apiKeyId,
-        limit: validationResult.rateLimitPerMinute
-      });
       return res.status(429).json({
         ok: false,
-        code: 'RATE_LIMIT_EXCEEDED',
-        reason: 'rate_limit_exceeded',
+        error: 'Rate limit exceeded',
         message: `Too many requests. Rate limit: ${validationResult.rateLimitPerMinute} requests/minute`,
         rateLimit: {
           limit: validationResult.rateLimitPerMinute,
@@ -71,12 +71,12 @@ async function partnerApiAuth(req, res, next) {
 
     next();
   } catch (error) {
-    logger.error('[PartnerApiAuth] Error in middleware', {
-      error: error.message,
-      stack: error.stack,
-      path: req.path
+    console.error('[PartnerApiAuth] Error in middleware:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      message: 'Failed to authenticate API key',
     });
-    return httpErrors.internalError(res, 'Failed to authenticate API key');
   }
 }
 
@@ -104,11 +104,7 @@ function logPartnerApiUsage(req, res, next) {
           req.ip
         )
         .catch((error) => {
-          logger.error('[PartnerApiAuth] Error logging usage', {
-            error: error.message,
-            stack: error.stack,
-            apiKeyId: req.partnerApiKey?.id
-          });
+          console.error('[PartnerApiAuth] Error logging usage:', error);
         });
     }
 

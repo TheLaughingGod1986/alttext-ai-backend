@@ -7,7 +7,6 @@
 const { supabase } = require('../../db/supabase-client');
 const creditsService = require('./creditsService');
 const eventService = require('./eventService');
-const logger = require('../utils/logger');
 
 // Approximate tokens per image (if not available in usage_logs metadata)
 const DEFAULT_TOKENS_PER_IMAGE = 100;
@@ -101,7 +100,7 @@ async function getDailyUsage(email) {
       .lte('created_at', endDate.toISOString());
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching daily usage from events', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching daily usage from events:', error);
       // Return empty array with all days filled with 0
       const dateRange = generateDateRange(startDate, endDate);
       return dateRange.map(date => ({ date, images: 0, tokens: 0 }));
@@ -129,7 +128,7 @@ async function getDailyUsage(email) {
       tokens: usageByDate[date]?.tokens || 0,
     }));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getDailyUsage', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getDailyUsage:', err);
     // Return empty array with all days filled with 0
     const endDate = new Date();
     const startDate = new Date();
@@ -185,7 +184,7 @@ async function getMonthlyUsage(email) {
       .lte('created_at', endDate.toISOString());
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching monthly usage from events', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching monthly usage from events:', error);
       // Return empty array with all months filled with 0
       const monthRange = generateMonthRange(startDate, endDate);
       return monthRange.map(month => ({ month, images: 0, tokens: 0 }));
@@ -214,7 +213,7 @@ async function getMonthlyUsage(email) {
       tokens: usageByMonth[month]?.tokens || 0,
     }));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getMonthlyUsage', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getMonthlyUsage:', err);
     // Return empty array with all months filled with 0
     const endDate = new Date();
     const startDate = new Date();
@@ -250,7 +249,7 @@ async function getCreditTrend(email) {
       .single();
 
     if (identityError) {
-      logger.error('[DashboardChartsService] Error fetching identity', { error: identityError.message });
+      console.error('[DashboardChartsService] Error fetching identity:', identityError);
       return [];
     }
 
@@ -292,7 +291,7 @@ async function getCreditTrend(email) {
     });
 
     if (transError) {
-      logger.error('[DashboardChartsService] Error fetching credit transactions', { error: transError.message });
+      console.error('[DashboardChartsService] Error fetching credit transactions:', transError);
       // Return current balance as single point
       return [{
         date: endDate.toISOString().split('T')[0],
@@ -341,7 +340,7 @@ async function getCreditTrend(email) {
       };
     });
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getCreditTrend', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getCreditTrend:', err);
     return [];
   }
 }
@@ -363,7 +362,7 @@ async function getSubscriptionHistory(email) {
       .order('created_at', { ascending: true });
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching subscriptions', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching subscriptions:', error);
       return [];
     }
 
@@ -425,7 +424,7 @@ async function getSubscriptionHistory(email) {
     // Sort by date
     return events.sort((a, b) => a.date.localeCompare(b.date));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getSubscriptionHistory', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getSubscriptionHistory:', err);
     return [];
   }
 }
@@ -447,7 +446,7 @@ async function getInstallActivity(email) {
       .order('created_at', { ascending: true });
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching installations', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching installations:', error);
       return [];
     }
 
@@ -473,7 +472,7 @@ async function getInstallActivity(email) {
     // Convert to array and sort by date
     return Object.values(activityMap).sort((a, b) => a.date.localeCompare(b.date));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getInstallActivity', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getInstallActivity:', err);
     return [];
   }
 }
@@ -511,7 +510,7 @@ async function getAnalyticsCharts(email) {
       .lte('created_at', endDate.toISOString());
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching analytics events', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching analytics events:', error);
       return { heatmap: [], eventSummary: [] };
     }
 
@@ -545,7 +544,7 @@ async function getAnalyticsCharts(email) {
 
     return { heatmap, eventSummary };
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getAnalyticsCharts', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getAnalyticsCharts:', err);
     return { heatmap: [], eventSummary: [] };
   }
 }
@@ -574,7 +573,7 @@ async function getRecentEvents(email) {
       .limit(50);
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching recent events', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching recent events:', error);
       return [];
     }
 
@@ -586,7 +585,7 @@ async function getRecentEvents(email) {
       meta: event.metadata || {},
     }));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getRecentEvents', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getRecentEvents:', err);
     return [];
   }
 }
@@ -608,7 +607,7 @@ async function getPluginActivity(email) {
       .order('updated_at', { ascending: false });
 
     if (error) {
-      logger.error('[DashboardChartsService] Error fetching plugin activity', { error: error.message });
+      console.error('[DashboardChartsService] Error fetching plugin activity:', error);
       return [];
     }
 
@@ -620,7 +619,7 @@ async function getPluginActivity(email) {
       site_url: installation.site_url || null,
     }));
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getPluginActivity', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getPluginActivity:', err);
     return [];
   }
 }
@@ -655,7 +654,7 @@ async function getDashboardCharts(email) {
       },
     };
   } catch (err) {
-    logger.error('[DashboardChartsService] Exception in getDashboardCharts', { error: err.message });
+    console.error('[DashboardChartsService] Exception in getDashboardCharts:', err);
     // Return empty arrays on error - all chart arrays must always be present
     return {
       success: false,

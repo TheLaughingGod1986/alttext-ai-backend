@@ -23,9 +23,6 @@ describe('emailConfig', () => {
 
   test('returns default values when env vars not set', () => {
     const { getEmailConfig } = require(MODULE_PATH);
-    // Delete env vars after module load to override .env file values
-    delete process.env.FRONTEND_URL;
-    delete process.env.FRONTEND_DASHBOARD_URL;
     const config = getEmailConfig();
 
     expect(config.brandName).toBe('AltText AI');

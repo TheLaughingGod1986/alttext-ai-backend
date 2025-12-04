@@ -3,15 +3,12 @@
  * Enhanced to integrate with billingService and emailService
  */
 
-const { getEnv } = require('../../config/loadEnv');
 const { getStripe } = require('../utils/stripeClient');
 const { supabase } = require('../../db/supabase-client');
 const billingService = require('../services/billingService');
 const creditsService = require('../services/creditsService');
 const emailService = require('../services/emailService');
 const analyticsService = require('../services/analyticsService');
-const logger = require('../utils/logger');
-const { errors: httpErrors } = require('../utils/http');
 const { 
   handleSuccessfulCheckout, 
   handleSubscriptionUpdate, 
@@ -22,7 +19,7 @@ const {
  * Verify webhook signature
  */
 function verifyWebhookSignature(payload, signature) {
-  const webhookSecret = getEnv('STRIPE_WEBHOOK_SECRET');
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   const stripe = getStripe();
   
   if (!webhookSecret) {
@@ -37,7 +34,7 @@ function verifyWebhookSignature(payload, signature) {
     const event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
     return event;
   } catch (error) {
-    logger.error('Webhook signature verification failed', { error: error.message });
+    console.error('Webhook signature verification failed:', error.message);
     throw new Error('Invalid webhook signature');
   }
 }
@@ -47,7 +44,7 @@ function verifyWebhookSignature(payload, signature) {
  * Enhanced to sync subscriptions and trigger emails
  */
 async function handleWebhookEvent(event) {
-  logger.info(`Received webhook: ${event.type}`, { eventType: event.type });
+  console.log(`📨 Received webhook: ${event.type}`);
 
   try {
     switch (event.type) {
@@ -84,11 +81,11 @@ async function handleWebhookEvent(event) {
         break;
 
       default:
-        logger.warn(`Unhandled webhook event: ${event.type}`, { eventType: event.type });
+        console.log(`⚠️  Unhandled webhook event: ${event.type}`);
     }
 
   } catch (error) {
-    logger.error(`Error handling webhook ${event.type}`, { error: error.message, eventType: event.type });
+    console.error(`❌ Error handling webhook ${event.type}:`, error);
     throw error;
   }
 }
@@ -97,7 +94,7 @@ async function handleWebhookEvent(event) {
  * Handle customer.created event
  */
 async function handleCustomerCreated(customer) {
-  logger.info(`Customer created: ${customer.id}`, { customerId: customer.id });
+  console.log(`✅ Customer created: ${customer.id}`);
   // Customer is automatically created by billingService when needed
   // This is mainly for logging/auditing
 }
@@ -107,10 +104,10 @@ async function handleCustomerCreated(customer) {
  * SECURITY: Logs all payment completions for audit trail
  */
 async function handleCheckoutSessionCompleted(session) {
-  logger.info(`Checkout completed for session ${session.id}`, { sessionId: session.id });
+  console.log(`✅ Checkout completed for session ${session.id}`);
   
   // SECURITY: Log payment completion with full details
-  logger.info('[Billing Security] Payment completed', {
+  console.log('[Billing Security] Payment completed:', {
     sessionId: session.id,
     customerId: session.customer,
     subscriptionId: session.subscription,
@@ -142,10 +139,8 @@ async function handleCheckoutSessionCompleted(session) {
         .single();
 
       if (existingLicense) {
-        logger.info(`License already exists for subscription ${session.subscription}, skipping creation`, { 
-          subscriptionId: session.subscription 
-        });
-        logger.warn('[Billing Security] Duplicate checkout completion detected', {
+        console.log(`ℹ️  License already exists for subscription ${session.subscription}, skipping creation`);
+        console.warn('[Billing Security] Duplicate checkout completion detected:', {
           sessionId: session.id,
           existingLicenseId: existingLicense.id,
           timestamp: new Date().toISOString()
@@ -156,7 +151,7 @@ async function handleCheckoutSessionCompleted(session) {
 
     await handleSuccessfulCheckout(session);
   } catch (error) {
-    logger.error('[Billing Security] Error in checkout session completed handler', {
+    console.error('[Billing Security] Error in checkout session completed handler:', {
       error: error.message,
       sessionId: session.id,
       customerId: session.customer,
@@ -173,13 +168,13 @@ async function handleCreditPurchase(session) {
   try {
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Webhook] Stripe not configured for credit purchase');
+      console.error('[Webhook] Stripe not configured for credit purchase');
       return;
     }
 
     const email = session.customer_details?.email || session.metadata?.user_email;
     if (!email) {
-      logger.error('[Webhook] No email found in credit purchase session', { sessionId: session.id });
+      console.error('[Webhook] No email found in credit purchase session:', session.id);
       return;
     }
 
@@ -191,7 +186,7 @@ async function handleCreditPurchase(session) {
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(emailLower);
     if (!identityResult.success) {
-      logger.error('[Webhook] Failed to get/create identity for credit purchase', { error: identityResult.error });
+      console.error('[Webhook] Failed to get/create identity for credit purchase:', identityResult.error);
       return;
     }
 
@@ -204,15 +199,11 @@ async function handleCreditPurchase(session) {
     );
 
     if (!addResult.success) {
-      logger.error('[Webhook] Failed to add credits', { error: addResult.error });
+      console.error('[Webhook] Failed to add credits:', addResult.error);
       return;
     }
 
-    logger.info(`Added ${amount} credits to ${emailLower}`, { 
-      email: emailLower, 
-      amount, 
-      newBalance: addResult.newBalance 
-    });
+    console.log(`✅ Added ${amount} credits to ${emailLower}. New balance: ${addResult.newBalance}`);
 
     // Log analytics event
     analyticsService.logEvent({
@@ -228,7 +219,7 @@ async function handleCreditPurchase(session) {
       },
     });
   } catch (error) {
-    logger.error('[Webhook] Error handling credit purchase', { error: error.message });
+    console.error('[Webhook] Error handling credit purchase:', error);
     throw error;
   }
 }
@@ -238,12 +229,12 @@ async function handleCreditPurchase(session) {
  */
 async function handleSubscriptionCreated(event) {
   const subscription = event.data.object;
-  logger.info(`Subscription created: ${subscription.id}`, { subscriptionId: subscription.id });
+  console.log(`✅ Subscription created: ${subscription.id}`);
 
   // Sync subscription to database
   const syncResult = await billingService.syncSubscriptionFromWebhook(event);
   if (!syncResult.success) {
-    logger.error('[Webhook] Failed to sync subscription', { error: syncResult.error });
+    console.error('[Webhook] Failed to sync subscription:', syncResult.error);
     return;
   }
 
@@ -264,7 +255,7 @@ async function handleSubscriptionCreated(event) {
         });
       }
     } catch (error) {
-      logger.error('[Webhook] Error sending activation email', { error: error.message });
+      console.error('[Webhook] Error sending activation email:', error);
     }
   }
 }
@@ -275,7 +266,7 @@ async function handleSubscriptionCreated(event) {
  */
 async function handleSubscriptionUpdated(event) {
   const subscription = event.data.object;
-  logger.info(`Subscription updated: ${subscription.id}`, { subscriptionId: subscription.id });
+  console.log(`🔄 Subscription updated: ${subscription.id}`);
 
   // SECURITY: Log subscription updates (including renewals) with full details
   const stripe = getStripe();
@@ -285,11 +276,11 @@ async function handleSubscriptionUpdated(event) {
       const customer = await stripe.customers.retrieve(subscription.customer);
       customerEmail = customer.email?.toLowerCase();
     } catch (error) {
-      logger.error('[Webhook] Error retrieving customer for subscription update', { error: error.message });
+      console.error('[Webhook] Error retrieving customer for subscription update:', error);
     }
   }
 
-  logger.info('[Billing Security] Subscription updated', {
+  console.log('[Billing Security] Subscription updated:', {
     subscriptionId: subscription.id,
     customerId: subscription.customer,
     customerEmail,
@@ -305,7 +296,7 @@ async function handleSubscriptionUpdated(event) {
   // Sync subscription to database
   const syncResult = await billingService.syncSubscriptionFromWebhook(event);
   if (!syncResult.success) {
-    logger.error('[Webhook] Failed to sync subscription update', { error: syncResult.error });
+    console.error('[Webhook] Failed to sync subscription update:', syncResult.error);
   }
 
   // Log analytics event for plan changes
@@ -336,13 +327,13 @@ async function handleSubscriptionUpdated(event) {
  */
 async function handleSubscriptionDeleted(event) {
   const subscription = event.data.object;
-  logger.info(`Subscription deleted: ${subscription.id}`, { subscriptionId: subscription.id });
+  console.log(`❌ Subscription deleted: ${subscription.id}`);
 
   try {
     // Sync cancellation to database
     const syncResult = await billingService.syncSubscriptionFromWebhook(event);
     if (!syncResult.success) {
-      logger.error('[Webhook] Failed to sync subscription deletion', { error: syncResult.error });
+      console.error('[Webhook] Failed to sync subscription deletion:', syncResult.error);
     }
 
     // Get customer email for sending cancellation email
@@ -352,13 +343,13 @@ async function handleSubscriptionDeleted(event) {
         const customer = await stripe.customers.retrieve(subscription.customer);
         const email = customer.email?.toLowerCase();
         if (email) {
-          // Log subscription cancellation (email notification not currently implemented)
-          // To implement: Add sendSubscriptionCanceled method to emailService
-          // and call it here to notify users of subscription cancellation
-          logger.info(`[Webhook] Subscription canceled for ${email}`, { email });
+          // Note: We may need to add a sendSubscriptionCanceled method to emailService
+          // For now, we'll log it
+          console.log(`[Webhook] Subscription canceled for ${email}`);
+          // TODO: Add sendSubscriptionCanceled to emailService
         }
       } catch (error) {
-        logger.error('[Webhook] Error retrieving customer for cancellation email', { error: error.message });
+        console.error('[Webhook] Error retrieving customer for cancellation email:', error);
       }
     }
 
@@ -381,7 +372,7 @@ async function handleSubscriptionDeleted(event) {
     }
 
   } catch (error) {
-    logger.error('Error handling subscription deletion', { error: error.message });
+    console.error('Error handling subscription deletion:', error);
     throw error;
   }
 }
@@ -392,25 +383,25 @@ async function handleSubscriptionDeleted(event) {
  */
 async function handleInvoicePaidWebhook(event) {
   const invoice = event.data.object;
-  logger.info(`Invoice paid: ${invoice.id}`, { invoiceId: invoice.id });
+  console.log(`💰 Invoice paid: ${invoice.id}`);
 
   try {
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Webhook] Stripe not configured');
+      console.error('[Webhook] Stripe not configured');
       return;
     }
 
     // Get customer email
     const customer = await stripe.customers.retrieve(invoice.customer);
     if (!customer) {
-      logger.warn(`[Webhook] Customer not found`, { customerId: invoice.customer });
+      console.warn(`[Webhook] Customer not found: ${invoice.customer}`);
       return;
     }
     const email = customer.email?.toLowerCase();
 
     if (!email) {
-      logger.warn(`[Webhook] No email found for customer`, { customerId: invoice.customer });
+      console.warn(`[Webhook] No email found for customer ${invoice.customer}`);
       return;
     }
 
@@ -445,7 +436,7 @@ async function handleInvoicePaidWebhook(event) {
       .single();
 
     if (insertError) {
-      logger.error('[Webhook] Error storing invoice', { error: insertError.message });
+      console.error('[Webhook] Error storing invoice:', insertError);
     }
 
     // Send receipt email
@@ -472,7 +463,7 @@ async function handleInvoicePaidWebhook(event) {
     await handleInvoicePaid(invoice);
 
   } catch (error) {
-    logger.error('[Webhook] Error handling invoice.paid', { error: error.message });
+    console.error('[Webhook] Error handling invoice.paid:', error);
     throw error;
   }
 }
@@ -482,25 +473,25 @@ async function handleInvoicePaidWebhook(event) {
  * Send payment failed email
  */
 async function handleInvoicePaymentFailedWebhook(invoice) {
-  logger.warn(`Payment failed for invoice ${invoice.id}`, { invoiceId: invoice.id });
+  console.log(`⚠️  Payment failed for invoice ${invoice.id}`);
 
   try {
     const stripe = getStripe();
     if (!stripe) {
-      logger.error('[Webhook] Stripe not configured');
+      console.error('[Webhook] Stripe not configured');
       return;
     }
 
     // Get customer email
     const customer = await stripe.customers.retrieve(invoice.customer);
     if (!customer) {
-      logger.warn(`[Webhook] Customer not found`, { customerId: invoice.customer });
+      console.warn(`[Webhook] Customer not found: ${invoice.customer}`);
       return;
     }
     const email = customer.email?.toLowerCase();
 
     if (!email) {
-      logger.warn(`[Webhook] No email found for customer`, { customerId: invoice.customer });
+      console.warn(`[Webhook] No email found for customer ${invoice.customer}`);
       return;
     }
 
@@ -512,7 +503,7 @@ async function handleInvoicePaymentFailedWebhook(invoice) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
       } catch (error) {
-        logger.error('[Webhook] Error retrieving subscription for payment failure', { error: error.message });
+        console.error('[Webhook] Error retrieving subscription for payment failure:', error);
       }
     }
 
@@ -531,16 +522,17 @@ async function handleInvoicePaymentFailedWebhook(invoice) {
       },
     });
 
-    // Log payment failure (email notification not currently implemented)
-    // To implement: Add sendPaymentFailed method to emailService
-    // and call it here to notify users of payment failures
-    logger.warn(`[Webhook] Payment failed`, { email, invoiceId: invoice.id });
+    // Send payment failed email
+    // Note: We may need to add a sendPaymentFailed method to emailService
+    // For now, we'll log it
+    console.log(`[Webhook] Payment failed for ${email}, invoice ${invoice.id}`);
+    // TODO: Add sendPaymentFailed to emailService
 
     // Legacy handler for backward compatibility
     await handleInvoicePaymentFailed(invoice);
 
   } catch (error) {
-    logger.error('[Webhook] Error handling payment failure', { error: error.message });
+    console.error('[Webhook] Error handling payment failure:', error);
     throw error;
   }
 }
@@ -557,11 +549,11 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       return;
     }
 
-    logger.info(`Payment intent succeeded for credit purchase`, { paymentIntentId: paymentIntent.id });
+    console.log(`💰 Payment intent succeeded for credit purchase: ${paymentIntent.id}`);
 
     const email = paymentIntent.metadata?.user_email || paymentIntent.receipt_email;
     if (!email) {
-      logger.error('[Webhook] No email found in payment intent', { paymentIntentId: paymentIntent.id });
+      console.error('[Webhook] No email found in payment intent:', paymentIntent.id);
       return;
     }
 
@@ -571,7 +563,7 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     // Get or create identity
     const identityResult = await creditsService.getOrCreateIdentity(emailLower);
     if (!identityResult.success) {
-      logger.error('[Webhook] Failed to get/create identity for payment intent', { error: identityResult.error });
+      console.error('[Webhook] Failed to get/create identity for payment intent:', identityResult.error);
       return;
     }
 
@@ -583,17 +575,13 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     );
 
     if (!addResult.success) {
-      logger.error('[Webhook] Failed to add credits from payment intent', { error: addResult.error });
+      console.error('[Webhook] Failed to add credits from payment intent:', addResult.error);
       return;
     }
 
-    logger.info(`Added ${amount} credits from payment intent`, { 
-      email: emailLower, 
-      amount, 
-      newBalance: addResult.newBalance 
-    });
+    console.log(`✅ Added ${amount} credits from payment intent to ${emailLower}. New balance: ${addResult.newBalance}`);
   } catch (error) {
-    logger.error('[Webhook] Error handling payment intent succeeded', { error: error.message });
+    console.error('[Webhook] Error handling payment intent succeeded:', error);
     // Don't throw - payment already succeeded, credits can be added manually if needed
   }
 }
@@ -603,7 +591,7 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
  */
 async function handleChargeRefunded(charge) {
   try {
-    logger.info(`Charge refunded: ${charge.id}`, { chargeId: charge.id });
+    console.log(`💰 Charge refunded: ${charge.id}`);
     
     // Find user by customer ID
     const customerId = charge.customer;
@@ -614,7 +602,7 @@ async function handleChargeRefunded(charge) {
       .single();
 
     if (userError || !user) {
-      logger.warn(`No user found for customer`, { customerId });
+      console.warn(`No user found for customer ${customerId}`);
       return;
     }
 
@@ -630,10 +618,10 @@ async function handleChargeRefunded(charge) {
 
     if (updateError) throw updateError;
 
-    logger.info(`User refunded, downgraded to free plan`, { userId: user.id });
+    console.log(`✅ User ${user.id} refunded, downgraded to free plan`);
 
   } catch (error) {
-    logger.error('Error handling charge refund', { error: error.message });
+    console.error('Error handling charge refund:', error);
     throw error;
   }
 }
@@ -652,8 +640,13 @@ function webhookMiddleware(req, res, next) {
     req.stripeEvent = event;
     next();
   } catch (error) {
-    logger.error('Webhook verification failed', { error: error.message, stack: error.stack });
-    return httpErrors.validationFailed(res, 'Invalid webhook signature', { code: 'INVALID_SIGNATURE' });
+    console.error('Webhook verification failed:', error.message);
+    res.status(400).json({
+      ok: false,
+      code: 'INVALID_SIGNATURE',
+      reason: 'validation_failed',
+      message: 'Invalid webhook signature',
+    });
   }
 }
 
@@ -665,8 +658,13 @@ async function webhookHandler(req, res) {
     await handleWebhookEvent(req.stripeEvent);
     res.json({ received: true });
   } catch (error) {
-    logger.error('Webhook handler error', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, 'Webhook processing failed', { code: 'WEBHOOK_ERROR' });
+    console.error('Webhook handler error:', error);
+    res.status(500).json({
+      ok: false,
+      code: 'WEBHOOK_ERROR',
+      reason: 'server_error',
+      message: 'Webhook processing failed',
+    });
   }
 }
 
@@ -693,8 +691,13 @@ async function testWebhook(req, res) {
     res.json({ success: true, message: `Test webhook ${eventType} processed` });
 
   } catch (error) {
-    logger.error('Test webhook error', { error: error.message, stack: error.stack });
-    return httpErrors.internalError(res, 'Test webhook failed', { code: 'WEBHOOK_ERROR' });
+    console.error('Test webhook error:', error);
+    res.status(500).json({
+      ok: false,
+      code: 'WEBHOOK_ERROR',
+      reason: 'server_error',
+      message: 'Test webhook failed',
+    });
   }
 }
 

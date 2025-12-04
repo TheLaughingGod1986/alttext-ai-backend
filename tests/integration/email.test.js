@@ -36,10 +36,7 @@ describe('Email Routes', () => {
       expect([200, 500]).toContain(res.status);
       if (res.status === 200) {
         expect(res.body.success).toBe(true);
-        // email_id is optional - only present if email service returns it
-        if (res.body.email_id !== undefined) {
-          expect(typeof res.body.email_id).toBe('string');
-        }
+        expect(res.body.email_id).toBeDefined();
       }
     });
 

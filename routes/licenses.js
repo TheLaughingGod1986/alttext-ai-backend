@@ -4,11 +4,9 @@
 
 const express = require('express');
 const { supabase } = require('../db/supabase-client');
-const logger = require('../src/utils/logger');
 const { dualAuthenticate, combinedAuth } = require('../src/middleware/dual-auth');
-const licenseService = require('../src/services/licenseService');
+const licenseService = require('../services/licenseService');
 const siteService = require('../src/services/siteService');
-const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
 
@@ -38,10 +36,9 @@ router.post('/auto-attach', async (req, res) => {
 
     if (!siteHash) {
       return res.status(400).json({
-        ok: false,
-        code: 'MISSING_SITE_HASH',
-        reason: 'validation_failed',
-        message: 'X-Site-Hash header or siteHash is required'
+        success: false,
+        error: 'X-Site-Hash header or siteHash in body is required',
+        code: 'MISSING_SITE_HASH'
       });
     }
 
@@ -88,23 +85,12 @@ router.post('/auto-attach', async (req, res) => {
 
     // If no license exists, create new free license for this site
     if (!license) {
-      try {
-        const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
-        if (!result || !result.license) {
-          throw new Error('Failed to create license for site');
-        }
-        license = result.license;
-        site = result.site;
-      } catch (createError) {
-        // If error message contains "Site limit reached", return 403
-        if (createError.message && createError.message.includes('Site limit reached')) {
-          return res.status(500).json({
-            success: false,
-            error: createError.message
-          });
-        }
-        throw createError;
+      const result = await siteService.createFreeLicenseForSite(siteHash, siteUrl);
+      if (!result || !result.license) {
+        throw new Error('Failed to create license for site');
       }
+      license = result.license;
+      site = result.site;
     }
 
     // Get usage info
@@ -149,10 +135,11 @@ router.post('/auto-attach', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Auto-attach error:', { error: error.message, code: error.code });
-    return res.status(500).json({
+    console.error('Auto-attach error:', error);
+    res.status(500).json({
       success: false,
-      error: error.message || 'Failed to auto-attach license'
+      error: error.message || 'Failed to auto-attach license',
+      code: 'AUTO_ATTACH_ERROR'
     });
   }
 });
@@ -371,7 +358,7 @@ router.get('/sites', dualAuthenticate, async (req, res) => {
     });
     
   } catch (error) {
-    logger.error('Get license sites error:', { error: error.message });
+    console.error('Get license sites error:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch license sites',
@@ -526,7 +513,7 @@ router.delete('/sites/:siteId', dualAuthenticate, async (req, res) => {
     });
     
   } catch (error) {
-    logger.error('Disconnect site error:', { error: error.message });
+    console.error('Disconnect site error:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to disconnect site',

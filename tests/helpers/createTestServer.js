@@ -1,4 +1,16 @@
 /**
+ * Mock express-rate-limit globally for all tests
+ * This prevents real rate limiting from running during tests
+ * Must be at top level for Jest hoisting
+ */
+jest.mock('express-rate-limit', () => {
+  return jest.fn(() => {
+    // Return a middleware function that just calls next() - no rate limiting
+    return (req, res, next) => next();
+  });
+});
+
+/**
  * Mock db/supabase-client globally for all tests
  * This prevents the real Supabase client from loading, which causes
  * dependency errors with @supabase/storage-js in test environment
@@ -12,12 +24,8 @@ jest.mock('../../db/supabase-client', () => {
   return require('../mocks/supabase.mock');
 });
 
-// Don't mock organization routes - use the real routes
-// The module loading issue was fixed by clearing cache and ensuring authenticateToken is loaded
-
 const http = require('http');
-// Don't require createApp at module level - require it inside the function
-// This prevents module caching issues with the mock state
+const createApp = require('../../server-v2');
 
 /** 
  * Create a test server instance
@@ -32,16 +40,6 @@ function createTestServer() {
   }
   
   try {
-    // Simply require createApp - don't clear cache
-    // The factory function createApp() returns a fresh Express app instance each time
-    // This avoids cache clearing issues that cause authenticateToken to be undefined
-    const createApp = require('../../server-v2');
-    
-    // Validate createApp is a function
-    if (typeof createApp !== 'function') {
-      throw new Error(`createApp is not a function. Type: ${typeof createApp}`);
-    }
-    
     // Create a fresh Express app instance using the factory
     const app = createApp();
     
@@ -63,15 +61,8 @@ function createTestServer() {
     console.error('[createTestServer] Error creating test server:', error.message);
     if (error.stack) {
       const stackLines = error.stack.split('\n');
-      console.error('[createTestServer] Full stack trace:');
-      stackLines.forEach(line => {
-        // Look for route files in the stack
-        if (line.includes('/routes/') || line.includes('router.use') || line.includes('Router.use')) {
-          console.error('  >>>', line);
-        } else {
-          console.error('  ', line);
-        }
-      });
+      console.error('[createTestServer] Stack (first 20 lines):');
+      stackLines.slice(0, 20).forEach(line => console.error('  ', line));
     }
     throw new Error(`Failed to create test server: ${error.message}`);
   }

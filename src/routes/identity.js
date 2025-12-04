@@ -7,8 +7,6 @@ const express = require('express');
 const router = express.Router();
 const { identitySyncSchema } = require('../validation/identitySchemas');
 const identityService = require('../services/identityService');
-const logger = require('../utils/logger');
-const { errors: httpErrors } = require('../utils/http');
 
 /**
  * POST /identity/sync
@@ -32,7 +30,13 @@ router.post('/sync', async (req, res) => {
     const validation = identitySyncSchema.safeParse(req.body);
 
     if (!validation.success) {
-      return httpErrors.validationFailed(res, 'Request validation failed', validation.error.flatten());
+      return res.status(400).json({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'Request validation failed',
+        details: validation.error.flatten(),
+      });
     }
 
     const { email, plugin, site, version, wpVersion, phpVersion } = validation.data;
@@ -46,14 +50,15 @@ router.post('/sync', async (req, res) => {
       version,
       wpVersion,
       phpVersion,
-        });
+    });
 
     if (!syncResult.success) {
-      logger.error('[IdentityRoutes] Sync failed', {
-        error: syncResult.error,
-        email
+      return res.status(500).json({
+        ok: false,
+        code: 'SYNC_ERROR',
+        reason: 'server_error',
+        message: syncResult.error || 'Failed to sync identity',
       });
-      return httpErrors.internalError(res, syncResult.error || 'Failed to sync identity', { code: 'SYNC_ERROR' });
     }
 
     // Return full updated identity with installations
@@ -62,11 +67,13 @@ router.post('/sync', async (req, res) => {
       identity: syncResult.identity,
     });
   } catch (error) {
-    logger.error('[IdentityRoutes] Error in /identity/sync', {
-      error: error.message,
-      stack: error.stack
+    console.error('[IdentityRoutes] Error in /identity/sync:', error);
+    return res.status(500).json({
+      ok: false,
+      code: 'SYNC_ERROR',
+      reason: 'server_error',
+      message: error.message || 'Failed to sync identity',
     });
-    return httpErrors.internalError(res, error.message || 'Failed to sync identity', { code: 'SYNC_ERROR' });
   }
 });
 
@@ -84,13 +91,21 @@ router.get('/me', async (req, res) => {
     const { identityId } = req.query;
 
     if (!identityId) {
-      return httpErrors.missingField(res, 'identityId');
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_IDENTITY_ID',
+        message: 'identityId query parameter is required',
+      });
     }
 
     // Validate UUID format (basic check)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(identityId)) {
-      return httpErrors.invalidInput(res, 'identityId must be a valid UUID');
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_IDENTITY_ID',
+        message: 'identityId must be a valid UUID',
+      });
     }
 
     // Get full identity profile
@@ -101,18 +116,22 @@ router.get('/me', async (req, res) => {
       ...profile,
     });
   } catch (error) {
-    logger.error('[IdentityRoutes] Error in /identity/me', {
-      error: error.message,
-      stack: error.stack,
-      identityId: req.query.identityId
-    });
+    console.error('[IdentityRoutes] Error in /identity/me:', error);
     
     // Check if it's a "not found" error
     if (error.message && error.message.includes('not found')) {
-      return httpErrors.notFound(res, 'Identity');
+      return res.status(404).json({
+        ok: false,
+        error: 'IDENTITY_NOT_FOUND',
+        message: error.message,
+      });
     }
 
-    return httpErrors.internalError(res, error.message || 'Failed to get identity profile', { code: 'PROFILE_ERROR' });
+    return res.status(500).json({
+      ok: false,
+      error: 'PROFILE_ERROR',
+      message: error.message || 'Failed to get identity profile',
+    });
   }
 });
 

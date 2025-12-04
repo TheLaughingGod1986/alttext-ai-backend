@@ -6,79 +6,26 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../../auth/jwt');
-// Defensive imports for middleware - handle undefined in tests
-let partnerApiAuth, logPartnerApiUsage;
-try {
-  const partnerApiAuthModule = require('../middleware/partnerApiAuth');
-  partnerApiAuth = partnerApiAuthModule?.partnerApiAuth;
-  logPartnerApiUsage = partnerApiAuthModule?.logPartnerApiUsage;
-} catch (e) {
-  // Fallback: no-op middleware if not available
-  partnerApiAuth = (req, res, next) => next();
-  logPartnerApiUsage = (req, res, next) => next();
-}
-// Fallback if still undefined
-if (!partnerApiAuth || typeof partnerApiAuth !== 'function') {
-  partnerApiAuth = (req, res, next) => next();
-}
-if (!logPartnerApiUsage || typeof logPartnerApiUsage !== 'function') {
-  logPartnerApiUsage = (req, res, next) => next();
-}
-
-let checkSubscriptionForPartner;
-try {
-  checkSubscriptionForPartner = require('../middleware/checkSubscriptionForPartner');
-} catch (e) {
-  // Fallback: no-op middleware if not available
-  checkSubscriptionForPartner = (req, res, next) => next();
-}
-// Fallback if still undefined
-if (!checkSubscriptionForPartner || typeof checkSubscriptionForPartner !== 'function') {
-  checkSubscriptionForPartner = (req, res, next) => next();
-}
-
+const { partnerApiAuth, logPartnerApiUsage } = require('../middleware/partnerApiAuth');
+const checkSubscriptionForPartner = require('../middleware/checkSubscriptionForPartner');
 const partnerApiService = require('../services/partnerApiService');
 const creditsService = require('../services/creditsService');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
-const logger = require('../utils/logger');
-const { getEnv } = require('../../config/loadEnv');
 
-// Rate limiting for partner API endpoints (defensive check for test environment)
-let partnerRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    partnerRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 100, // Limit each IP to 100 requests per window
-      message: 'Too many requests, please try again later.',
-    });
-  } catch (e) {
-    partnerRateLimiter = null;
-  }
-}
-// Fallback: no-op middleware if rateLimit is not available
-if (!partnerRateLimiter || typeof partnerRateLimiter !== 'function') {
-  partnerRateLimiter = (req, res, next) => next();
-}
+// Rate limiting for partner API endpoints
+const partnerRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: 'Too many requests, please try again later.',
+});
 
-// Rate limiting for API key management endpoints (defensive check for test environment)
-let keyManagementRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    keyManagementRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 20, // Limit each IP to 20 requests per window
-      message: 'Too many requests, please try again later.',
-    });
-  } catch (e) {
-    keyManagementRateLimiter = null;
-  }
-}
-// Fallback: no-op middleware if rateLimit is not available
-if (!keyManagementRateLimiter || typeof keyManagementRateLimiter !== 'function') {
-  keyManagementRateLimiter = (req, res, next) => next();
-}
+// Rate limiting for API key management endpoints
+const keyManagementRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit each IP to 20 requests per window
+  message: 'Too many requests, please try again later.',
+});
 
 // Validation schemas
 const createApiKeySchema = z.object({
@@ -161,7 +108,7 @@ router.post(
 
         openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
           apiKey,
-          model: req.body.model || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
+          model: req.body.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
           max_tokens: 300,
           temperature: 0.7,
         });
@@ -199,10 +146,7 @@ router.post(
         if (spendResult.success) {
           remainingCredits = spendResult.remainingBalance;
         } else {
-          logger.error('[Partner API] Failed to deduct credits', {
-            error: spendResult.error,
-            creditIdentityId: req.creditIdentityId
-          });
+          console.error(`[Partner API] Failed to deduct credits: ${spendResult.error}`);
           // Continue anyway - generation succeeded, just log the error
         }
       }
@@ -217,11 +161,7 @@ router.post(
         tokens: openaiResponse.usage,
       });
     } catch (error) {
-      logger.error('[Partner API] Generation error', {
-        error: error.message,
-        stack: error.stack,
-        statusCode: error.response?.status
-      });
+      console.error('[Partner API] Generation error:', error);
       const statusCode = error.response?.status || 500;
       return res.status(statusCode).json({
         ok: false,
@@ -284,11 +224,7 @@ router.post('/api-keys', keyManagementRateLimiter, authenticateToken, async (req
       warning: 'Store this API key securely. It will not be shown again.',
     });
   } catch (error) {
-    logger.error('[Partner API] Error creating API key', {
-      error: error.message,
-      stack: error.stack,
-      userId: req.user?.id
-    });
+    console.error('[Partner API] Error creating API key:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to create API key',
@@ -338,11 +274,7 @@ router.get('/api-keys', keyManagementRateLimiter, authenticateToken, async (req,
       apiKeys: result.apiKeys,
     });
   } catch (error) {
-    logger.error('[Partner API] Error listing API keys', {
-      error: error.message,
-      stack: error.stack,
-      userId: req.user?.id
-    });
+    console.error('[Partner API] Error listing API keys:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to list API keys',
@@ -393,12 +325,7 @@ router.delete('/api-keys/:id', keyManagementRateLimiter, authenticateToken, asyn
       message: 'API key deactivated successfully',
     });
   } catch (error) {
-    logger.error('[Partner API] Error deactivating API key', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId: req.params.id,
-      userId: req.user?.id
-    });
+    console.error('[Partner API] Error deactivating API key:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to deactivate API key',
@@ -450,12 +377,7 @@ router.post('/api-keys/:id/rotate', keyManagementRateLimiter, authenticateToken,
       warning: 'Store this new API key securely. The old key has been deactivated.',
     });
   } catch (error) {
-    logger.error('[Partner API] Error rotating API key', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId: req.params.id,
-      userId: req.user?.id
-    });
+    console.error('[Partner API] Error rotating API key:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to rotate API key',
@@ -544,12 +466,7 @@ router.get('/api-keys/:id/usage', keyManagementRateLimiter, authenticateToken, a
       analytics: result.analytics,
     });
   } catch (error) {
-    logger.error('[Partner API] Error getting usage analytics', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId: req.params.id,
-      userId: req.user?.id
-    });
+    console.error('[Partner API] Error getting usage analytics:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Failed to get usage analytics',

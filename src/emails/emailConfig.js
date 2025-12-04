@@ -3,40 +3,38 @@
  * Centralizes email-related configuration from environment variables
  */
 
-const { getEnv } = require('../../config/loadEnv');
-
 /**
  * Get email configuration from environment variables
  * @returns {Object} Email configuration object
  */
 function getEmailConfig() {
   // Get brand name from env vars
-  const brandName = getEnv('BRAND_NAME') || getEnv('EMAIL_BRAND_NAME') || 'AltText AI';
+  const brandName = process.env.BRAND_NAME || process.env.EMAIL_BRAND_NAME || 'AltText AI';
   
   // Get brand domain from env var (default to 'optti.dev' for backward compatibility)
-  const brandDomain = getEnv('BRAND_DOMAIN', 'optti.dev');
+  const brandDomain = process.env.BRAND_DOMAIN || 'optti.dev';
   
   // Construct support email from domain if not provided
-  const supportEmail = getEnv('SUPPORT_EMAIL') || `support@${brandDomain}`;
+  const supportEmail = process.env.SUPPORT_EMAIL || `support@${brandDomain}`;
   
   // Construct dashboard URL from domain if not provided
-  const dashboardUrl = getEnv('FRONTEND_DASHBOARD_URL') || 
-    getEnv('FRONTEND_URL') || 
+  const dashboardUrl = process.env.FRONTEND_DASHBOARD_URL || 
+    process.env.FRONTEND_URL || 
     `https://app.${brandDomain}`;
   
   // Construct API domain from brand domain if not provided
-  const publicApiDomain = getEnv('PUBLIC_API_DOMAIN') || `api.${brandDomain}`;
+  const publicApiDomain = process.env.PUBLIC_API_DOMAIN || `api.${brandDomain}`;
   
   // Transactional from email (for general emails)
-  const transactionalFromEmail = getEnv('TRANSACTIONAL_FROM_EMAIL') || 
-    getEnv('EMAIL_FROM') || 
-    getEnv('RESEND_FROM_EMAIL') || 
+  const transactionalFromEmail = process.env.TRANSACTIONAL_FROM_EMAIL || 
+    process.env.EMAIL_FROM || 
+    process.env.RESEND_FROM_EMAIL || 
     `${brandName} <hello@${brandDomain}>`;
   
   // Billing from email (for receipts and payment-related emails)
-  const billingFromEmail = getEnv('BILLING_FROM_EMAIL') || 
-    getEnv('EMAIL_FROM') || 
-    getEnv('RESEND_FROM_EMAIL') || 
+  const billingFromEmail = process.env.BILLING_FROM_EMAIL || 
+    process.env.EMAIL_FROM || 
+    process.env.RESEND_FROM_EMAIL || 
     `${brandName} <billing@${brandDomain}>`;
 
   return {

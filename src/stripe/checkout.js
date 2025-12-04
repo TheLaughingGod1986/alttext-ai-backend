@@ -2,30 +2,28 @@
  * Stripe Checkout and Customer Portal
  */
 
-const { requireEnv, getEnv } = require('../../config/loadEnv');
 const Stripe = require('stripe');
 const { supabase } = require('../../db/supabase-client');
-const emailService = require('../services/emailService');
-const licenseService = require('../services/licenseService');
-const logger = require('../utils/logger');
+const emailService = require('../../services/emailService');
+const licenseService = require('../../services/licenseService');
 
-const stripe = new Stripe(requireEnv('STRIPE_SECRET_KEY'));
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 /**
  * Create Stripe Checkout Session
  */
 async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, service = 'alttext-ai') {
   try {
-    logger.info('createCheckoutSession called', { userId, priceId, service, successUrl, cancelUrl });
+    console.log('createCheckoutSession called with:', { userId, priceId, service, successUrl, cancelUrl });
     
     // Validate userId exists
     if (!userId) {
-      logger.error('Invalid userId provided', { userId });
+      console.error('Invalid userId provided:', userId);
       throw new Error('Invalid user ID');
     }
 
     // Query user - only select columns that exist in the database
-    logger.info('Querying Supabase for user', { userId });
+    console.log('Querying Supabase for user:', userId);
     const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, email, stripe_customer_id')
@@ -33,7 +31,7 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
       .single();
 
     if (userError) {
-      logger.error('Supabase query error', {
+      console.error('Supabase query error:', {
         message: userError.message,
         code: userError.code,
         details: userError.details,
@@ -44,11 +42,11 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
     }
 
     if (!user) {
-      logger.error('User not found in database', { userId: userId });
-      throw new Error(`User lookup failed: User not found for userId ${userId}`);
+      console.error('User not found in database:', { userId: userId });
+      throw new Error('User not found');
     }
 
-    logger.info('User found', { id: user.id, email: user.email, hasStripeCustomer: !!user.stripe_customer_id });
+    console.log('User found:', { id: user.id, email: user.email, hasStripeCustomer: !!user.stripe_customer_id });
 
     // Use service from request (users table doesn't have service column)
     const userService = service || 'alttext-ai';
@@ -79,13 +77,13 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
         .eq('id', userId);
 
       if (updateError) throw updateError;
-      logger.info('Stripe customer created and user updated', { customerId, userId });
+      console.log('Stripe customer created and user updated:', { customerId, userId });
     } else {
-      logger.info('Using existing Stripe customer', { customerId });
+      console.log('Using existing Stripe customer:', customerId);
     }
 
     // Create checkout session
-    logger.info('Creating Stripe checkout session', { customerId, priceId, mode: priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS') ? 'payment' : 'subscription' });
+    console.log('Creating Stripe checkout session with:', { customerId, priceId, mode: priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? 'payment' : 'subscription' });
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       payment_method_types: ['card'],
@@ -95,25 +93,25 @@ async function createCheckoutSession(userId, priceId, successUrl, cancelUrl, ser
           quantity: 1,
         },
       ],
-      mode: priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS') ? 'payment' : 'subscription',
+      mode: priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? 'payment' : 'subscription',
       success_url: successUrl,
       cancel_url: cancelUrl,
       metadata: {
         userId: userId.toString(),
         service: userService
       },
-      subscription_data: priceId !== getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS') ? {
+      subscription_data: priceId !== process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS ? {
         metadata: {
           service: userService
         }
       } : undefined
     });
 
-    logger.info('Stripe checkout session created successfully', { sessionId: session.id, url: session.url });
+    console.log('Stripe checkout session created successfully:', { sessionId: session.id, url: session.url });
     return session;
 
   } catch (error) {
-    logger.error('Error creating checkout session', {
+    console.error('Error creating checkout session:', {
       message: error.message,
       stack: error.stack,
       type: error.type,
@@ -144,7 +142,7 @@ async function createCustomerPortalSession(userId, returnUrl) {
       .single();
 
     if (userError) {
-      logger.error('Supabase query error in portal session', {
+      console.error('Supabase query error in portal session:', {
         message: userError.message,
         code: userError.code,
         userId: userId
@@ -167,7 +165,7 @@ async function createCustomerPortalSession(userId, returnUrl) {
     return session;
 
   } catch (error) {
-    logger.error('Error creating customer portal session', { error: error.message });
+    console.error('Error creating customer portal session:', error);
     throw error;
   }
 }
@@ -191,7 +189,7 @@ async function handleSuccessfulCheckout(session) {
           expand: ['line_items.data.price']
         });
       } catch (error) {
-        logger.error('[Checkout] Error retrieving session with line_items', { error: error.message });
+        console.error('[Checkout] Error retrieving session with line_items:', error);
         throw new Error('Failed to retrieve checkout session details');
       }
     }
@@ -208,17 +206,17 @@ async function handleSuccessfulCheckout(session) {
     let creditsToAdd = 0;
 
     // AltText AI products
-    if (priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO')) {
+    if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_PRO) {
       plan = 'pro';
-    } else if (priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY')) {
+    } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY) {
       plan = 'agency';
-    } else if (priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')) {
+    } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS) {
       creditsToAdd = 100; // 100 credits for £9.99
     }
     // SEO AI Meta products
-    else if (priceId === getEnv('SEO_AI_META_STRIPE_PRICE_PRO')) {
+    else if (priceId === process.env.SEO_AI_META_STRIPE_PRICE_PRO) {
       plan = 'pro';
-    } else if (priceId === getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY')) {
+    } else if (priceId === process.env.SEO_AI_META_STRIPE_PRICE_AGENCY) {
       plan = 'agency';
     }
 
@@ -273,7 +271,7 @@ async function handleSuccessfulCheckout(session) {
       throw new Error(`User ${userId} not found after update`);
     }
 
-    logger.info(`User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
+    console.log(`✅ User ${userId} (${service}) upgraded to ${plan} plan${creditsToAdd > 0 ? ` with ${creditsToAdd} credits` : ''}`);
 
     // Create license for all paid plans (pro, agency) and free if needed
     // Extract site metadata from session metadata if provided
@@ -284,7 +282,7 @@ async function handleSuccessfulCheckout(session) {
     let license = null;
     if (plan !== 'free' || session.metadata.createFreeLicense === 'true') {
       try {
-        logger.info(`Creating license for user ${userId}`, { plan });
+        console.log(`📋 Creating license for user ${userId} (plan: ${plan})`);
 
         // Get user's organization if exists (for agency plans)
         let organizationId = null;
@@ -333,7 +331,7 @@ async function handleSuccessfulCheckout(session) {
             if (memberError) throw memberError;
 
             organizationId = organization.id;
-            logger.info(`Organization created`, { organizationId: organization.id });
+            console.log(`✅ Organization created: ${organization.id}`);
           }
         }
 
@@ -352,7 +350,7 @@ async function handleSuccessfulCheckout(session) {
           name: updatedUser.email.split('@')[0]
         });
 
-        logger.info(`License created`, { licenseKey: license.licenseKey });
+        console.log(`✅ License created: ${license.licenseKey}`);
 
         // If site info was provided, auto-attach should have been attempted
         // Get updated license snapshot
@@ -360,7 +358,7 @@ async function handleSuccessfulCheckout(session) {
         license = { ...license, ...licenseSnapshot };
 
       } catch (licenseError) {
-        logger.error('Error creating license', { error: licenseError.message });
+        console.error('Error creating license:', licenseError);
         // Don't fail the whole checkout if license creation fails
         // User still gets their plan upgrade
       }
@@ -375,7 +373,7 @@ async function handleSuccessfulCheckout(session) {
     };
 
   } catch (error) {
-    logger.error('Error handling successful checkout', { error: error.message });
+    console.error('Error handling successful checkout:', error);
     throw error;
   }
 }
@@ -393,7 +391,7 @@ async function handleSubscriptionUpdate(subscription) {
       .single();
 
     if (userError || !user) {
-      logger.warn(`No user found for customer`, { customerId });
+      console.warn(`No user found for customer ${customerId}`);
       return;
     }
 
@@ -403,11 +401,11 @@ async function handleSubscriptionUpdate(subscription) {
     if (status === 'active') {
       // Determine plan from price ID (supports both services)
       let plan = 'free';
-      if (priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_PRO') ||
-          priceId === getEnv('SEO_AI_META_STRIPE_PRICE_PRO')) {
+      if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_PRO ||
+          priceId === process.env.SEO_AI_META_STRIPE_PRICE_PRO) {
         plan = 'pro';
-      } else if (priceId === getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY') ||
-                 priceId === getEnv('SEO_AI_META_STRIPE_PRICE_AGENCY')) {
+      } else if (priceId === process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY ||
+                 priceId === process.env.SEO_AI_META_STRIPE_PRICE_AGENCY) {
         plan = 'agency';
       }
 
@@ -435,7 +433,7 @@ async function handleSubscriptionUpdate(subscription) {
     }
 
   } catch (error) {
-    logger.error('Error handling subscription update', { error: error.message });
+    console.error('Error handling subscription update:', error);
     throw error;
   }
 }
@@ -453,7 +451,7 @@ async function handleInvoicePaid(invoice) {
       .single();
 
     if (userError || !user) {
-      logger.warn(`No user found for customer`, { customerId });
+      console.warn(`No user found for customer ${customerId}`);
       return;
     }
 
@@ -476,10 +474,10 @@ async function handleInvoicePaid(invoice) {
 
     if (updateError) throw updateError;
 
-    logger.info(`User monthly tokens reset`, { userId: user.id, service: user.service, limit });
+    console.log(`✅ User ${user.id} (${user.service}) monthly tokens reset to ${limit}`);
 
   } catch (error) {
-    logger.error('Error handling invoice payment', { error: error.message });
+    console.error('Error handling invoice payment:', error);
     throw error;
   }
 }
@@ -538,11 +536,11 @@ async function createCreditPackCheckoutSession(email, priceId, credits, successU
       },
     });
 
-    logger.info(`Created credit pack checkout session`, { sessionId: session.id, email, credits });
+    console.log(`[Checkout] Created credit pack checkout session: ${session.id} for ${email} (${credits} credits)`);
     return session;
 
   } catch (error) {
-    logger.error('[Checkout] Error creating credit pack checkout session', { error: error.message });
+    console.error('[Checkout] Error creating credit pack checkout session:', error);
     throw error;
   }
 }

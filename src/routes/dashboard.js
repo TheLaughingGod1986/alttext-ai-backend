@@ -12,8 +12,6 @@ const { getAnalyticsData } = require('../services/dashboardService');
 const billingService = require('../services/billingService');
 const creditsService = require('../services/creditsService');
 const plansConfig = require('../config/plans');
-const { errors: httpErrors } = require('../utils/http');
-const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -107,7 +105,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       subscription: subscriptionData,
     });
   } catch (error) {
-    logger.error('[Dashboard] GET /me error', { error: error.message });
+    console.error('[Dashboard] GET /me error:', error);
     // Always return 200 to prevent blank dashboard
     return res.status(200).json({
       ok: true,
@@ -131,7 +129,12 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
     const email = req.user.email;
 
     if (!email) {
-      return httpErrors.validationFailed(res, 'User email not found in token');
+      return res.status(400).json({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        reason: 'validation_failed',
+        message: 'User email not found in token',
+      });
     }
 
     // Check cache first
@@ -214,7 +217,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
           }));
       }
     } catch (err) {
-      logger.error('[Dashboard] Error fetching recent purchases', { error: err.message });
+      console.error('[Dashboard] Error fetching recent purchases:', err);
       // Continue without recent purchases
     }
 
@@ -242,7 +245,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
         }
       }
     } catch (err) {
-      logger.error('[Dashboard] Error fetching recent events', { error: err.message });
+      console.error('[Dashboard] Error fetching recent events:', err);
       // Continue without recent events
     }
 
@@ -265,8 +268,13 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
 
     return res.status(200).json(response);
   } catch (err) {
-    logger.error('[Dashboard] GET /dashboard error', { error: err.message, stack: err.stack });
-    return httpErrors.internalError(res, 'Failed to load dashboard', { code: 'DASHBOARD_ERROR' });
+    console.error('[Dashboard] GET /dashboard error:', err);
+    return res.status(500).json({
+      ok: false,
+      code: 'DASHBOARD_ERROR',
+      reason: 'server_error',
+      message: 'Failed to load dashboard',
+    });
   }
 });
 
@@ -280,7 +288,10 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
     const email = req.user.email;
 
     if (!email) {
-      return httpErrors.validationFailed(res, 'User email not found in token');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
     // Get time range from query param (default: 30d)
@@ -295,8 +306,11 @@ router.get('/dashboard/analytics', authenticateToken, async (req, res) => {
       ...analyticsData,
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /dashboard/analytics error', { error: err.message, stack: err.stack });
-    return httpErrors.internalError(res, 'Failed to load analytics data');
+    console.error('[Dashboard] GET /dashboard/analytics error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load analytics data',
+    });
   }
 });
 
@@ -309,61 +323,66 @@ router.get('/me/licenses', authenticateToken, async (req, res) => {
     const email = req.user.email;
     
     if (!email) {
-      return httpErrors.missingField(res, 'User email');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
     // Get licenses linked to user_id first
     let licenses = [];
-    try {
-      const { data: userLicenses, error: userLicensesError } = await supabase
-        .from('licenses')
-        .select('*')
-        .eq('user_id', req.user.id)
-        .order('created_at', { ascending: false });
+    const { data: userLicenses, error: userLicensesError } = await supabase
+      .from('licenses')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
 
-      if (!userLicensesError && userLicenses) {
-        licenses = userLicenses;
-      }
+    if (!userLicensesError && userLicenses) {
+      licenses = userLicenses;
+    }
 
-      // Also get licenses from sites linked to user's email via plugin_identities
-      const { data: identities, error: identityError } = await supabase
-        .from('plugin_identities')
-        .select('site_url')
-        .eq('email', email.toLowerCase());
+    // Also get licenses from sites linked to user's email via plugin_identities
+    const { data: identities, error: identityError } = await supabase
+      .from('plugin_identities')
+      .select('site_url')
+      .eq('email', email.toLowerCase());
 
-      if (!identityError && identities && identities.length > 0) {
-        const siteUrls = identities.map(i => i.site_url).filter(Boolean);
-        if (siteUrls.length > 0) {
-          const { data: sites, error: sitesError } = await supabase
-            .from('sites')
-            .select('license_key')
-            .in('site_url', siteUrls)
-            .not('license_key', 'is', null);
+    if (!identityError && identities && identities.length > 0) {
+      const siteUrls = identities.map(i => i.site_url).filter(Boolean);
+      if (siteUrls.length > 0) {
+        const { data: sites, error: sitesError } = await supabase
+          .from('sites')
+          .select('license_key')
+          .in('site_url', siteUrls)
+          .not('license_key', 'is', null);
 
-          if (!sitesError && sites && sites.length > 0) {
-            const licenseKeys = [...new Set(sites.map(s => s.license_key).filter(Boolean))];
-            if (licenseKeys.length > 0) {
-              const { data: siteLicenses, error: siteLicensesError } = await supabase
-                .from('licenses')
-                .select('*')
-                .in('license_key', licenseKeys)
-                .order('created_at', { ascending: false });
+        if (!sitesError && sites && sites.length > 0) {
+          const licenseKeys = [...new Set(sites.map(s => s.license_key).filter(Boolean))];
+          if (licenseKeys.length > 0) {
+            const { data: siteLicenses, error: siteLicensesError } = await supabase
+              .from('licenses')
+              .select('*')
+              .in('license_key', licenseKeys)
+              .order('created_at', { ascending: false });
 
-              if (!siteLicensesError && siteLicenses) {
-                // Merge and deduplicate by license_key
-                const existingKeys = new Set(licenses.map(l => l.license_key));
-                const newLicenses = siteLicenses.filter(l => !existingKeys.has(l.license_key));
-                licenses = [...licenses, ...newLicenses];
-              }
+            if (!siteLicensesError && siteLicenses) {
+              // Merge and deduplicate by license_key
+              const existingKeys = new Set(licenses.map(l => l.license_key));
+              const newLicenses = siteLicenses.filter(l => !existingKeys.has(l.license_key));
+              licenses = [...licenses, ...newLicenses];
             }
           }
         }
       }
-    } catch (err) {
-      // Log error but return empty array instead of 500
-      logger.error('[Dashboard] Error fetching licenses', {
-        error: err.message,
-        stack: err.stack
+    }
+
+    const error = userLicensesError || identityError;
+
+    if (error) {
+      console.error('[Dashboard] Error fetching licenses:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch licenses',
       });
     }
 
@@ -372,14 +391,10 @@ router.get('/me/licenses', authenticateToken, async (req, res) => {
       licenses: licenses || [],
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /me/licenses error', {
-      error: err.message,
-      stack: err.stack
-    });
-    // Return empty array instead of 500 error for graceful degradation
-    return res.status(200).json({
-      ok: true,
-      licenses: [],
+    console.error('[Dashboard] GET /me/licenses error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load licenses',
     });
   }
 });
@@ -393,36 +408,42 @@ router.get('/me/sites', authenticateToken, async (req, res) => {
     const email = req.user.email;
     
     if (!email) {
-      return httpErrors.missingField(res, 'User email');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
     // Get sites linked to user via plugin_identities
+    const { data: identities, error: identityError } = await supabase
+      .from('plugin_identities')
+      .select('site_url')
+      .eq('email', email.toLowerCase());
+
+    if (identityError) {
+      console.error('[Dashboard] Error fetching identities:', identityError);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch sites',
+      });
+    }
+
+    // Get unique site URLs and fetch site data
+    const siteUrls = [...new Set((identities || []).map(i => i.site_url).filter(Boolean))];
+    
     let sites = [];
-    try {
-      const { data: identities, error: identityError } = await supabase
-        .from('plugin_identities')
-        .select('site_url')
-        .eq('email', email.toLowerCase());
+    if (siteUrls.length > 0) {
+      const { data: sitesData, error: sitesError } = await supabase
+        .from('sites')
+        .select('*')
+        .in('site_url', siteUrls)
+        .order('created_at', { ascending: false });
 
-      if (!identityError && identities) {
-        // Get unique site URLs and fetch site data
-        const siteUrls = [...new Set((identities || []).map(i => i.site_url).filter(Boolean))];
-        
-        if (siteUrls.length > 0) {
-          const { data: sitesData, error: sitesError } = await supabase
-            .from('sites')
-            .select('*')
-            .in('site_url', siteUrls)
-            .order('created_at', { ascending: false });
-
-          if (!sitesError && sitesData) {
-            sites = sitesData || [];
-          }
-        }
+      if (sitesError) {
+        console.error('[Dashboard] Error fetching sites:', sitesError);
+      } else {
+        sites = sitesData || [];
       }
-    } catch (err) {
-      // Log error but return empty array instead of 500
-      logger.error('[Dashboard] Error fetching sites', { error: err.message });
     }
 
     return res.status(200).json({
@@ -430,11 +451,10 @@ router.get('/me/sites', authenticateToken, async (req, res) => {
       sites: sites,
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /me/sites error', { error: err.message });
-    // Return empty array instead of 500 error for graceful degradation
-    return res.status(200).json({
-      ok: true,
-      sites: [],
+    console.error('[Dashboard] GET /me/sites error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load sites',
     });
   }
 });
@@ -448,40 +468,45 @@ router.get('/me/subscriptions', authenticateToken, async (req, res) => {
     const email = req.user.email;
     
     if (!email) {
-      return httpErrors.missingField(res, 'User email');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
-    let subscriptions = [];
-    try {
-      const subscriptionResult = await billingService.getSubscriptionForEmail(email);
-      
-      if (subscriptionResult.success) {
-        // Get all subscriptions for this email
-        const { data: subsData, error } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('user_email', email.toLowerCase())
-          .order('created_at', { ascending: false });
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    
+    if (!subscriptionResult.success) {
+      return res.status(200).json({
+        ok: true,
+        subscriptions: [],
+      });
+    }
 
-        if (!error && subsData) {
-          subscriptions = subsData || [];
-        }
-      }
-    } catch (err) {
-      // Log error but return empty array instead of 500
-      logger.error('[Dashboard] Error fetching subscriptions', { error: err.message });
+    // Get all subscriptions for this email
+    const { data: subscriptions, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_email', email.toLowerCase())
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Dashboard] Error fetching subscriptions:', error);
+      return res.status(500).json({
+        ok: false,
+        error: 'Failed to fetch subscriptions',
+      });
     }
 
     return res.status(200).json({
       ok: true,
-      subscriptions: subscriptions,
+      subscriptions: subscriptions || [],
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /me/subscriptions error', { error: err.message });
-    // Return empty array instead of 500 error for graceful degradation
-    return res.status(200).json({
-      ok: true,
-      subscriptions: [],
+    console.error('[Dashboard] GET /me/subscriptions error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load subscriptions',
     });
   }
 });
@@ -495,40 +520,45 @@ router.get('/me/invoices', authenticateToken, async (req, res) => {
     const email = req.user.email;
     
     if (!email) {
-      return httpErrors.missingField(res, 'User email');
+      return res.status(400).json({
+        ok: false,
+        error: 'User email not found in token',
+      });
     }
 
-    let invoices = [];
-    try {
-      // Get Stripe customer ID from subscription
-      const subscriptionResult = await billingService.getSubscriptionForEmail(email);
-      
-      if (subscriptionResult.success && subscriptionResult.subscription?.stripe_customer_id) {
-        const stripe = require('../utils/stripeClient').getStripe();
-        if (stripe) {
-          // Fetch invoices from Stripe
-          const invoicesResult = await stripe.invoices.list({
-            customer: subscriptionResult.subscription.stripe_customer_id,
-            limit: 100,
-          });
-          invoices = invoicesResult.data || [];
-        }
-      }
-    } catch (err) {
-      // Log error but return empty array instead of 500
-      logger.error('[Dashboard] Error fetching invoices', { error: err.message });
+    // Get Stripe customer ID from subscription
+    const subscriptionResult = await billingService.getSubscriptionForEmail(email);
+    
+    if (!subscriptionResult.success || !subscriptionResult.subscription?.stripe_customer_id) {
+      return res.status(200).json({
+        ok: true,
+        invoices: [],
+      });
     }
+
+    const stripe = require('../utils/stripeClient').getStripe();
+    if (!stripe) {
+      return res.status(200).json({
+        ok: true,
+        invoices: [],
+      });
+    }
+
+    // Fetch invoices from Stripe
+    const invoices = await stripe.invoices.list({
+      customer: subscriptionResult.subscription.stripe_customer_id,
+      limit: 100,
+    });
 
     return res.status(200).json({
       ok: true,
-      invoices: invoices,
+      invoices: invoices.data || [],
     });
   } catch (err) {
-    logger.error('[Dashboard] GET /me/invoices error', { error: err.message });
-    // Return empty array instead of 500 error for graceful degradation
-    return res.status(200).json({
-      ok: true,
-      invoices: [],
+    console.error('[Dashboard] GET /me/invoices error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to load invoices',
     });
   }
 });
