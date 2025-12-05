@@ -131,6 +131,16 @@ class StripeMock {
       })
     };
 
+    this.invoices = {
+      list: jestMock.fn().mockResolvedValue({ data: [] }),
+      retrieve: jestMock.fn().mockResolvedValue({
+        id: 'in_test',
+        customer: 'cus_test',
+        subscription: 'sub_test',
+        status: 'paid'
+      })
+    };
+
     this.webhooks = {
       constructEvent: jestMock.fn((payload) => payload)
     };
@@ -164,6 +174,7 @@ function resetStripeMock() {
       lastInstance.prices,
       lastInstance.customers,
       lastInstance.paymentMethods,
+      lastInstance.invoices,
       lastInstance.webhooks
     ];
 
