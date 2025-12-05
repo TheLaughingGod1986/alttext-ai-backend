@@ -109,7 +109,8 @@ class StripeMock {
 
     this.customers = {
       create: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' }),
-      retrieve: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' })
+      retrieve: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' }),
+      list: jestMock.fn().mockResolvedValue({ data: [{ id: 'cus_test', email: 'test@example.com' }] })
     };
 
     this.paymentMethods = {
@@ -179,6 +180,9 @@ function resetStripeMock() {
       const subId = subscriptionId || 'sub_test';
       return getSubscription(subId);
     });
+
+    // Reset customers.list to default behavior
+    lastInstance.customers.list.mockResolvedValue({ data: [{ id: 'cus_test', email: 'test@example.com' }] });
   }
   StripeConstructor.mockClear();
 }
