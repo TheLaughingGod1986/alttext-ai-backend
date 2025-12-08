@@ -409,8 +409,13 @@ async function handleInvoicePaidWebhook(event) {
     const subscriptionId = invoice.subscription;
     let pluginSlug = 'alttext-ai'; // Default
     if (subscriptionId) {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
+      try {
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
+      } catch (subError) {
+        // If subscription retrieval fails, use default plugin slug
+        console.warn(`[Webhook] Could not retrieve subscription ${subscriptionId}:`, subError.message);
+      }
     }
 
     // Store invoice in database
@@ -422,7 +427,9 @@ async function handleInvoicePaidWebhook(event) {
       currency: invoice.currency,
       hosted_invoice_url: invoice.hosted_invoice_url,
       pdf_url: invoice.invoice_pdf,
-      paid_at: new Date(invoice.status_transitions.paid_at * 1000).toISOString(),
+      paid_at: invoice.status_transitions?.paid_at 
+        ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
+        : new Date().toISOString(), // Fallback to current time if paid_at is missing
       receipt_email_sent: false,
     };
 
@@ -642,11 +649,22 @@ function webhookMiddleware(req, res, next) {
   const payload = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body;
 
   try {
-    if (process.env.NODE_ENV === 'test' || !process.env.STRIPE_WEBHOOK_SECRET) {
-      // In tests, skip signature verification and pass through the payload
+    // Check if webhook secret is missing
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      return res.status(400).json({
+        ok: false,
+        code: 'INVALID_SIGNATURE',
+        reason: 'validation_failed',
+        message: 'Invalid webhook signature: Stripe webhook secret not configured',
+      });
+    }
+    
+    // In test mode, skip signature verification and pass through the payload
+    if (process.env.NODE_ENV === 'test') {
       req.stripeEvent = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       return next();
     }
+    
     const event = verifyWebhookSignature(payload, signature);
     req.stripeEvent = event;
     next();

@@ -1,10 +1,6 @@
+// Mock axios BEFORE any other imports - Jest hoists this automatically
 jest.mock('axios', () => ({
-  post: jest.fn().mockResolvedValue({
-    data: {
-      choices: [{ message: { content: 'Generated alt text.' } }],
-      usage: { total_tokens: 10 }
-    }
-  })
+  post: jest.fn()
 }));
 
 // Mock accessControlService FIRST (before other service mocks) to ensure it's hoisted
@@ -111,7 +107,7 @@ const request = require('supertest');
 const { createTestServer } = require('../helpers/createTestServer');
 const supabaseMock = require('../mocks/supabase.mock');
 const { generateToken } = require('../../auth/jwt');
-const axios = require('axios');
+const axios = require('axios'); // This will use the mocked version
 const siteServiceMock = require('../../src/services/siteService');
 
 let server;
@@ -147,13 +143,15 @@ describe('Generate endpoint', () => {
 
   beforeEach(() => {
     supabaseMock.__reset();
-    axios.post.mockClear();
-    axios.post.mockResolvedValue({
+    // Reset axios.post mock and set default successful response
+    // Tests can override with mockRejectedValueOnce or mockResolvedValueOnce
+    axios.post.mockReset();
+    axios.post.mockImplementation(() => Promise.resolve({
       data: {
         choices: [{ message: { content: 'Generated alt text.' } }],
         usage: { total_tokens: 10 }
       }
-    });
+    }));
     siteServiceMock.__setState(0, 50, 'free');
     
     // Reset accessControlService mock

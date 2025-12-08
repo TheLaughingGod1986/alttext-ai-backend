@@ -21,13 +21,19 @@ describe('Auth routes', () => {
     server = createTestServer();
   });
 
-  afterAll((done) => {
+  afterAll(async () => {
     if (server) {
-      server.close(done);
-    } else {
-      done();
+      return new Promise((resolve) => {
+        // Force close all connections first
+        server.close(() => {
+          // Give a small delay to ensure all connections are closed
+          setTimeout(resolve, 100);
+        });
+        // Timeout after 5 seconds if server doesn't close
+        setTimeout(resolve, 5000);
+      });
     }
-  });
+  }, 15000); // 15 second timeout for afterAll hook
 
   beforeEach(() => {
     supabaseMock.__reset();

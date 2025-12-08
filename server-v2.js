@@ -246,13 +246,6 @@ function isLikelyPublicUrl(rawUrl) {
 }
 
 async function requestChatCompletion(messages, overrides = {}) {
-  // In test mode, return a stubbed response to avoid external calls
-  if (process.env.NODE_ENV === 'test') {
-    return {
-      choices: [{ message: { content: 'Test response' } }],
-      usage: { total_tokens: 10, prompt_tokens: 0, completion_tokens: 0 }
-    };
-  }
   const {
     model = getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
     max_tokens = 100,
@@ -1354,14 +1347,10 @@ try {
         });
         logger.info(`[Generate] Using API key`, { hasKey: !!apiKey });
 
-        // Validate API key is configured (in tests, fall back to stub key)
+        // Validate API key is configured
         if (!apiKey) {
-          if (process.env.NODE_ENV === 'test') {
-            apiKey = 'test-openai-key';
-          } else {
-            logger.error(`Missing OpenAI API key for service`, { service });
-            return httpErrors.internalError(res, `Missing OpenAI API key for service: ${service}`, { code: 'GENERATION_ERROR' });
-          }
+          logger.error(`Missing OpenAI API key for service`, { service });
+          return httpErrors.internalError(res, `Missing OpenAI API key for service: ${service}`, { code: 'GENERATION_ERROR' });
         }
         
         // Check if user should use credits for this request
@@ -1380,10 +1369,15 @@ try {
         
         // Site and quota are already validated by requireSubscription middleware
         // Use req.siteUsage which was set by combinedAuth/authenticateBySiteHashForQuota
-        // No need to re-check quota - middleware already validated access
-        
-        // Get site usage from middleware-set value, or fetch if not set (fallback)
+        // If missing, fetch; also enforce remaining > 0 for site-based quota
         const siteUsage = req.siteUsage || await siteService.getSiteUsage(siteHash);
+        if (!usingCredits && siteUsage?.remaining <= 0) {
+          return httpErrors.rateLimitExceeded(
+            res,
+            'No credits remaining for this site. Please upgrade or wait for monthly reset.',
+            { code: 'NO_ACCESS', reason: 'no_credits' }
+          );
+        }
         
         // Prepare limits object for compatibility with existing code
         const limits = {

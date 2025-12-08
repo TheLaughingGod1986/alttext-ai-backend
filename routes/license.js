@@ -108,7 +108,9 @@ router.post('/activate', async (req, res) => {
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (updateError || !updatedSite) {
+        throw updateError || new Error('Failed to update site');
+      }
 
       return res.json({
         success: true,
@@ -159,7 +161,9 @@ router.post('/activate', async (req, res) => {
       .select()
       .single();
 
-    if (createError) throw createError;
+    if (createError || !newSite) {
+      throw createError || new Error('Failed to create site');
+    }
 
     res.json({
       success: true,
