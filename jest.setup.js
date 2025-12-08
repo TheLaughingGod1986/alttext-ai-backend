@@ -62,6 +62,20 @@ jest.mock('express-rate-limit', () => {
   return mockRateLimiter;
 });
 
-// DO NOT mock JWT auth globally - it breaks unit tests that need to test the real implementation
-// Integration tests that need auth bypass should mock JWT locally in their test files
+// Mock JWT auth - but DO NOT mock the core functions (generateToken, verifyToken, etc)
+// This allows integration tests to bypass auth while unit tests can still import and test the real functions
+jest.mock('./auth/jwt', () => {
+  const actualJwt = jest.requireActual('./auth/jwt');
+  return {
+    ...actualJwt, // Keep all real implementations
+    // Only mock the middleware functions for integration tests
+    authenticateToken: jest.fn((req, res, next) => {
+      if (!req.user) {
+        req.user = { id: 1, email: 'test@example.com', plan: 'free' };
+      }
+      next();
+    }),
+    optionalAuth: jest.fn((req, res, next) => next()),
+  };
+});
 
