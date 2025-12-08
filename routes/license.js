@@ -161,8 +161,12 @@ router.post('/activate', async (req, res) => {
       .select()
       .single();
 
-    if (createError || !newSite) {
-      throw createError || new Error('Failed to create site');
+    if (createError) {
+      throw createError;
+    }
+    
+    if (!newSite) {
+      throw new Error('Failed to create site: database returned null');
     }
 
     res.json({
@@ -306,7 +310,13 @@ router.post('/generate', async (req, res) => {
       .select()
       .single();
 
-    if (createError) throw createError;
+    if (createError) {
+      throw createError;
+    }
+    
+    if (!organization) {
+      throw new Error('Failed to create organization: database returned null');
+    }
 
     res.json({
       success: true,

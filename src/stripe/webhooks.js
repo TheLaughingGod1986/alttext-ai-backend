@@ -419,6 +419,12 @@ async function handleInvoicePaidWebhook(event) {
     }
 
     // Store invoice in database
+    // Safely extract paid_at timestamp, handling missing status_transitions
+    const paidAtTimestamp = invoice.status_transitions?.paid_at;
+    const paidAt = paidAtTimestamp 
+      ? new Date(paidAtTimestamp * 1000).toISOString()
+      : new Date().toISOString(); // Fallback to current time if paid_at is missing
+    
     const invoiceData = {
       invoice_id: invoice.id,
       user_email: email,
@@ -427,9 +433,7 @@ async function handleInvoicePaidWebhook(event) {
       currency: invoice.currency,
       hosted_invoice_url: invoice.hosted_invoice_url,
       pdf_url: invoice.invoice_pdf,
-      paid_at: invoice.status_transitions?.paid_at 
-        ? new Date(invoice.status_transitions.paid_at * 1000).toISOString()
-        : new Date().toISOString(), // Fallback to current time if paid_at is missing
+      paid_at: paidAt,
       receipt_email_sent: false,
     };
 
