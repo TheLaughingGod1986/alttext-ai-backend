@@ -169,6 +169,30 @@ function buildUserMessage(prompt, imageData, options = {}) {
       throw new Error('Invalid base64 image data. The base64 string contains invalid characters. Please ensure the image is properly encoded to base64.');
     }
     
+    // Additional validation: Check for suspicious patterns
+    // Base64 that's too short or contains repetitive patterns might be a placeholder
+    if (cleanBase64.length < 100) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 data is suspiciously short!', {
+        base64Length: cleanBase64.length,
+        base64Preview: cleanBase64.substring(0, 50),
+        warning: 'Base64 data is too short to be a valid image. It may be a placeholder or corrupted data.'
+      });
+      throw new Error(`Base64 image data is too short (${cleanBase64.length} characters). A valid image should have at least 100 characters of base64 data. Please ensure the image is properly encoded.`);
+    }
+    
+    // Check for suspicious patterns that suggest placeholder data
+    // If base64 is mostly the same character or very repetitive, it's likely invalid
+    const uniqueChars = new Set(cleanBase64.substring(0, Math.min(100, cleanBase64.length))).size;
+    if (uniqueChars < 10 && cleanBase64.length < 1000) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 data appears to be a placeholder!', {
+        base64Length: cleanBase64.length,
+        uniqueChars,
+        base64Preview: cleanBase64.substring(0, 50),
+        warning: 'Base64 data has very few unique characters, suggesting it may be a placeholder or corrupted data.'
+      });
+      throw new Error('Base64 image data appears to be invalid (placeholder or corrupted). Please ensure the image is properly encoded to base64.');
+    }
+    
     // Use provided mime_type or default to image/jpeg (most common)
     const mimeType = imageData?.mime_type || 'image/jpeg';
     const dataUrl = `data:${mimeType};base64,${base64Data}`;
@@ -218,8 +242,16 @@ function buildUserMessage(prompt, imageData, options = {}) {
     }
     
     // Check for suspiciously small base64 (might be truncated, corrupted, or placeholder)
+    // For 600x400 (240K pixels), minimum should be ~2KB, but 6KB is still suspiciously small
+    // and resulted in 14,370 tokens, suggesting the base64 might be corrupted or invalid
     const isSuspiciouslySmall = base64SizeKB < expectedMinSizeKB;
     const isSuspiciouslyLarge = base64SizeKB > expectedMaxSizeKB;
+    
+    // Additional check: If base64 is in the "gray zone" (between min and max but still suspiciously small),
+    // and dimensions suggest it should be larger, flag it
+    // For 600x400, we'd expect at least 10-20KB for a properly encoded JPEG
+    const isInGrayZone = base64SizeKB >= expectedMinSizeKB && base64SizeKB < (expectedMinSizeKB * 3);
+    const shouldBeLarger = pixelCount && pixelCount > 100000; // Images > 100K pixels should be larger
     
     if (isSuspiciouslySmall) {
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously SMALL for reported dimensions!', {
@@ -236,6 +268,21 @@ function buildUserMessage(prompt, imageData, options = {}) {
       });
       
       throw new Error(`Base64 image size (${base64SizeKB}KB) is too small for reported dimensions (${dimensions}). Expected minimum ${expectedMinSizeKB}KB. This suggests the base64 data is incomplete, truncated, or corrupted. Please ensure the image is properly encoded to base64.`);
+    }
+    
+    // Warn about gray zone cases that might cause issues
+    if (isInGrayZone && shouldBeLarger) {
+      logger.warn('[Image Processing] ⚠️ WARNING: Base64 image is in gray zone - may cause unexpected token costs', {
+        source: base64Field,
+        reportedDimensions: dimensions,
+        pixelCount,
+        base64SizeKB,
+        expectedMinSizeKB,
+        expectedMaxSizeKB,
+        warning: 'Base64 size is technically within range but suspiciously small. This may cause OpenAI to process incorrectly, resulting in high token costs.',
+        recommendation: 'Consider ensuring base64 contains complete, properly encoded image data.'
+      });
+      // Don't reject, but log the warning - this is a gray area
     }
     
     if (isSuspiciouslyLarge) {
