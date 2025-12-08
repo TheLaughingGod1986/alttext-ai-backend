@@ -266,9 +266,12 @@ function buildUserMessage(prompt, imageData, options = {}) {
     
     // Additional check: If base64 is in the "gray zone" (between min and max but still suspiciously small),
     // and dimensions suggest it should be larger, flag it
-    // For 600x400, we'd expect at least 10-20KB for a properly encoded JPEG
-    const isInGrayZone = base64SizeKB >= expectedMinSizeKB && base64SizeKB < (expectedMinSizeKB * 3);
-    const shouldBeLarger = pixelCount && pixelCount > 100000; // Images > 100K pixels should be larger
+    // For 600x400 (240K pixels), we'd expect at least 10-20KB for a properly encoded JPEG
+    // But 6KB resulted in 3,037 tokens! Expand gray zone to catch these cases
+    const isInGrayZone = base64SizeKB >= expectedMinSizeKB && base64SizeKB < (expectedMinSizeKB * 5);
+    // Lower threshold: Even 50K pixel images (e.g., 250x200) can cause high token costs if base64 is corrupted
+    // 600x400 = 240K pixels should definitely be caught
+    const shouldBeLarger = pixelCount && pixelCount > 50000; // Images > 50K pixels should be larger
     
     if (isSuspiciouslySmall) {
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously SMALL for reported dimensions!', {
@@ -306,8 +309,10 @@ function buildUserMessage(prompt, imageData, options = {}) {
       });
       
       // REJECT gray zone cases that are likely to cause issues
-      // Based on observed behavior: 13KB base64 for 1000x750 → 3,017 tokens
-      throw new Error(`Base64 image size (${base64SizeKB}KB) is suspiciously small for reported dimensions (${dimensions}). Expected at least ${Math.round(expectedMinSizeKB * 3)}KB for a properly encoded image. This may cause OpenAI to process at full resolution despite detail:low, resulting in high token costs. Please ensure the image is properly resized and encoded to base64.`);
+      // Based on observed behavior:
+      // - 13KB base64 for 1000x750 → 3,017 tokens
+      // - 6KB base64 for 600x400 → 3,037 tokens
+      throw new Error(`Base64 image size (${base64SizeKB}KB) is suspiciously small for reported dimensions (${dimensions}). Expected at least ${Math.round(expectedMinSizeKB * 5)}KB for a properly encoded image. This may cause OpenAI to process at full resolution despite detail:low, resulting in high token costs (observed: 3,000+ tokens instead of ~170). Please ensure the image is properly resized and encoded to base64.`);
     }
     
     if (isSuspiciouslyLarge) {
