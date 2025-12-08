@@ -651,20 +651,17 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
     });
   } catch (error) {
     if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-      const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-      fallbackMessage.content = normalizeMessageContent(fallbackMessage);
-      response = await requestChatCompletion([
-        systemMessage,
-        fallbackMessage
-      ], {
-        model: getEnv('OPENAI_REVIEW_MODEL') || getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
-        max_tokens: 220,
-        temperature: 0,
-        apiKey: effectiveApiKey
+      const openaiMsg = error?.response?.data?.error?.message || error.message;
+      logger.error('[Review] Image input rejected by OpenAI', {
+        openaiMsg,
+        status: error.response?.status,
+        imageUrlPreview: imageData?.url ? imageData.url.substring(0, 120) : null,
+        hasBase64: !!(imageData?.base64 || imageData?.image_base64),
+        hasInline: !!imageData?.inline?.data_url
       });
-    } else {
-      throw error;
+      return null; // Skip review rather than hallucinating without image
     }
+    throw error;
   }
 
   const content = response.choices[0].message.content.trim();
@@ -1897,21 +1894,24 @@ try {
             status: error.response?.status
           });
           
+          // If the image failed to load/was rejected by OpenAI, return a validation error rather than hallucinating text-only
           if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
-            logger.warn('Image fetch failed, retrying without image input');
-            const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
-            fallbackMessage.content = normalizeMessageContent(fallbackMessage);
-            try {
-              openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
-                apiKey
-              });
-            } catch (fallbackError) {
-              logger.error('[Generate] Fallback request also failed', { error: fallbackError.message });
-              throw fallbackError;
-            }
-          } else {
-            throw error;
+            const openaiMsg = error?.response?.data?.error?.message || error.message;
+            logger.error('[Generate] Image input rejected by OpenAI', {
+              openaiMsg,
+              status: error.response?.status,
+              imageUrlPreview: image_data?.url ? image_data.url.substring(0, 120) : null,
+              hasBase64: !!(image_data?.base64 || image_data?.image_base64),
+              hasInline: !!image_data?.inline?.data_url
+            });
+            return httpErrors.validationFailed(
+              res,
+              'Image could not be processed. Ensure the image URL is public over HTTPS, or send base64 with width/height.',
+              { code: 'IMAGE_FETCH_FAILED', openaiMessage: openaiMsg }
+            );
           }
+          
+          throw error;
         }
         
         // Validate OpenAI response structure
