@@ -433,7 +433,7 @@ function isLikelyPublicUrl(rawUrl) {
 async function requestChatCompletion(messages, overrides = {}) {
   const {
     model = getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
-    max_tokens = 100,
+    max_tokens = 50, // Alt text is typically 8-16 words (~12-24 tokens)
     temperature = 0.2,
     apiKey = getEnv('ALTTEXT_OPENAI_API_KEY') || getEnv('OPENAI_API_KEY')
   } = overrides;
@@ -1738,7 +1738,7 @@ try {
         // Call OpenAI API
         const systemMessage = {
           role: 'system',
-          content: 'You are an expert at writing concise, WCAG-compliant alternative text for images. Describe what is visually present without guessing. Mention on-screen text verbatim when it is legible. Keep responses to a single sentence in 8-16 words and avoid filler such as "image of".'
+          content: 'Write concise WCAG alt text. Describe visuals, include legible text. 8-16 words, no "image of".'
         };
 
         let openaiResponse;
