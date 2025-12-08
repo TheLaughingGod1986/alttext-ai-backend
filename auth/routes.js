@@ -7,35 +7,11 @@ const crypto = require('crypto');
 const { supabase } = require('../db/supabase-client');
 const { generateToken, hashPassword, comparePassword, authenticateToken, generateRefreshToken, verifyRefreshToken, REFRESH_TOKEN_EXPIRES_IN } = require('./jwt');
 const emailService = require('../src/services/emailService');
-const licenseService = require('../src/services/licenseService');
+const licenseService = require('../services/licenseService');
 const { getOrCreateIdentity } = require('../src/services/identityService');
 const billingService = require('../src/services/billingService');
-const { rateLimitByUser } = require('../src/middleware/rateLimiter');
-const logger = require('../src/utils/logger');
-const { getEnv, isProduction } = require('../config/loadEnv');
-const { errors: httpErrors } = require('../src/utils/http');
 
 const router = express.Router();
-
-// Simple in-memory cache for /auth/me responses
-// Key: user email, Value: { data, timestamp }
-const authMeCache = new Map();
-const AUTH_ME_CACHE_TTL = 5000; // 5 seconds - short cache to reduce duplicate requests
-
-function getCachedAuthMe(email) {
-  const cached = authMeCache.get(email);
-  if (cached && Date.now() - cached.timestamp < AUTH_ME_CACHE_TTL) {
-    return cached.data;
-  }
-  return null;
-}
-
-function setCachedAuthMe(email, data) {
-  authMeCache.set(email, {
-    data,
-    timestamp: Date.now()
-  });
-}
 
 /**
  * Generate a secure random token for password reset
@@ -53,11 +29,17 @@ router.post('/register', async (req, res) => {
 
     // Validate input
     if (!email || !password) {
-      return httpErrors.missingField(res, 'email and password');
+      return res.status(400).json({
+        error: 'Email and password are required',
+        code: 'MISSING_FIELDS'
+      });
     }
 
     if (password.length < 8) {
-      return httpErrors.invalidInput(res, 'Password must be at least 8 characters', { code: 'WEAK_PASSWORD' });
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters',
+        code: 'WEAK_PASSWORD'
+      });
     }
 
     // Validate service
@@ -78,7 +60,10 @@ router.post('/register', async (req, res) => {
       .single();
 
     if (existingUser) {
-      return httpErrors.conflict(res, 'User already exists with this email', { code: 'USER_EXISTS' });
+      return res.status(409).json({
+        error: 'User already exists with this email',
+        code: 'USER_EXISTS'
+      });
     }
 
     // Hash password and create user
@@ -102,7 +87,7 @@ router.post('/register', async (req, res) => {
       .single();
 
     if (createError) {
-      logger.error('Registration error details', {
+      console.error('Registration error details:', {
         code: createError.code,
         message: createError.message,
         details: createError.details,
@@ -122,7 +107,7 @@ router.post('/register', async (req, res) => {
     let license = null;
     let licenseSnapshot = null;
     try {
-      logger.info('Creating free license for user', { userId: user.id });
+      console.log(`📋 Creating free license for user ${user.id}`);
 
       license = await licenseService.createLicense({
         plan: 'free',
@@ -138,24 +123,16 @@ router.post('/register', async (req, res) => {
       // Get license snapshot
       licenseSnapshot = await licenseService.getLicenseSnapshot(license.id);
 
-      logger.info('Free license created', { userId: user.id, licenseKey: license.licenseKey });
+      console.log(`✅ Free license created: ${license.licenseKey}`);
     } catch (licenseError) {
-      logger.error('Error creating free license (non-critical)', {
-        error: licenseError.message,
-        stack: licenseError.stack,
-        userId: user.id
-      });
+      console.error('Error creating free license (non-critical):', licenseError);
       // Don't fail registration if license creation fails
       // User can still use the system
     }
 
     // Send welcome email (non-blocking)
     emailService.sendDashboardWelcome({ email: user.email }).catch(err => {
-      logger.error('Failed to send welcome email (non-critical)', {
-        error: err.message,
-        stack: err.stack,
-        email: user.email
-      });
+      console.error('Failed to send welcome email (non-critical):', err);
       // Don't fail registration if email fails
     });
 
@@ -182,14 +159,19 @@ router.post('/register', async (req, res) => {
     res.status(201).json(response);
 
   } catch (error) {
-    logger.error('Registration error', {
-      error: error.message,
-      stack: error.stack,
+    console.error('Registration error:', error);
+    console.error('Error details:', {
       code: error.code,
+      message: error.message,
       details: error.details,
       hint: error.hint
     });
-    return httpErrors.internalError(res, error.message || 'Failed to create account', { code: 'REGISTRATION_ERROR', details: error.details || null });
+    res.status(500).json({
+      error: 'Failed to create account',
+      code: 'REGISTRATION_ERROR',
+      message: error.message || 'Unknown error',
+      details: error.details || null
+    });
   }
 });
 
@@ -205,7 +187,10 @@ router.post('/login', async (req, res) => {
 
     // Validate input
     if (!email) {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
     }
 
     const emailLower = email.toLowerCase();
@@ -250,11 +235,7 @@ router.post('/login', async (req, res) => {
           token,
           redirectUrl
         }).catch(err => {
-          logger.error('Failed to send magic link email', {
-            error: err.message,
-            stack: err.stack,
-            email: emailLower
-          });
+          console.error('Failed to send magic link email:', err);
         });
       }
 
@@ -274,13 +255,19 @@ router.post('/login', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return httpErrors.authenticationRequired(res, 'Invalid email or password', { code: 'INVALID_CREDENTIALS' });
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
     }
 
     // Verify password
     const isValidPassword = await comparePassword(password, user.password_hash);
     if (!isValidPassword) {
-      return httpErrors.authenticationRequired(res, 'Invalid email or password', { code: 'INVALID_CREDENTIALS' });
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        code: 'INVALID_CREDENTIALS'
+      });
     }
 
     // Get or create identity
@@ -338,11 +325,11 @@ router.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Login error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Login error:', error);
+    res.status(500).json({
+      error: 'Failed to login',
+      code: 'LOGIN_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to login', { code: 'LOGIN_ERROR' });
   }
 });
 
@@ -356,7 +343,10 @@ router.post('/verify', async (req, res) => {
 
     // Validate input
     if (!email || !token) {
-      return httpErrors.missingField(res, 'email and token');
+      return res.status(400).json({
+        error: 'Email and token are required',
+        code: 'MISSING_FIELDS'
+      });
     }
 
     const emailLower = email.toLowerCase();
@@ -369,7 +359,10 @@ router.post('/verify', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return httpErrors.notFound(res, 'User', { code: 'INVALID_TOKEN', message: 'Invalid verification token' });
+      return res.status(404).json({
+        error: 'Invalid verification token',
+        code: 'INVALID_TOKEN'
+      });
     }
 
     // Find valid token
@@ -383,7 +376,10 @@ router.post('/verify', async (req, res) => {
       .single();
 
     if (tokenError || !resetToken) {
-      return httpErrors.invalidInput(res, 'Invalid or expired verification token', { code: 'INVALID_TOKEN' });
+      return res.status(400).json({
+        error: 'Invalid or expired verification token',
+        code: 'INVALID_TOKEN'
+      });
     }
 
     // Mark token as used
@@ -437,11 +433,11 @@ router.post('/verify', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Verify error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Verify error:', error);
+    res.status(500).json({
+      error: 'Failed to verify token',
+      code: 'VERIFY_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to verify token', { code: 'VERIFY_ERROR' });
   }
 });
 
@@ -449,23 +445,17 @@ router.post('/verify', async (req, res) => {
  * Get current user info
  * Returns full profile from identities table with subscription and installations
  */
-// Rate limit /auth/me: 30 requests per 15 minutes per authenticated user
-// This prevents abuse while allowing legitimate authenticated requests
-router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /auth/me. Limit: 30 requests per 15 minutes.'), authenticateToken, async (req, res) => {
+router.get('/me', authenticateToken, async (req, res) => {
   try {
     const email = req.user.email;
     if (!email) {
-      return httpErrors.validationFailed(res, 'Email not found in token');
+      return res.status(400).json({
+        error: 'Email not found in token',
+        code: 'MISSING_EMAIL'
+      });
     }
 
     const emailLower = email.toLowerCase();
-    
-    // Check cache first (5 second TTL to reduce duplicate requests during plugin initialization)
-    const cached = getCachedAuthMe(emailLower);
-    if (cached) {
-      return res.json(cached);
-    }
-
     const identityId = req.user.identityId || req.user.id;
 
     // Fetch all data in parallel
@@ -515,17 +505,14 @@ router.get('/me', rateLimitByUser(15 * 60 * 1000, 30, 'Too many requests to /aut
       }
     };
 
-    // Cache response for 5 seconds to reduce duplicate requests
-    setCachedAuthMe(emailLower, response);
-
     res.json(response);
 
   } catch (error) {
-    logger.error('Get user error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Get user error:', error);
+    res.status(500).json({
+      error: 'Failed to get user info',
+      code: 'USER_INFO_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to get user info', { code: 'USER_INFO_ERROR' });
   }
 });
 
@@ -541,7 +528,10 @@ router.post('/refresh', authenticateToken, async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return httpErrors.notFound(res, 'User');
+      return res.status(404).json({
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
     }
 
     const token = generateToken(user);
@@ -552,11 +542,11 @@ router.post('/refresh', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Token refresh error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      error: 'Failed to refresh token',
+      code: 'REFRESH_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to refresh token', { code: 'REFRESH_ERROR' });
   }
 });
 
@@ -570,7 +560,10 @@ router.post('/forgot-password', async (req, res) => {
 
     // Validate input
     if (!email) {
-      return httpErrors.missingField(res, 'email', 'MISSING_EMAIL');
+      return res.status(400).json({
+        error: 'Email is required',
+        code: 'MISSING_EMAIL'
+      });
     }
 
     // Find user
@@ -604,7 +597,10 @@ router.post('/forgot-password', async (req, res) => {
     }
 
     if (recentResets >= 3) {
-      return httpErrors.rateLimitExceeded(res, 'Too many password reset requests. Please wait 1 hour before requesting another reset.');
+      return res.status(429).json({
+        error: 'Too many password reset requests. Please wait 1 hour before requesting another reset.',
+        code: 'RATE_LIMIT_EXCEEDED'
+      });
     }
 
     // Invalidate any existing unused tokens for this user
@@ -634,7 +630,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate reset URL
     // Use siteUrl from request (WordPress site), or fallback to environment variable, or generic reset page
-    const frontendUrl = siteUrl || getEnv('FRONTEND_URL') || null;
+    const frontendUrl = siteUrl || process.env.FRONTEND_URL || null;
     
     // Construct reset URL that points back to WordPress
     // WordPress will detect the token/email params and show reset form
@@ -655,17 +651,13 @@ router.post('/forgot-password', async (req, res) => {
         resetUrl,
       });
     } catch (emailError) {
-      logger.error('Failed to send password reset email', {
-        error: emailError.message,
-        stack: emailError.stack,
-        email: email.toLowerCase()
-      });
+      console.error('Failed to send password reset email:', emailError);
       // Don't fail the request if email fails - token is still created
     }
 
     // For testing/development: include reset link in response
     // In production with real email, this would be omitted for security
-    const isDevelopment = !isProduction() || getEnv('DEBUG_EMAIL') === 'true';
+    const isDevelopment = process.env.NODE_ENV !== 'production' || process.env.DEBUG_EMAIL === 'true';
     
     res.json({
       success: true,
@@ -681,11 +673,11 @@ router.post('/forgot-password', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Forgot password error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Forgot password error:', error);
+    res.status(500).json({
+      error: 'Failed to process password reset request',
+      code: 'RESET_REQUEST_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to process password reset request', { code: 'RESET_REQUEST_ERROR' });
   }
 });
 
@@ -701,11 +693,17 @@ router.post('/reset-password', async (req, res) => {
 
     // Validate input
     if (!email || !token || !finalPassword) {
-      return httpErrors.missingField(res, 'email, token, and new password', 'MISSING_FIELDS');
+      return res.status(400).json({
+        error: 'Email, token, and new password are required',
+        code: 'MISSING_FIELDS'
+      });
     }
 
     if (finalPassword.length < 8) {
-      return httpErrors.invalidInput(res, 'Password must be at least 8 characters', { code: 'WEAK_PASSWORD' });
+      return res.status(400).json({
+        error: 'Password must be at least 8 characters',
+        code: 'WEAK_PASSWORD'
+      });
     }
 
     // Find user
@@ -716,7 +714,10 @@ router.post('/reset-password', async (req, res) => {
       .single();
 
     if (userError || !user) {
-      return httpErrors.notFound(res, 'User', { code: 'INVALID_RESET_TOKEN', message: 'Invalid reset token or email' });
+      return res.status(404).json({
+        error: 'Invalid reset token or email',
+        code: 'INVALID_RESET_TOKEN'
+      });
     }
 
     // Find valid reset token
@@ -730,7 +731,10 @@ router.post('/reset-password', async (req, res) => {
       .single();
 
     if (tokenError || !resetToken) {
-      return httpErrors.invalidInput(res, 'Invalid or expired reset token. Please request a new password reset.', { code: 'INVALID_RESET_TOKEN' });
+      return res.status(400).json({
+        error: 'Invalid or expired reset token. Please request a new password reset.',
+        code: 'INVALID_RESET_TOKEN'
+      });
     }
 
     // Hash new password
@@ -765,11 +769,11 @@ router.post('/reset-password', async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Reset password error', {
-      error: error.message,
-      stack: error.stack
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      error: 'Failed to reset password',
+      code: 'RESET_PASSWORD_ERROR'
     });
-    return httpErrors.internalError(res, 'Failed to reset password', { code: 'RESET_PASSWORD_ERROR' });
   }
 });
 

@@ -9,7 +9,6 @@ const usageService = require('./usageService');
 const analyticsService = require('./analyticsService');
 const eventService = require('./eventService');
 const creditsService = require('./creditsService');
-const logger = require('../utils/logger');
 
 // In-memory cache for analytics data (5 minute TTL)
 const analyticsCache = new Map();
@@ -23,8 +22,8 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
  * @returns {Promise<Object>} Dashboard data with installations, subscription, and usage
  */
 async function getDashboardData(email) {
-  const emailLower = email ? email.toLowerCase() : 'unknown';
   try {
+    const emailLower = email.toLowerCase();
 
     // Fetch all data sources in parallel
     const [installationsResult, subscriptionResult, usageResult] = await Promise.all([
@@ -51,11 +50,7 @@ async function getDashboardData(email) {
     const installations = installationsResult.data || [];
     if (installationsResult.error && installationsResult.error.code !== 'PGRST116') {
       // PGRST116 is "not found" which is fine, log other errors
-      logger.error('[DashboardService] Error fetching installations', {
-        error: installationsResult.error.message,
-        code: installationsResult.error.code,
-        email: emailLower
-      });
+      console.error('[DashboardService] Error fetching installations:', installationsResult.error);
     }
 
     // Extract subscription data or use null
@@ -68,11 +63,7 @@ async function getDashboardData(email) {
       subscription = subscriptionResult.data;
     } else if (subscriptionResult.error && subscriptionResult.error.code !== 'PGRST116') {
       // PGRST116 is "not found" which is fine, log other errors
-      logger.error('[DashboardService] Error fetching subscription', {
-        error: subscriptionResult.error.message,
-        code: subscriptionResult.error.code,
-        email: emailLower
-      });
+      console.error('[DashboardService] Error fetching subscription:', subscriptionResult.error);
     }
 
     // Extract usage data or use defaults
@@ -85,10 +76,7 @@ async function getDashboardData(email) {
         totalImages: usageResult.usage.totalImages || 0,
       };
     } else if (!usageResult.success) {
-      logger.error('[DashboardService] Error fetching usage', {
-        error: usageResult.error,
-        email: emailLower
-      });
+      console.error('[DashboardService] Error fetching usage:', usageResult.error);
     }
 
     // Log analytics event (background - don't block dashboard loading)
@@ -108,11 +96,7 @@ async function getDashboardData(email) {
       usage,
     };
   } catch (err) {
-    logger.error('[DashboardService] Aggregation error', {
-      error: err.message,
-      stack: err.stack,
-      email: emailLower
-    });
+    console.error('[DashboardService] Aggregation error:', err);
     // Return defaults on error
     return {
       installations: [],
@@ -233,11 +217,7 @@ async function getAnalyticsData(email, timeRange = '30d') {
 
     return analyticsData;
   } catch (err) {
-    logger.error('[DashboardService] Error fetching analytics data', {
-      error: err.message,
-      stack: err.stack,
-      email
-    });
+    console.error('[DashboardService] Error fetching analytics data:', err);
     // Return defaults on error
     return {
       usage: [],

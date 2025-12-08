@@ -4,7 +4,6 @@
  */
 
 const { supabase } = require('../../db/supabase-client');
-const logger = require('../utils/logger');
 
 /**
  * Record a plugin installation (upserts if exists)
@@ -36,7 +35,7 @@ async function recordInstallation(data) {
       last_seen_at: new Date().toISOString(),
     };
 
-    logger.info('[PluginInstallation] Recording installation', { email: emailLower, plugin: data.plugin, site: data.site });
+    console.log('[PluginInstallation] Recording installation:', payload);
 
     // Check if installation already exists (by email + plugin + site_url)
     const { data: existing, error: lookupError } = await supabase
@@ -61,15 +60,11 @@ async function recordInstallation(data) {
         .single();
 
       if (updateError) {
-        logger.error('[PluginInstallation] Error updating installation', {
-          error: updateError.message,
-          code: updateError.code,
-          installationId: existing.id
-        });
+        console.error('[PluginInstallation] Error updating installation:', updateError);
         return { success: false, error: updateError.message };
       }
 
-      logger.info('[PluginInstallation] Installation updated successfully', { installationId: updated.id });
+      console.log('[PluginInstallation] Installation updated successfully:', updated.id);
       result = { success: true, record: updated };
     } else {
       // Insert new installation
@@ -80,27 +75,17 @@ async function recordInstallation(data) {
         .single();
 
       if (insertError) {
-        logger.error('[PluginInstallation] Error recording installation', {
-          error: insertError.message,
-          code: insertError.code,
-          email: emailLower,
-          plugin: data.plugin
-        });
+        console.error('[PluginInstallation] Error recording installation:', insertError);
         return { success: false, error: insertError.message };
       }
 
-      logger.info('[PluginInstallation] Installation recorded successfully', { installationId: inserted.id });
+      console.log('[PluginInstallation] Installation recorded successfully:', inserted.id);
       result = { success: true, record: inserted };
     }
 
     return result;
   } catch (err) {
-    logger.error('[PluginInstallation] Exception recording installation', {
-      error: err.message,
-      stack: err.stack,
-      email: data?.email,
-      plugin: data?.plugin
-    });
+    console.error('[PluginInstallation] Exception recording installation:', err);
     return { success: false, error: err.message };
   }
 }

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: opptiai-backend
+    name: alttext-ai-phase2
     env: node
     plan: starter
     region: oregon

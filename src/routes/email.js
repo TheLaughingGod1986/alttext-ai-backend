@@ -9,33 +9,20 @@ const { z } = require('zod');
 const { authenticateToken } = require('../../auth/jwt');
 const emailService = require('../services/emailService');
 const { validateEmail } = require('../validation/validators');
-const { errors: httpErrors } = require('../utils/http');
-const { isTest } = require('../../config/loadEnv');
 
 const router = express.Router();
 
-// Rate limiting for email endpoints (defensive check for test environment)
-let emailRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    emailRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 10, // Limit each IP to 10 email requests per windowMs
-      message: 'Too many email requests from this IP, please try again later.',
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-  } catch (e) {
-    // If rateLimit fails, continue without rate limiting
-    emailRateLimiter = null;
-  }
-}
+// Rate limiting for email endpoints
+const emailRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 email requests per windowMs
+  message: 'Too many email requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Apply rate limiting to all email routes (defensive check for test environment)
-// Skip rate limiting entirely in test environment to avoid middleware issues
-if (!isTest() && emailRateLimiter && typeof emailRateLimiter === 'function') {
-  router.use(emailRateLimiter);
-}
+// Apply rate limiting to all email routes
+router.use(emailRateLimiter);
 
 /**
  * POST /email/waitlist
@@ -47,11 +34,17 @@ router.post('/waitlist', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        ok: false,
+        error: 'Email is required',
+      });
     }
 
     if (!validateEmail(email)) {
-      return httpErrors.invalidInput(res, 'Invalid email format');
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid email format',
+      });
     }
 
     // Send waitlist welcome email
@@ -75,7 +68,7 @@ router.post('/waitlist', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Waitlist email error', { error: error.message });
+    console.error('[Email Routes] Waitlist email error:', error);
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -93,11 +86,17 @@ router.post('/dashboard-welcome', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        ok: false,
+        error: 'Email is required',
+      });
     }
 
     if (!validateEmail(email)) {
-      return httpErrors.invalidInput(res, 'Invalid email format');
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid email format',
+      });
     }
 
     // Send dashboard welcome email
@@ -117,7 +116,7 @@ router.post('/dashboard-welcome', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Dashboard welcome email error', { error: error.message });
+    console.error('[Email Routes] Dashboard welcome email error:', error);
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -204,7 +203,7 @@ router.post('/plugin-signup', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Plugin signup email error', { error: error.message });
+    console.error('[Email Routes] Plugin signup email error:', error);
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -222,11 +221,17 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        ok: false,
+        error: 'Email is required',
+      });
     }
 
     if (!validateEmail(email)) {
-      return httpErrors.invalidInput(res, 'Invalid email format');
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid email format',
+      });
     }
 
     if (!planName || typeof planName !== 'string') {
@@ -252,7 +257,7 @@ router.post('/license-activated', authenticateToken, async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] License activated email error', { error: error.message });
+    console.error('[Email Routes] License activated email error:', error);
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -270,11 +275,17 @@ router.post('/low-credit-warning', async (req, res) => {
 
     // Validate input
     if (!email || typeof email !== 'string') {
-      return httpErrors.missingField(res, 'email');
+      return res.status(400).json({
+        ok: false,
+        error: 'Email is required',
+      });
     }
 
     if (!validateEmail(email)) {
-      return httpErrors.invalidInput(res, 'Invalid email format');
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid email format',
+      });
     }
 
     if (remainingCredits === undefined || typeof remainingCredits !== 'number') {
@@ -301,7 +312,7 @@ router.post('/low-credit-warning', async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Low credit warning error', { error: error.message });
+    console.error('[Email Routes] Low credit warning error:', error);
     res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',
@@ -368,7 +379,7 @@ router.post('/receipt', authenticateToken, async (req, res) => {
 
     return res.status(200).json({ ok: true });
   } catch (error) {
-    logger.error('[Email Routes] Receipt email error', { error: error.message });
+    console.error('[Email Routes] Receipt email error:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',

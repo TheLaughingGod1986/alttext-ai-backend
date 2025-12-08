@@ -6,17 +6,6 @@
 
 const { supabase } = require('../../db/supabase-client');
 const { analyticsEventSchema, analyticsEventArraySchema } = require('../validation/analyticsEventSchema');
-const logger = require('../utils/logger');
-
-// Helper function to check if running in test mode
-function isTestMode() {
-  try {
-    const { isTest } = require('../../config/loadEnv');
-    return typeof isTest === 'function' ? isTest() : process.env.NODE_ENV === 'test';
-  } catch (err) {
-    return process.env.NODE_ENV === 'test';
-  }
-}
 
 // Throttling state - in-memory Map with TTL-based cleanup
 const emailThrottleMap = new Map(); // email -> { count: number, resetAt: timestamp }
@@ -32,7 +21,7 @@ const THROTTLE_CONFIG = {
 };
 
 // Cleanup old throttle entries periodically (skip in tests to avoid open handles)
-if (!isTestMode()) {
+if (process.env.NODE_ENV !== 'test') {
   setInterval(() => {
     const now = Date.now();
     
@@ -198,12 +187,7 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
         identityId,
       });
     } catch (validationError) {
-      logger.error('[AnalyticsService] Schema validation error', {
-        error: validationError.message,
-        stack: validationError.stack,
-        email: normalizedEmail,
-        eventName
-      });
+      console.error('[AnalyticsService] Schema validation error:', validationError);
       return {
         success: false,
         error: 'Validation failed',
@@ -238,12 +222,7 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
       .insert(insertData);
 
     if (insertError) {
-      logger.error('[AnalyticsService] Error inserting event', {
-        error: insertError.message,
-        stack: insertError.stack,
-        email: normalizedEmail,
-        eventName
-      });
+      console.error('[AnalyticsService] Error inserting event:', insertError);
       return {
         success: false,
         error: insertError.message || 'Failed to log event',
@@ -253,12 +232,7 @@ async function logEvent({ email, eventName, plugin, source, eventData, identityI
     return { success: true };
   } catch (err) {
     // Catch any unexpected errors - never throw
-    logger.error('[AnalyticsService] Exception in logEvent', {
-      error: err.message,
-      stack: err.stack,
-      email: normalizedEmail,
-      eventName
-    });
+    console.error('[AnalyticsService] Exception in logEvent:', err);
     return {
       success: false,
       error: err.message || 'Unexpected error logging event',
@@ -340,11 +314,7 @@ async function logEvents(events, ip) {
         .insert(insertDataArray);
 
       if (insertError) {
-        logger.error('[AnalyticsService] Error batch inserting events', {
-          error: insertError.message,
-          stack: insertError.stack,
-          eventCount: insertDataArray.length
-        });
+        console.error('[AnalyticsService] Error batch inserting events:', insertError);
         results.success = false;
         results.failed += insertDataArray.length;
         results.errors.push({
@@ -362,11 +332,7 @@ async function logEvents(events, ip) {
 
     return results;
   } catch (err) {
-    logger.error('[AnalyticsService] Exception in logEvents', {
-      error: err.message,
-      stack: err.stack,
-      eventCount: events.length
-    });
+    console.error('[AnalyticsService] Exception in logEvents:', err);
     return {
       success: false,
       error: err.message || 'Unexpected error logging events',
@@ -392,12 +358,7 @@ function logEventBackground({ email, eventName, plugin, source, eventData, ident
     logEvent({ email, eventName, plugin, source, eventData, identityId, ip }).catch((err) => {
       // Even if logEvent fails, we don't want to throw or log to console
       // since this is a background operation
-      logger.error('[AnalyticsService] Background event logging failed', {
-        error: err.message,
-        stack: err.stack,
-        email,
-        eventName
-      });
+      console.error('[AnalyticsService] Background event logging failed:', err);
     });
   });
 
@@ -441,11 +402,7 @@ async function getAnalyticsSummary(email, options = {}) {
       .order('created_at', { ascending: false });
 
     if (queryError) {
-      logger.error('[AnalyticsService] Error querying analytics summary', {
-        error: queryError.message,
-        stack: queryError.stack,
-        email: normalizedEmail
-      });
+      console.error('[AnalyticsService] Error querying analytics summary:', queryError);
       return {
         success: false,
         error: queryError.message || 'Failed to query analytics summary',
@@ -494,11 +451,7 @@ async function getAnalyticsSummary(email, options = {}) {
       },
     };
   } catch (err) {
-    logger.error('[AnalyticsService] Exception in getAnalyticsSummary', {
-      error: err.message,
-      stack: err.stack,
-      email
-    });
+    console.error('[AnalyticsService] Exception in getAnalyticsSummary:', err);
     return {
       success: false,
       error: err.message || 'Unexpected error getting analytics summary',
@@ -551,12 +504,7 @@ async function getEventCounts(email, eventNames, options = {}) {
       .lte('created_at', endDate.toISOString());
 
     if (queryError) {
-      logger.error('[AnalyticsService] Error querying event counts', {
-        error: queryError.message,
-        stack: queryError.stack,
-        email: normalizedEmail,
-        eventNames
-      });
+      console.error('[AnalyticsService] Error querying event counts:', queryError);
       return {
         success: false,
         error: queryError.message || 'Failed to query event counts',
@@ -586,12 +534,7 @@ async function getEventCounts(email, eventNames, options = {}) {
       },
     };
   } catch (err) {
-    logger.error('[AnalyticsService] Exception in getEventCounts', {
-      error: err.message,
-      stack: err.stack,
-      email,
-      eventNames
-    });
+    console.error('[AnalyticsService] Exception in getEventCounts:', err);
     return {
       success: false,
       error: err.message || 'Unexpected error getting event counts',

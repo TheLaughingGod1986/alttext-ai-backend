@@ -6,8 +6,6 @@
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { supabase } = require('../../db/supabase-client');
-const logger = require('../utils/logger');
-const { isTest } = require('../../config/loadEnv');
 
 // In-memory rate limit store (key: apiKeyId, value: { count: number, resetAt: timestamp })
 // In production, this should be replaced with Redis
@@ -15,7 +13,7 @@ const rateLimitStore = new Map();
 const RATE_LIMIT_CLEANUP_INTERVAL = 60 * 1000; // Clean up every minute
 
 // Clean up expired rate limit entries (skip in tests to avoid open handles)
-if (!isTest()) {
+if (process.env.NODE_ENV !== 'test') {
   setInterval(() => {
     const now = Date.now();
     for (const [key, value] of rateLimitStore.entries()) {
@@ -91,18 +89,11 @@ async function createApiKey(identityId, name, rateLimit = 60) {
       .single();
 
     if (error) {
-      logger.error('[PartnerApiService] Error creating API key', {
-        error: error.message,
-        stack: error.stack,
-        identityId
-      });
+      console.error('[PartnerApiService] Error creating API key:', error);
       return { success: false, error: error.message };
     }
 
-    logger.info('[PartnerApiService] Created API key', {
-      apiKeyId: inserted.id,
-      identityId
-    });
+    console.log(`[PartnerApiService] Created API key ${inserted.id} for identity ${identityId}`);
 
     // Return the plain text key only once (for display to user)
     // In production, this should be shown only once and never stored
@@ -118,11 +109,7 @@ async function createApiKey(identityId, name, rateLimit = 60) {
       },
     };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception creating API key', {
-      error: error.message,
-      stack: error.stack,
-      identityId
-    });
+    console.error('[PartnerApiService] Exception creating API key:', error);
     return { success: false, error: error.message || 'Failed to create API key' };
   }
 }
@@ -146,10 +133,7 @@ async function validateApiKey(apiKey) {
       .eq('is_active', true);
 
     if (fetchError) {
-      logger.error('[PartnerApiService] Error fetching API keys', {
-        error: fetchError.message,
-        stack: fetchError.stack
-      });
+      console.error('[PartnerApiService] Error fetching API keys:', fetchError);
       return { success: false, error: 'Failed to validate API key' };
     }
 
@@ -175,10 +159,7 @@ async function validateApiKey(apiKey) {
 
     return { success: false, error: 'Invalid API key' };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception validating API key', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('[PartnerApiService] Exception validating API key:', error);
     return { success: false, error: error.message || 'Failed to validate API key' };
   }
 }
@@ -224,11 +205,7 @@ async function checkRateLimit(apiKeyId, rateLimitPerMinute) {
       remaining: rateLimitPerMinute - rateLimitData.count,
     };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception checking rate limit', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId
-    });
+    console.error('[PartnerApiService] Exception checking rate limit:', error);
     // On error, allow the request (fail open)
     return {
       allowed: true,
@@ -260,24 +237,14 @@ async function logUsage(apiKeyId, endpoint, statusCode, responseTimeMs, ipAddres
       });
 
     if (error) {
-      logger.error('[PartnerApiService] Error logging usage', {
-        error: error.message,
-        stack: error.stack,
-        apiKeyId,
-        endpoint
-      });
+      console.error('[PartnerApiService] Error logging usage:', error);
       // Don't fail the request if logging fails
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception logging usage', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId,
-      endpoint
-    });
+    console.error('[PartnerApiService] Exception logging usage:', error);
     // Don't fail the request if logging fails
     return { success: false, error: error.message };
   }
@@ -308,11 +275,7 @@ async function getUsageAnalytics(apiKeyId, startDate = null, endDate = null) {
     const { data: logs, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
-      logger.error('[PartnerApiService] Error fetching usage analytics', {
-        error: error.message,
-        stack: error.stack,
-        apiKeyId
-      });
+      console.error('[PartnerApiService] Error fetching usage analytics:', error);
       return { success: false, error: error.message, analytics: null };
     }
 
@@ -352,11 +315,7 @@ async function getUsageAnalytics(apiKeyId, startDate = null, endDate = null) {
       },
     };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception getting usage analytics', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId
-    });
+    console.error('[PartnerApiService] Exception getting usage analytics:', error);
     return { success: false, error: error.message || 'Failed to get usage analytics' };
   }
 }
@@ -375,11 +334,7 @@ async function listApiKeys(identityId) {
       .order('created_at', { ascending: false });
 
     if (error) {
-      logger.error('[PartnerApiService] Error listing API keys', {
-        error: error.message,
-        stack: error.stack,
-        identityId
-      });
+      console.error('[PartnerApiService] Error listing API keys:', error);
       return { success: false, error: error.message, apiKeys: [] };
     }
 
@@ -397,11 +352,7 @@ async function listApiKeys(identityId) {
       })),
     };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception listing API keys', {
-      error: error.message,
-      stack: error.stack,
-      identityId
-    });
+    console.error('[PartnerApiService] Exception listing API keys:', error);
     return { success: false, error: error.message || 'Failed to list API keys', apiKeys: [] };
   }
 }
@@ -436,27 +387,17 @@ async function deactivateApiKey(apiKeyId, identityId) {
       .eq('id', apiKeyId);
 
     if (updateError) {
-      logger.error('[PartnerApiService] Error deactivating API key', {
-        error: updateError.message,
-        stack: updateError.stack,
-        apiKeyId,
-        identityId
-      });
+      console.error('[PartnerApiService] Error deactivating API key:', updateError);
       return { success: false, error: updateError.message };
     }
 
     // Remove from rate limit store
     rateLimitStore.delete(`api_key:${apiKeyId}`);
 
-    logger.info('[PartnerApiService] Deactivated API key', { apiKeyId, identityId });
+    console.log(`[PartnerApiService] Deactivated API key ${apiKeyId}`);
     return { success: true };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception deactivating API key', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId,
-      identityId
-    });
+    console.error('[PartnerApiService] Exception deactivating API key:', error);
     return { success: false, error: error.message || 'Failed to deactivate API key' };
   }
 }
@@ -497,35 +438,21 @@ async function rotateApiKey(apiKeyId, identityId) {
       .eq('id', apiKeyId);
 
     if (updateError) {
-      logger.error('[PartnerApiService] Error updating old API key', {
-        error: updateError.message,
-        stack: updateError.stack,
-        apiKeyId,
-        identityId
-      });
+      console.error('[PartnerApiService] Error updating old API key:', updateError);
       // New key was created, so return success but log the error
     }
 
     // Remove old key from rate limit store
     rateLimitStore.delete(`api_key:${apiKeyId}`);
 
-    logger.info('[PartnerApiService] Rotated API key', {
-      oldApiKeyId: apiKeyId,
-      newApiKeyId: createResult.apiKeyData.id,
-      identityId
-    });
+    console.log(`[PartnerApiService] Rotated API key ${apiKeyId} to ${createResult.apiKeyData.id}`);
     return {
       success: true,
       apiKey: createResult.apiKey, // Plain text key - show only once!
       apiKeyData: createResult.apiKeyData,
     };
   } catch (error) {
-    logger.error('[PartnerApiService] Exception rotating API key', {
-      error: error.message,
-      stack: error.stack,
-      apiKeyId,
-      identityId
-    });
+    console.error('[PartnerApiService] Exception rotating API key:', error);
     return { success: false, error: error.message || 'Failed to rotate API key' };
   }
 }

@@ -6,35 +6,22 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { authenticateToken } = require('../auth/jwt');
-const emailService = require('../src/services/emailService');
+const emailService = require('../services/emailService');
 const { validateEmailRequest } = require('../src/validation/email');
-const logger = require('../src/utils/logger');
-const { isTest } = require('../config/loadEnv');
 
 const router = express.Router();
 
-// Rate limiting for email endpoints (defensive check for test environment)
-let emailRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    emailRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 10, // Limit each IP to 10 email requests per windowMs
-      message: 'Too many email requests from this IP, please try again later.',
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-  } catch (e) {
-    // If rateLimit fails, continue without rate limiting
-    emailRateLimiter = null;
-  }
-}
+// Rate limiting for email endpoints
+const emailRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 email requests per windowMs
+  message: 'Too many email requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Apply rate limiting (defensive check for test environment)
-// Skip rate limiting entirely in test environment to avoid middleware issues
-if (!isTest() && emailRateLimiter && typeof emailRateLimiter === 'function') {
-  router.use(emailRateLimiter);
-}
+// Apply rate limiting to all email routes
+router.use(emailRateLimiter);
 
 /**
  * POST /email/welcome
@@ -78,7 +65,7 @@ router.post('/welcome', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    logger.error('[Email Routes] Welcome email error:', { error: error.message });
+    console.error('[Email Routes] Welcome email error:', error);
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -151,7 +138,7 @@ router.post('/license/activated', authenticateToken, async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    logger.error('[Email Routes] License activated email error:', { error: error.message });
+    console.error('[Email Routes] License activated email error:', error);
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -209,7 +196,7 @@ router.post('/credits/low', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    logger.error('[Email Routes] Low credit warning error:', { error: error.message });
+    console.error('[Email Routes] Low credit warning error:', error);
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -271,7 +258,7 @@ router.post('/receipt', authenticateToken, async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    logger.error('[Email Routes] Receipt email error:', { error: error.message });
+    console.error('[Email Routes] Receipt email error:', error);
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
@@ -327,7 +314,7 @@ router.post('/plugin/signup', async (req, res) => {
       email_id: result.email_id
     });
   } catch (error) {
-    logger.error('[Email Routes] Plugin signup email error:', { error: error.message });
+    console.error('[Email Routes] Plugin signup email error:', error);
     res.status(500).json({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',

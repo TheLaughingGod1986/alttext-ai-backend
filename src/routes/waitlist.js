@@ -8,33 +8,19 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { supabase } = require('../../db/supabase-client');
 const emailService = require('../services/emailService');
-const logger = require('../utils/logger');
-const { isTest } = require('../../config/loadEnv');
 
 const router = express.Router();
 
-// Rate limiting for waitlist endpoint (defensive check for test environment)
-let waitlistRateLimiter;
-if (rateLimit && typeof rateLimit === 'function') {
-  try {
-    waitlistRateLimiter = rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 5, // Limit each IP to 5 waitlist signups per windowMs
-      message: 'Too many waitlist requests from this IP, please try again later.',
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
-  } catch (e) {
-    // If rateLimit fails, continue without rate limiting
-    waitlistRateLimiter = null;
-  }
-}
+// Rate limiting for waitlist endpoint
+const waitlistRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 waitlist signups per windowMs
+  message: 'Too many waitlist requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-// Apply rate limiting (defensive check for test environment)
-// Skip rate limiting entirely in test environment to avoid middleware issues
-if (!isTest() && waitlistRateLimiter && typeof waitlistRateLimiter === 'function') {
-  router.use(waitlistRateLimiter);
-}
+router.use(waitlistRateLimiter);
 
 /**
  * Zod schema for waitlist submission validation
@@ -89,21 +75,15 @@ router.post('/submit', async (req, res) => {
         .single();
 
       if (error && !error.message.includes('duplicate') && !error.message.includes('already exists')) {
-        logger.warn('[Waitlist] Failed to insert into Supabase (non-critical)', {
-          error: error.message,
-          email
-        });
+        console.warn('[Waitlist] Failed to insert into Supabase (non-critical):', error.message);
         // Continue even if Supabase insert fails - email sending is more important
       } else if (data) {
         waitlistRecord = data;
-        logger.info('[Waitlist] Signup stored in database', { email });
+        console.log(`[Waitlist] Signup stored in database: ${email}`);
       }
     } catch (dbError) {
       // Table might not exist yet - that's okay, we'll just send the email
-      logger.warn('[Waitlist] Database operation failed (non-critical)', {
-        error: dbError.message,
-        email
-      });
+      console.warn('[Waitlist] Database operation failed (non-critical):', dbError.message);
     }
 
     // Send welcome email
@@ -126,19 +106,13 @@ router.post('/submit', async (req, res) => {
     });
 
     if (!subscribeResult.success && subscribeResult.error !== 'Email service not configured') {
-      logger.warn('[Waitlist] Failed to subscribe to audience (non-critical)', {
-        error: subscribeResult.error,
-        email
-      });
+      console.warn(`[Waitlist] Failed to subscribe ${email} to audience (non-critical):`, subscribeResult.error);
     } else if (subscribeResult.success) {
-      logger.info('[Waitlist] Subscribed to Resend audience', { email });
+      console.log(`[Waitlist] Subscribed ${email} to Resend audience`);
     }
 
     if (!emailResult.success) {
-      logger.error('[Waitlist] Failed to send welcome email', {
-        error: emailResult.error,
-        email
-      });
+      console.error(`[Waitlist] Failed to send welcome email to ${email}:`, emailResult.error);
       // Still return success if we stored the record, but log the email failure
       if (waitlistRecord) {
         return res.status(200).json({
@@ -163,10 +137,7 @@ router.post('/submit', async (req, res) => {
       subscribed: subscribeResult.success || false,
     });
   } catch (error) {
-    logger.error('[Waitlist] Error processing waitlist signup', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('[Waitlist] Error processing waitlist signup:', error);
     return res.status(500).json({
       ok: false,
       error: error.message || 'Internal server error',

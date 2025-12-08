@@ -1,6 +1,6 @@
-# OpptiAI Backend
+# Oppti Backend
 
-Production-ready Node.js backend API for OpptiAI services.
+Production-ready Node.js backend API for Oppti services.
 
 ## Quick Start
 

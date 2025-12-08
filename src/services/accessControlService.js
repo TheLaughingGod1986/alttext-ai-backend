@@ -8,7 +8,6 @@
 const billingService = require('./billingService');
 const creditsService = require('./creditsService');
 const errorCodes = require('../constants/errorCodes');
-const logger = require('../utils/logger');
 
 /**
  * Helper function to return allow decision
@@ -119,11 +118,7 @@ async function evaluateAccess(email, action = 'ai_generate') {
     // 6. Default: deny (shouldn't reach here, but fail-safe)
     return deny(errorCodes.REASONS.NO_CREDITS);
   } catch (error) {
-    logger.error('[AccessControlService] Unexpected error', {
-      error: error.message,
-      stack: error.stack,
-      email: email
-    });
+    console.error('[AccessControlService] Unexpected error:', error);
     // Fail-safe: deny on any error (prioritize blocking over allowing)
     return deny(errorCodes.REASONS.SUBSCRIPTION_INACTIVE);
   }

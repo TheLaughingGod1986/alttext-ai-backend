@@ -9,11 +9,9 @@ const billingService = require('./billingService');
 const usageService = require('./usageService');
 const creditsService = require('./creditsService');
 const pluginInstallationService = require('./pluginInstallationService');
-const logger = require('../utils/logger');
-const { getEnv, requireEnv } = require('../../config/loadEnv');
 
-const JWT_SECRET = getEnv('JWT_SECRET', 'your-super-secret-jwt-key-change-in-production');
-const JWT_EXPIRES_IN = getEnv('JWT_EXPIRES_IN', '12h');
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '12h';
 
 /**
  * Helper function to get subscription for an email
@@ -27,11 +25,7 @@ async function getSubscriptionForEmail(email) {
     }
     return null;
   } catch (err) {
-    logger.error('[IdentityService] Error getting subscription for email', {
-      error: err.message,
-      stack: err.stack,
-      email
-    });
+    console.error('[IdentityService] Error getting subscription for email:', err);
     return null;
   }
 }
@@ -55,12 +49,7 @@ async function getOrCreateIdentity(email, plugin, site) {
     .maybeSingle();
 
   if (lookupError && lookupError.code !== 'PGRST116') {
-    logger.error('[IdentityService] Error looking up identity', {
-      error: lookupError.message,
-      code: lookupError.code,
-      email: lower,
-      plugin
-    });
+    console.error('[IdentityService] Error looking up identity:', lookupError);
     return null;
   }
 
@@ -82,12 +71,7 @@ async function getOrCreateIdentity(email, plugin, site) {
     .single();
 
   if (insertError) {
-    logger.error('[IdentityService] Failed to create identity', {
-      error: insertError.message,
-      code: insertError.code,
-      email: lower,
-      plugin
-    });
+    console.error('[IdentityService] Failed to create identity:', insertError);
     return null;
   }
 
@@ -184,11 +168,7 @@ async function syncIdentity(data) {
       if (installationResult.success) {
         installation = installationResult.record;
       } else {
-        logger.warn('[IdentityService] Failed to record installation', {
-          error: installationResult.error,
-          email: data.email,
-          plugin: data.plugin
-        });
+        console.warn('[IdentityService] Failed to record installation:', installationResult.error);
         // Continue even if installation recording fails
       }
     }
@@ -217,11 +197,7 @@ async function syncIdentity(data) {
       },
     };
   } catch (error) {
-    logger.error('[IdentityService] Error syncing identity', {
-      error: error.message,
-      stack: error.stack,
-      email: data?.email
-    });
+    console.error('[IdentityService] Error syncing identity:', error);
     return { success: false, error: error.message || 'Failed to sync identity' };
   }
 }

@@ -5,25 +5,18 @@
  */
 
 const Stripe = require('stripe');
-const { getEnv } = require('../../config/loadEnv');
-const logger = require('../utils/logger');
 
 let stripeInstance = null;
-let cachedApiKey = null;
 
 /**
  * Initialize Stripe client (lazy initialization)
- * @returns {Stripe|null} Stripe client instance or null if not configured
+ * @returns {Stripe} Stripe client instance
  */
 function initStripe() {
-  const apiKey = getEnv('STRIPE_SECRET_KEY');
-  
-  // If API key changed or instance doesn't exist, recreate
-  if (!stripeInstance || cachedApiKey !== apiKey) {
-    stripeInstance = null;
-    cachedApiKey = apiKey;
+  if (!stripeInstance) {
+    const apiKey = process.env.STRIPE_SECRET_KEY;
     if (!apiKey) {
-      logger.error('[Stripe Client] STRIPE_SECRET_KEY not configured');
+      console.error('[Stripe Client] STRIPE_SECRET_KEY not configured');
       return null;
     }
     stripeInstance = new Stripe(apiKey, {

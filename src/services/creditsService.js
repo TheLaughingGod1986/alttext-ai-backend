@@ -7,7 +7,6 @@
 
 const { supabase } = require('../../db/supabase-client');
 const eventService = require('./eventService');
-const logger = require('../utils/logger');
 
 /**
  * Get or create unified identity by email
@@ -26,7 +25,7 @@ async function getOrCreateIdentity(email) {
       .maybeSingle();
 
     if (lookupError && lookupError.code !== 'PGRST116') {
-      logger.error('[CreditsService] Error looking up identity', { error: lookupError.message });
+      console.error('[CreditsService] Error looking up identity:', lookupError);
       return { success: false, error: lookupError.message };
     }
 
@@ -42,13 +41,13 @@ async function getOrCreateIdentity(email) {
       .single();
 
     if (insertError) {
-      logger.error('[CreditsService] Failed to create identity', { error: insertError.message });
+      console.error('[CreditsService] Failed to create identity:', insertError);
       return { success: false, error: insertError.message };
     }
 
     return { success: true, identityId: created.id };
   } catch (error) {
-    logger.error('[CreditsService] Exception getting/creating identity', { error: error.message });
+    console.error('[CreditsService] Exception getting/creating identity:', error);
     return { success: false, error: error.message || 'Failed to get/create identity' };
   }
 }
@@ -81,7 +80,7 @@ async function addCredits(identityId, amount, stripePaymentIntentId = null) {
     );
 
     if (!eventResult.success) {
-      logger.error('[CreditsService] Error logging credit purchase event', { error: eventResult.error });
+      console.error('[CreditsService] Error logging credit purchase event:', eventResult.error);
       return { success: false, error: eventResult.error || 'Failed to log credit purchase' };
     }
 
@@ -89,7 +88,7 @@ async function addCredits(identityId, amount, stripePaymentIntentId = null) {
     const balanceResult = await eventService.getCreditBalance(identityId);
     
     if (!balanceResult.success) {
-      logger.error('[CreditsService] Error getting balance after purchase', { error: balanceResult.error });
+      console.error('[CreditsService] Error getting balance after purchase:', balanceResult.error);
       // Event was logged, so return success with estimated balance
       const { data: identity } = await supabase
         .from('identities')
@@ -104,14 +103,14 @@ async function addCredits(identityId, amount, stripePaymentIntentId = null) {
       };
     }
 
-    logger.info(`[CreditsService] Added credits to identity`, { amount, identityId, balance: balanceResult.balance });
+    console.log(`[CreditsService] Added ${amount} credits to identity ${identityId}. New balance: ${balanceResult.balance}`);
     return {
       success: true,
       newBalance: balanceResult.balance,
       transactionId: eventResult.eventId,
     };
   } catch (error) {
-    logger.error('[CreditsService] Exception adding credits', { error: error.message });
+    console.error('[CreditsService] Exception adding credits:', error);
     return { success: false, error: error.message || 'Failed to add credits' };
   }
 }
@@ -158,7 +157,7 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
     );
 
     if (!eventResult.success) {
-      logger.error('[CreditsService] Error logging credit usage event', { error: eventResult.error });
+      console.error('[CreditsService] Error logging credit usage event:', eventResult.error);
       return { success: false, error: eventResult.error || 'Failed to log credit usage' };
     }
 
@@ -168,7 +167,7 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
     if (!updatedBalanceResult.success) {
       // Event was logged, calculate balance manually
       const estimatedBalance = currentBalance - amount;
-      logger.info(`[CreditsService] Spent credits from identity`, { amount, identityId, estimatedBalance });
+      console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. Estimated balance: ${estimatedBalance}`);
       return {
         success: true,
         remainingBalance: estimatedBalance,
@@ -176,14 +175,14 @@ async function spendCredits(identityId, amount = 1, metadata = {}) {
       };
     }
 
-    logger.info(`[CreditsService] Spent credits from identity`, { amount, identityId, balance: updatedBalanceResult.balance });
+    console.log(`[CreditsService] Spent ${amount} credits from identity ${identityId}. New balance: ${updatedBalanceResult.balance}`);
     return {
       success: true,
       remainingBalance: updatedBalanceResult.balance,
       transactionId: eventResult.eventId,
     };
   } catch (error) {
-    logger.error('[CreditsService] Exception spending credits', { error: error.message });
+    console.error('[CreditsService] Exception spending credits:', error);
     return { success: false, error: error.message || 'Failed to spend credits' };
   }
 }
@@ -212,7 +211,7 @@ async function getBalance(identityId) {
     }
 
     // Fallback to cached credits_balance if events query fails
-    logger.warn('[CreditsService] Falling back to cached credits_balance', { error: balanceResult.error });
+    console.warn('[CreditsService] Falling back to cached credits_balance:', balanceResult.error);
     const { data: identity, error } = await supabase
       .from('identities')
       .select('credits_balance')
@@ -231,7 +230,7 @@ async function getBalance(identityId) {
       balance: identity.credits_balance || 0,
     };
   } catch (error) {
-    logger.error('[CreditsService] Exception getting balance', { error: error.message });
+    console.error('[CreditsService] Exception getting balance:', error);
     return { success: false, error: error.message || 'Failed to get balance' };
   }
 }
@@ -269,7 +268,7 @@ async function getTransactionHistory(identityId, page = 1, limit = 50) {
     ]);
 
     if (transactionsResult.error) {
-      logger.error('[CreditsService] Error fetching transactions', { error: transactionsResult.error });
+      console.error('[CreditsService] Error fetching transactions:', transactionsResult.error);
       return { success: false, error: transactionsResult.error.message, transactions: [] };
     }
 
@@ -297,7 +296,7 @@ async function getTransactionHistory(identityId, page = 1, limit = 50) {
       },
     };
   } catch (error) {
-    logger.error('[CreditsService] Exception getting transaction history', { error: error.message });
+    console.error('[CreditsService] Exception getting transaction history:', error);
     return { success: false, error: error.message || 'Failed to get transaction history', transactions: [] };
   }
 }
@@ -317,7 +316,7 @@ async function getBalanceByEmail(email) {
 
     return await getBalance(identityResult.identityId);
   } catch (error) {
-    logger.error('[CreditsService] Exception getting balance by email', { error: error.message });
+    console.error('[CreditsService] Exception getting balance by email:', error);
     return { success: false, error: error.message || 'Failed to get balance', balance: 0 };
   }
 }
@@ -341,7 +340,7 @@ async function addCreditsByEmail(email, amount, source = 'manual', transactionId
     // Use transactionId as stripePaymentIntentId if provided
     return await addCredits(identityResult.identityId, amount, transactionId);
   } catch (error) {
-    logger.error('[CreditsService] Exception adding credits by email', { error: error.message });
+    console.error('[CreditsService] Exception adding credits by email:', error);
     return { success: false, error: error.message || 'Failed to add credits' };
   }
 }
@@ -363,7 +362,7 @@ async function deductCreditByEmail(email) {
     // Use atomic spendCredits function to deduct 1 credit
     return await spendCredits(identityResult.identityId, 1);
   } catch (error) {
-    logger.error('[CreditsService] Exception deducting credit by email', { error: error.message });
+    console.error('[CreditsService] Exception deducting credit by email:', error);
     return { success: false, error: error.message || 'Failed to deduct credit' };
   }
 }
@@ -394,7 +393,7 @@ async function deductCredits(email, amount) {
 
     return { ok: true };
   } catch (error) {
-    logger.error('[CreditsService] Exception deducting credits', { error: error.message });
+    console.error('[CreditsService] Exception deducting credits:', error);
     return { ok: false, reason: error.message || 'Failed to deduct credits' };
   }
 }
@@ -416,7 +415,7 @@ async function getTransactionsByEmail(email, page = 1, limit = 50) {
 
     return await getTransactionHistory(identityResult.identityId, page, limit);
   } catch (error) {
-    logger.error('[CreditsService] Exception getting transactions by email', { error: error.message });
+    console.error('[CreditsService] Exception getting transactions by email:', error);
     return { success: false, error: error.message || 'Failed to get transactions', transactions: [] };
   }
 }
