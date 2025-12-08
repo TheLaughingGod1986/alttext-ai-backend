@@ -287,19 +287,27 @@ function buildUserMessage(prompt, imageData, options = {}) {
       throw new Error(`Base64 image size (${base64SizeKB}KB) is too small for reported dimensions (${dimensions}). Expected minimum ${expectedMinSizeKB}KB. This suggests the base64 data is incomplete, truncated, or corrupted. Please ensure the image is properly encoded to base64.`);
     }
     
-    // Warn about gray zone cases that might cause issues
+    // Reject gray zone cases that are likely to cause high token costs
+    // Even with detail:low, if base64 is suspiciously small, OpenAI may process at full resolution
+    // Based on logs: 13KB base64 for 1000x750 resulted in 3,017 tokens despite detail:low
+    // This suggests the base64 contains full-res data or is corrupted
     if (isInGrayZone && shouldBeLarger) {
-      logger.warn('[Image Processing] ⚠️ WARNING: Base64 image is in gray zone - may cause unexpected token costs', {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is in gray zone - rejecting to prevent high token costs', {
         source: base64Field,
         reportedDimensions: dimensions,
         pixelCount,
         base64SizeKB,
         expectedMinSizeKB,
         expectedMaxSizeKB,
-        warning: 'Base64 size is technically within range but suspiciously small. This may cause OpenAI to process incorrectly, resulting in high token costs.',
-        recommendation: 'Consider ensuring base64 contains complete, properly encoded image data.'
+        ratio: (base64SizeKB / expectedMinSizeKB).toFixed(2),
+        warning: 'Base64 size is technically within range but suspiciously small. Even with detail:low, this may cause OpenAI to process at full resolution, resulting in 3,000+ tokens instead of ~170.',
+        recommendation: 'Plugin MUST ensure base64 contains complete, properly encoded resized image data. Current size suggests corrupted/incomplete data or full-res image.',
+        action: 'REJECTING REQUEST to prevent high token costs'
       });
-      // Don't reject, but log the warning - this is a gray area
+      
+      // REJECT gray zone cases that are likely to cause issues
+      // Based on observed behavior: 13KB base64 for 1000x750 → 3,017 tokens
+      throw new Error(`Base64 image size (${base64SizeKB}KB) is suspiciously small for reported dimensions (${dimensions}). Expected at least ${Math.round(expectedMinSizeKB * 3)}KB for a properly encoded image. This may cause OpenAI to process at full resolution despite detail:low, resulting in high token costs. Please ensure the image is properly resized and encoded to base64.`);
     }
     
     if (isSuspiciouslyLarge) {
