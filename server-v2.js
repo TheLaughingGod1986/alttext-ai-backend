@@ -154,15 +154,43 @@ function buildUserMessage(prompt, imageData, options = {}) {
       ? `${imageData.width}x${imageData.height}` 
       : 'unknown';
     const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
-    logger.info('[Image Processing] ✅ Using base64 image (resized)', { 
-      source: base64Field,
-      dimensions,
-      mimeType,
-      base64Length: base64Data.length,
-      hasImageUrl: !!imageData?.url,
-      ignoredImageUrl: !!imageData?.url, // Log that URL is being ignored
-      urlPreview: imageData?.url ? imageData.url.substring(0, 100) + '...' : null
-    });
+    
+    // Validate base64 size against reported dimensions
+    // A resized 1024x1024 JPEG should be ~100-300KB base64 (~130-400KB raw)
+    // A full-res 4000x3000 JPEG could be 2-5MB base64 (~3-7MB raw)
+    const base64SizeKB = Math.round(base64Data.length * 0.75 / 1024); // Approximate decoded size
+    const reportedMaxDim = imageData?.width && imageData?.height 
+      ? Math.max(imageData.width, imageData.height) 
+      : null;
+    
+    // Warn if base64 is suspiciously large for reported dimensions
+    // For a 900x600 image, base64 should be ~50-150KB. If it's >500KB, likely full-res
+    const expectedMaxSizeKB = reportedMaxDim && reportedMaxDim <= 1024 ? 300 : 5000;
+    const isSuspiciouslyLarge = base64SizeKB > expectedMaxSizeKB;
+    
+    if (isSuspiciouslyLarge) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously large for reported dimensions!', {
+        source: base64Field,
+        reportedDimensions: dimensions,
+        base64SizeKB,
+        expectedMaxSizeKB,
+        warning: 'This base64 likely contains a FULL-RESOLUTION image despite metadata. OpenAI will tokenize it as full-res, causing high token costs!',
+        recommendation: 'Plugin should resize image BEFORE encoding to base64. Current base64 size suggests full-res image was encoded.'
+      });
+      // Continue processing but log the issue - we can't reject here as it would break the flow
+      // The high token usage will be caught later in the token usage logging
+    } else {
+      logger.info('[Image Processing] ✅ Using base64 image (resized)', { 
+        source: base64Field,
+        dimensions,
+        mimeType,
+        base64Length: base64Data.length,
+        base64SizeKB,
+        hasImageUrl: !!imageData?.url,
+        ignoredImageUrl: !!imageData?.url, // Log that URL is being ignored
+        urlPreview: imageData?.url ? imageData.url.substring(0, 100) + '...' : null
+      });
+    }
     
     return {
       role: 'user',
@@ -1584,6 +1612,12 @@ try {
           
           // Warn if token count is unexpectedly high (suggests full-res image was processed)
           const isHighTokenUsage = totalTokens > 1000;
+          const base64Data = image_data?.base64 || image_data?.image_base64;
+          const base64SizeKB = base64Data ? Math.round(base64Data.length * 0.75 / 1024) : 0;
+          const reportedMaxDim = image_data?.width && image_data?.height 
+            ? Math.max(image_data.width, image_data.height) 
+            : null;
+          
           const tokenWarning = isHighTokenUsage 
             ? `⚠️ CRITICAL: High token usage (${totalTokens}). Expected ${expectedTokens || '~170-340'} for resized images. This suggests a full-resolution image was processed!` 
             : null;
@@ -1594,9 +1628,14 @@ try {
               expectedTokens,
               imageDimensions,
               imageSource,
-              hasBase64: !!(image_data?.base64 || image_data?.image_base64),
+              hasBase64: !!base64Data,
               hasUrl: !!image_data?.url,
-              base64Length: (image_data?.base64 || image_data?.image_base64)?.length || 0,
+              base64Length: base64Data?.length || 0,
+              base64SizeKB,
+              reportedMaxDim,
+              rootCause: base64SizeKB > 500 && reportedMaxDim && reportedMaxDim <= 1024
+                ? 'Base64 contains full-resolution image despite metadata claiming resized dimensions. Plugin needs to resize BEFORE encoding to base64.'
+                : 'Unknown - investigate base64 encoding or image dimensions',
               warning: tokenWarning
             });
           } else {
