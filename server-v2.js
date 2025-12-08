@@ -95,41 +95,46 @@ try {
 // Helper functions (reused from Phase 1) - defined at module level for export
 function buildPrompt(imageData, context, regenerate = false) {
   const lines = [
-    'Write accurate alternative text for the provided image.',
-    'Focus on the primary subject, notable actions, setting, colors, and any visible text.',
-    'If the image is a logo or icon, state the text or shape that appears.'
+    'Write descriptive alternative text for this image.',
+    'Requirements:',
+    '- Length: 10-15 words (125 characters max for optimal accessibility/SEO)',
+    '- Include relevant keywords naturally based on context',
+    '- Describe: subjects, actions, setting, visible text',
+    '- For logos/icons: state brand name and recognizable elements',
+    '- Avoid filler: "image of", "picture of", "photo of"',
+    '- Be specific: "woman presenting sales chart" vs "woman at computer"'
   ];
 
   if (regenerate) {
-    lines.push('This is a regeneration request - provide a fresh, alternative description using different wording while maintaining accuracy.');
-    lines.push('Use varied vocabulary and sentence structure to create a new but equally descriptive alt text.');
+    lines.push('');
+    lines.push('REGENERATION: Provide alternative wording with different keywords while maintaining accuracy.');
   }
 
   const contextLines = [];
 
   if (imageData?.title) {
-    contextLines.push(`Media library title: ${imageData.title}`);
+    contextLines.push(`Title: ${imageData.title}`);
   }
   if (imageData?.caption) {
-    contextLines.push(`Attachment caption: ${imageData.caption}`);
+    contextLines.push(`Caption: ${imageData.caption}`);
   }
   if (context?.post_title) {
-    contextLines.push(`Appears on page/post titled: ${context.post_title}`);
+    contextLines.push(`Page: ${context.post_title}`);
   }
   if (context?.filename || imageData?.filename) {
     const filename = context?.filename || imageData?.filename;
-    contextLines.push(`Filename: ${filename}`);
-  }
-  if (imageData?.width && imageData?.height) {
-    contextLines.push(`Image dimensions: ${imageData.width}x${imageData.height}px`);
+    // Extract potential keywords from filename
+    const cleanFilename = filename.replace(/[-_]/g, ' ').replace(/\.(jpg|jpeg|png|gif|webp)$/i, '');
+    contextLines.push(`File: ${cleanFilename}`);
   }
 
   if (contextLines.length > 0) {
-    lines.push('\nAdditional context:');
+    lines.push('');
+    lines.push('Context (use for keyword relevance):');
     lines.push(...contextLines);
   }
 
-  lines.push('\nReturn just the alt text.');
+  lines.push('\nReturn only the alt text (no quotes, no explanation).');
   return lines.join('\n');
 }
 
@@ -1738,7 +1743,7 @@ try {
         // Call OpenAI API
         const systemMessage = {
           role: 'system',
-          content: 'Write concise WCAG alt text. Describe visuals, include legible text. 8-16 words, no "image of".'
+          content: 'Expert at WCAG 2.1 Level AA alt text optimized for accessibility and SEO. Write natural, keyword-rich descriptions (10-15 words, 125 chars max). Be specific and descriptive.'
         };
 
         let openaiResponse;
