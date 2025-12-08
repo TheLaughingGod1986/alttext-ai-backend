@@ -13,9 +13,8 @@ const logger = require('../utils/logger');
  * Authenticate using either JWT token OR license key
  *
  * Priority order:
- * 1. Try JWT token from Authorization header (Bearer token)
- * 2. Try license key from X-License-Key header
- * 3. Try license key from request body
+ * 1. Try license key from X-License-Key header or request body
+ * 2. Try JWT token from Authorization header (Bearer token)
  *
  * On success, sets:
  * - req.user: User object (if JWT auth)
@@ -23,51 +22,10 @@ const logger = require('../utils/logger');
  * - req.authMethod: 'jwt' or 'license'
  */
 async function dualAuthenticate(req, res, next) {
-  // Try JWT authentication first
-  const authHeader = req.headers['authorization'];
-  const jwtToken = authHeader && authHeader.split(' ')[1];
-
-  if (jwtToken) {
-    try {
-      const decoded = verifyToken(jwtToken);
-      req.user = decoded;
-
-      // Get user's primary organization (personal org or first org they're a member of)
-      const { data: memberships, error: membershipError } = await supabase
-        .from('organization_members')
-        .select('organizationId, role')
-        .eq('userId', decoded.id)
-        .order('role', { ascending: true }) // Owner first, then admin, then member
-        .limit(1);
-
-      if (!membershipError && memberships && memberships.length > 0) {
-        const membership = memberships[0];
-        const { data: organization, error: orgError } = await supabase
-          .from('organizations')
-          .select('*')
-          .eq('id', membership.organizationId)
-          .single();
-
-        if (!orgError && organization) {
-          req.organization = organization;
-          req.authMethod = 'jwt';
-          return next();
-        }
-      }
-
-      // User has JWT but no organization - might be using old system
-      // Allow them to continue but without organization context
-      req.authMethod = 'jwt';
-      return next();
-
-    } catch (error) {
-      // JWT invalid, try license key next
-    }
-  }
-
-  // Try license key authentication
   const licenseKey = req.headers['x-license-key'] || req.body?.licenseKey;
   const siteHash = req.headers['x-site-hash'] || req.body?.siteHash;
+  const authHeader = req.headers['authorization'];
+  const jwtToken = authHeader && authHeader.split(' ')[1];
 
   if (licenseKey) {
     try {
@@ -227,6 +185,48 @@ async function dualAuthenticate(req, res, next) {
         code: 'AUTH_ERROR',
         reason: 'server_error',
         message: error.message
+      });
+    }
+  }
+
+  if (jwtToken) {
+    try {
+      const decoded = verifyToken(jwtToken);
+      req.user = decoded;
+
+      // Get user's primary organization (personal org or first org they're a member of)
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organizationId, role')
+        .eq('userId', decoded.id)
+        .order('role', { ascending: true }) // Owner first, then admin, then member
+        .limit(1);
+
+      if (!membershipError && memberships && memberships.length > 0) {
+        const membership = memberships[0];
+        const { data: organization, error: orgError } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', membership.organizationId)
+          .single();
+
+        if (!orgError && organization) {
+          req.organization = organization;
+          req.authMethod = 'jwt';
+          return next();
+        }
+      }
+
+      // User has JWT but no organization - might be using old system
+      // Allow them to continue but without organization context
+      req.authMethod = 'jwt';
+      return next();
+
+    } catch (error) {
+      logger.warn('[DualAuth] Invalid JWT token provided', { message: error.message });
+      return res.status(403).json({
+        error: 'Invalid or expired token',
+        code: 'INVALID_TOKEN'
       });
     }
   }
