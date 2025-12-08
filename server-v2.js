@@ -153,12 +153,15 @@ function buildUserMessage(prompt, imageData, options = {}) {
     const dimensions = imageData?.width && imageData?.height 
       ? `${imageData.width}x${imageData.height}` 
       : 'unknown';
-    logger.info('[Image Processing] Using base64 image (resized)', { 
-      source: 'image_base64',
+    const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
+    logger.info('[Image Processing] ✅ Using base64 image (resized)', { 
+      source: base64Field,
       dimensions,
       mimeType,
+      base64Length: base64Data.length,
       hasImageUrl: !!imageData?.url,
-      ignoredImageUrl: !!imageData?.url // Log that URL is being ignored
+      ignoredImageUrl: !!imageData?.url, // Log that URL is being ignored
+      urlPreview: imageData?.url ? imageData.url.substring(0, 100) + '...' : null
     });
     
     return {
@@ -186,9 +189,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
   // This ensures we never download full-resolution images when resized base64 is available
   const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
   if (hasUsableUrl) {
-    logger.info('[Image Processing] Using public URL (fallback - no base64 provided)', { 
+    logger.warn('[Image Processing] ⚠️ Using public URL (fallback - no base64 provided)', { 
       source: 'image_url',
-      url: imageData.url.substring(0, 100) // Log first 100 chars of URL
+      url: imageData.url.substring(0, 100), // Log first 100 chars of URL
+      dimensions: imageData?.width && imageData?.height ? `${imageData.width}x${imageData.height}` : 'unknown',
+      warning: 'This will process full-resolution image and use high tokens!'
     });
     return {
       role: 'user',
@@ -1011,6 +1016,11 @@ try {
   logger.error('Failed to register licenseRoutes', { error: e.message });
   throw e;
 }
+  // TEMPORARILY DISABLED: Organization routes require organizations and organization_members tables
+  // TODO: Create organizations table and organization_members table in Supabase, then uncomment
+  logger.warn('Organization routes temporarily disabled - missing database tables (organizations, organization_members)');
+
+  /* COMMENTED OUT UNTIL DATABASE TABLES ARE CREATED
   // Load organization routes with error handling
   try {
     // First, verify localAuthenticateToken and safeAuthenticateToken are available BEFORE requiring organization routes
@@ -1025,7 +1035,7 @@ try {
       });
       throw new Error(errorMsg);
     }
-    
+
     // Verify safeAuthenticateToken is available (it should be since it's defined earlier in the function)
     if (!safeAuthenticateToken || typeof safeAuthenticateToken !== 'function') {
       const errorMsg = `safeAuthenticateToken is not a function BEFORE requiring organization routes. Type: ${typeof safeAuthenticateToken}`;
@@ -1035,16 +1045,16 @@ try {
       });
       throw new Error(errorMsg);
     }
-    
+
     // localAuthenticateToken and safeAuthenticateToken are valid, proceed with loading organization routes
     const orgModule = require('./routes/organization');
     const organizationRouter = orgModule?.router;
     const getMyOrganizations = orgModule?.getMyOrganizations;
-    
+
     // Validate organization router - Express Router can be an object or function with router methods
     if (!organizationRouter) {
       logger.warn('Skipping organization routes - router is undefined');
-    } else if ((typeof organizationRouter !== 'object' && typeof organizationRouter !== 'function') || 
+    } else if ((typeof organizationRouter !== 'object' && typeof organizationRouter !== 'function') ||
         (organizationRouter.stack === undefined && typeof organizationRouter.get !== 'function' && typeof organizationRouter.use !== 'function')) {
       // Invalid router - doesn't have expected Express Router properties
       logger.warn('Skipping organization routes - router validation failed', {
@@ -1067,7 +1077,7 @@ try {
       if (!safeAuthenticateToken || typeof safeAuthenticateToken !== 'function') {
         throw new Error(`safeAuthenticateToken is not a function right before app.use(). Type: ${typeof safeAuthenticateToken}`);
       }
-      
+
       // Log what we're about to register for debugging
       logger.debug('Registering organization routes', {
         hasLocalAuth: !!localAuthenticateToken,
@@ -1079,15 +1089,15 @@ try {
         routerHasStack: organizationRouter.stack !== undefined,
         routerHasGet: typeof organizationRouter.get === 'function'
       });
-      
+
       // Use the safe wrapper - ensure it's accessible
       const orgAuthMiddleware = safeAuthenticateToken;
-      
+
       // Verify the middleware function is valid
       if (typeof orgAuthMiddleware !== 'function') {
         throw new Error(`orgAuthMiddleware is not a function. Type: ${typeof orgAuthMiddleware}, safeAuthenticateToken type: ${typeof safeAuthenticateToken}`);
       }
-      
+
       try {
         // Final validation right before app.use() - log everything for debugging
         const middlewareArgs = [orgAuthMiddleware, organizationRouter];
@@ -1100,13 +1110,13 @@ try {
             return !arg || (typeof arg !== 'function' && !arg.stack);
           }
         });
-        
+
         if (invalidArg !== undefined) {
           const argIndex = middlewareArgs.indexOf(invalidArg);
           const argName = argIndex === 0 ? 'orgAuthMiddleware' : 'organizationRouter';
           throw new Error(`Invalid ${argName} argument to app.use(). Index: ${argIndex}, Type: ${typeof invalidArg}, Value: ${invalidArg}, safeAuthenticateToken type: ${typeof safeAuthenticateToken}`);
         }
-        
+
         logger.debug('About to register organization routes', {
           orgAuthMiddlewareType: typeof orgAuthMiddleware,
           orgAuthMiddlewareIsFunction: typeof orgAuthMiddleware === 'function',
@@ -1115,7 +1125,7 @@ try {
           safeAuthenticateTokenType: typeof safeAuthenticateToken,
           safeAuthenticateTokenIsFunction: typeof safeAuthenticateToken === 'function'
         });
-        
+
         // CRITICAL: Validate one final time right before app.use() call
         // This is the last chance to catch undefined middleware before Express throws the error
         if (typeof orgAuthMiddleware !== 'function') {
@@ -1124,7 +1134,7 @@ try {
         if (!organizationRouter || (typeof organizationRouter !== 'function' && !organizationRouter.stack)) {
           throw new Error(`organizationRouter is invalid right before app.use() call. Type: ${typeof organizationRouter}`);
         }
-        
+
         // Use try-catch around the actual app.use() to catch Express's error and provide better context
         try {
           app.use('/api/organization', orgAuthMiddleware, organizationRouter);
@@ -1140,7 +1150,7 @@ try {
           });
           throw expressError;
         }
-        
+
         if (getMyOrganizations && typeof getMyOrganizations === 'function') {
           // Validate orgAuthMiddleware again before app.get()
           if (typeof orgAuthMiddleware !== 'function') {
@@ -1148,7 +1158,7 @@ try {
           }
           app.get('/organizations', orgAuthMiddleware, getMyOrganizations);
         }
-        
+
         logger.debug('Successfully registered organization routes');
       } catch (useError) {
         logger.error('Error registering organization routes', {
@@ -1169,6 +1179,7 @@ try {
     logger.error('Failed to load organization routes', { error: error.message, stack: error.stack });
     throw error;
   }
+  */
 
   // Register routes with defensive checks to prevent undefined middleware errors
 try {
@@ -1315,7 +1326,21 @@ try {
         }
 
         const { image_data, context, regenerate = false, service = 'alttext-ai', type } = validation.data;
-        logger.info(`[Generate] Request parsed`, { imageId: image_data?.image_id || 'unknown' });
+        
+        // Log detailed image data info for debugging token costs
+        const hasBase64 = !!(image_data?.base64 || image_data?.image_base64);
+        const hasUrl = !!image_data?.url;
+        const imageDimensions = image_data?.width && image_data?.height 
+          ? `${image_data.width}x${image_data.height}` 
+          : 'unknown';
+        logger.info(`[Generate] Request parsed`, { 
+          imageId: image_data?.image_id || 'unknown',
+          hasBase64,
+          hasUrl,
+          imageDimensions,
+          base64Length: image_data?.base64?.length || image_data?.image_base64?.length || 0,
+          urlPreview: image_data?.url ? image_data.url.substring(0, 100) + '...' : null
+        });
 
         // CRITICAL: Use X-Site-Hash for quota tracking, NOT X-WP-User-ID
         // X-WP-User-ID is only for analytics, not for quota tracking
@@ -1542,16 +1567,49 @@ try {
             : image_data?.url ? 'url' 
             : 'none';
           
-          logger.info(`[Generate] OpenAI API call completed`, { 
-            duration: `${duration}ms`,
-            totalTokens,
-            promptTokens,
-            completionTokens,
-            imageDimensions,
-            imageSource,
-            // Warn if token count is unexpectedly high (suggests full-res image was processed)
-            highTokenUsage: totalTokens > 1000 ? `⚠️ High token usage (${totalTokens}). Expected ~170-340 for resized images.` : null
-          });
+          // Calculate expected token range based on image dimensions
+          let expectedTokens = null;
+          if (image_data?.width && image_data?.height) {
+            const maxDim = Math.max(image_data.width, image_data.height);
+            if (maxDim <= 512) {
+              expectedTokens = '~85';
+            } else if (maxDim <= 1024) {
+              expectedTokens = '~170';
+            } else if (maxDim <= 2048) {
+              expectedTokens = '~340';
+            } else {
+              expectedTokens = '~25,000+ (full-res)';
+            }
+          }
+          
+          // Warn if token count is unexpectedly high (suggests full-res image was processed)
+          const isHighTokenUsage = totalTokens > 1000;
+          const tokenWarning = isHighTokenUsage 
+            ? `⚠️ CRITICAL: High token usage (${totalTokens}). Expected ${expectedTokens || '~170-340'} for resized images. This suggests a full-resolution image was processed!` 
+            : null;
+          
+          if (isHighTokenUsage) {
+            logger.error(`[Generate] ⚠️ HIGH TOKEN USAGE DETECTED`, { 
+              totalTokens,
+              expectedTokens,
+              imageDimensions,
+              imageSource,
+              hasBase64: !!(image_data?.base64 || image_data?.image_base64),
+              hasUrl: !!image_data?.url,
+              base64Length: (image_data?.base64 || image_data?.image_base64)?.length || 0,
+              warning: tokenWarning
+            });
+          } else {
+            logger.info(`[Generate] OpenAI API call completed`, { 
+              duration: `${duration}ms`,
+              totalTokens,
+              promptTokens,
+              completionTokens,
+              imageDimensions,
+              imageSource,
+              expectedTokens
+            });
+          }
         } catch (error) {
           logger.error(`[Generate] OpenAI API call failed`, {
             message: error.message,
