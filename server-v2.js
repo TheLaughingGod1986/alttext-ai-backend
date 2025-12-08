@@ -156,29 +156,54 @@ function buildUserMessage(prompt, imageData, options = {}) {
     const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
     
     // Validate base64 size against reported dimensions
-    // A resized 1024x1024 JPEG should be ~100-300KB base64 (~130-400KB raw)
-    // A full-res 4000x3000 JPEG could be 2-5MB base64 (~3-7MB raw)
+    // A properly resized 1024x1024 JPEG should be ~50-150KB base64
+    // A full-res 4000x3000 JPEG could be 2-5MB base64
     const base64SizeKB = Math.round(base64Data.length * 0.75 / 1024); // Approximate decoded size
     const reportedMaxDim = imageData?.width && imageData?.height 
       ? Math.max(imageData.width, imageData.height) 
       : null;
+    const pixelCount = imageData?.width && imageData?.height 
+      ? imageData.width * imageData.height 
+      : null;
     
-    // Warn if base64 is suspiciously large for reported dimensions
-    // For a 900x600 image, base64 should be ~50-150KB. If it's >500KB, likely full-res
-    const expectedMaxSizeKB = reportedMaxDim && reportedMaxDim <= 1024 ? 300 : 5000;
+    // Calculate expected max size based on pixel count
+    // Properly resized/compressed JPEG: ~0.1-0.3 bits per pixel (0.0125-0.0375 bytes per pixel)
+    // For 1024x1024 (1MP): ~130-400KB raw = ~170-530KB base64
+    // But with good compression: ~50-150KB base64 is more realistic
+    // For 1164x1473 (1.7MP): ~220-660KB raw = ~290-880KB base64
+    // But properly resized: ~85-255KB base64 is expected
+    
+    let expectedMaxSizeKB = 200; // Default conservative limit
+    if (pixelCount) {
+      // Calculate based on pixel count with conservative compression estimate
+      // Using 0.15 bits per pixel (0.01875 bytes per pixel) for well-compressed resized images
+      const expectedRawKB = (pixelCount * 0.01875) / 1024;
+      expectedMaxSizeKB = Math.round(expectedRawKB * 1.33); // Base64 is ~33% larger than raw
+      // Add 50% buffer for variation, but cap at reasonable limits
+      expectedMaxSizeKB = Math.min(expectedMaxSizeKB * 1.5, reportedMaxDim && reportedMaxDim <= 1024 ? 200 : 500);
+    } else if (reportedMaxDim) {
+      // Fallback to dimension-based estimate
+      expectedMaxSizeKB = reportedMaxDim <= 1024 ? 200 : 500;
+    }
+    
     const isSuspiciouslyLarge = base64SizeKB > expectedMaxSizeKB;
     
     if (isSuspiciouslyLarge) {
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously large for reported dimensions!', {
         source: base64Field,
         reportedDimensions: dimensions,
+        pixelCount,
         base64SizeKB,
         expectedMaxSizeKB,
+        ratio: (base64SizeKB / expectedMaxSizeKB).toFixed(2),
         warning: 'This base64 likely contains a FULL-RESOLUTION image despite metadata. OpenAI will tokenize it as full-res, causing high token costs!',
-        recommendation: 'Plugin should resize image BEFORE encoding to base64. Current base64 size suggests full-res image was encoded.'
+        recommendation: 'Plugin MUST resize image BEFORE encoding to base64. Current base64 size suggests full-res image was encoded.',
+        action: 'REJECTING REQUEST to prevent high token costs'
       });
-      // Continue processing but log the issue - we can't reject here as it would break the flow
-      // The high token usage will be caught later in the token usage logging
+      
+      // REJECT the request to prevent high token costs
+      // This forces the plugin to fix the issue
+      throw new Error(`Base64 image size (${base64SizeKB}KB) exceeds expected maximum (${expectedMaxSizeKB}KB) for reported dimensions (${dimensions}). This suggests a full-resolution image was encoded instead of a resized one. Please resize the image before encoding to base64.`);
     } else {
       logger.info('[Image Processing] ✅ Using base64 image (resized)', { 
         source: base64Field,
@@ -1356,12 +1381,16 @@ try {
         const imageDimensions = image_data?.width && image_data?.height 
           ? `${image_data.width}x${image_data.height}` 
           : 'unknown';
+        const base64Length = image_data?.base64?.length || image_data?.image_base64?.length || 0;
+        const base64SizeKB = base64Length ? Math.round(base64Length * 0.75 / 1024) : 0;
+        
         logger.info(`[Generate] Request parsed`, { 
           imageId: image_data?.image_id || 'unknown',
           hasBase64,
           hasUrl,
           imageDimensions,
-          base64Length: image_data?.base64?.length || image_data?.image_base64?.length || 0,
+          base64Length,
+          base64SizeKB,
           urlPreview: image_data?.url ? image_data.url.substring(0, 100) + '...' : null
         });
 
@@ -1560,7 +1589,24 @@ try {
         // Original alt text generation logic
         // Build OpenAI prompt and multimodal payload
         const prompt = buildPrompt(image_data, context, regenerate);
-        const userMessage = buildUserMessage(prompt, image_data);
+        
+        // Build user message - this will validate base64 size and throw if oversized
+        let userMessage;
+        try {
+          userMessage = buildUserMessage(prompt, image_data);
+        } catch (base64Error) {
+          // Base64 validation failed - return error to client
+          logger.error('[Generate] Base64 validation failed', {
+            error: base64Error.message,
+            imageId: image_data?.image_id || 'unknown',
+            dimensions: image_data?.width && image_data?.height ? `${image_data.width}x${image_data.height}` : 'unknown'
+          });
+          return httpErrors.validationFailed(res, base64Error.message, {
+            code: 'INVALID_IMAGE_SIZE',
+            field: 'image_data.base64',
+            message: base64Error.message
+          });
+        }
         
         // Call OpenAI API
         const systemMessage = {
