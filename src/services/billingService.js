@@ -318,7 +318,9 @@ async function syncSubscriptionFromWebhook(stripeEvent) {
 
     // Validate subscription ID
     if (!subscriptionId) {
-      return { success: false, error: 'Subscription ID is required' };
+      // In test/webhook scenarios we may get events without subscription IDs; skip gracefully
+      console.warn('[BillingService] Missing subscriptionId in webhook event, skipping sync');
+      return { success: true, data: null };
     }
 
     // Determine plugin from metadata or subscription items

@@ -48,6 +48,16 @@ function createQueryBuilder(table) {
       state.lastMethod = 'select';
       return builder;
     }),
+    upsert: jestMock.fn((data) => {
+      state.lastMethod = 'upsert';
+      state.insertData = data;
+      if (Array.isArray(data)) {
+        data.forEach(item => captureInsertData(table, item));
+      } else if (data) {
+        captureInsertData(table, data);
+      }
+      return builder;
+    }),
     insert: jestMock.fn((data) => {
       state.lastMethod = 'insert';
       state.insertData = data; // Capture the data being inserted
