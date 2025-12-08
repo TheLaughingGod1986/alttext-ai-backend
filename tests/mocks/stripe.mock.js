@@ -44,95 +44,147 @@ function updateSubscription(subscriptionId, updates) {
   return subscription;
 }
 
+/**
+ * Create a Proxy-based mock that auto-generates methods for ANY Stripe API call
+ * This prevents "undefined is not a function" errors for missing methods
+ */
+function createStripeResourceProxy(resourceName) {
+  return new Proxy({}, {
+    get(target, method) {
+      // Return existing method if defined
+      if (target[method]) {
+        return target[method];
+      }
+
+      // Auto-generate a mock for any missing method
+      const mockFn = jestMock.fn().mockResolvedValue({
+        id: `${resourceName}_${method}_test`,
+        object: resourceName,
+        data: []
+      });
+
+      // Cache the mock so repeated calls get the same function
+      target[method] = mockFn;
+      return mockFn;
+    }
+  });
+}
+
 class StripeMock {
   constructor() {
-    // Checkout sessions with consistent IDs
-    this.checkout = {
-      sessions: {
-        create: jestMock.fn(async (params) => {
-          checkoutSessionCounter++;
-          const sessionId = `cs_test_${String(checkoutSessionCounter).padStart(5, '0')}`;
-          return {
-            id: sessionId,
-            url: `https://checkout.test/session/${sessionId}`
-          };
-        }),
-        retrieve: jestMock.fn().mockResolvedValue({
-          id: 'cs_test_00001',
-          line_items: { data: [{ price: { id: 'price_test' } }] }
-        })
-      }
-    };
+    // Checkout sessions with consistent IDs (special behavior)
+    const checkoutSessions = createStripeResourceProxy('checkout_session');
+    checkoutSessions.create = jestMock.fn(async (params) => {
+      checkoutSessionCounter++;
+      const sessionId = `cs_test_${String(checkoutSessionCounter).padStart(5, '0')}`;
+      return {
+        id: sessionId,
+        url: `https://checkout.test/session/${sessionId}`
+      };
+    });
+    checkoutSessions.retrieve = jestMock.fn().mockResolvedValue({
+      id: 'cs_test_00001',
+      line_items: { data: [{ price: { id: 'price_test' } }] }
+    });
 
-    // Billing portal sessions with consistent IDs
-    this.billingPortal = {
-      sessions: {
-        create: jestMock.fn(async (params) => {
-          portalSessionCounter++;
-          const sessionId = `bps_test_${String(portalSessionCounter).padStart(5, '0')}`;
-          return {
-            id: sessionId,
-            url: `https://stripe.test/portal/session/${sessionId}`
-          };
-        })
-      }
-    };
+    this.checkout = createStripeResourceProxy('checkout');
+    this.checkout.sessions = checkoutSessions;
 
-    // Subscriptions with state persistence
-    this.subscriptions = {
-      retrieve: jestMock.fn(async (subscriptionId) => {
-        // If override is set, use it (for testing errors)
-        if (subscriptionRetrieveOverride !== null) {
-          if (typeof subscriptionRetrieveOverride === 'function') {
-            return subscriptionRetrieveOverride(subscriptionId);
-          }
-          throw subscriptionRetrieveOverride;
+    // Billing portal sessions with consistent IDs (special behavior)
+    const portalSessions = createStripeResourceProxy('billing_portal_session');
+    portalSessions.create = jestMock.fn(async (params) => {
+      portalSessionCounter++;
+      const sessionId = `bps_test_${String(portalSessionCounter).padStart(5, '0')}`;
+      return {
+        id: sessionId,
+        url: `https://stripe.test/portal/session/${sessionId}`
+      };
+    });
+
+    this.billingPortal = createStripeResourceProxy('billing_portal');
+    this.billingPortal.sessions = portalSessions;
+
+    // Subscriptions with state persistence (special behavior)
+    this.subscriptions = createStripeResourceProxy('subscription');
+    this.subscriptions.retrieve = jestMock.fn(async (subscriptionId) => {
+      // If override is set, use it (for testing errors)
+      if (subscriptionRetrieveOverride !== null) {
+        if (typeof subscriptionRetrieveOverride === 'function') {
+          return subscriptionRetrieveOverride(subscriptionId);
         }
-        // Default subscription ID if not provided
-        const subId = subscriptionId || 'sub_test';
-        return getSubscription(subId);
-      }),
-      update: jestMock.fn(async (subscriptionId, updates) => {
-        return updateSubscription(subscriptionId, updates);
-      }),
-      cancel: jestMock.fn(async (subscriptionId) => {
-        return updateSubscription(subscriptionId, { 
-          status: 'canceled',
-          canceled_at: Math.floor(Date.now() / 1000)
-        });
-      })
-    };
+        throw subscriptionRetrieveOverride;
+      }
+      // Default subscription ID if not provided
+      const subId = subscriptionId || 'sub_test';
+      return getSubscription(subId);
+    });
+    this.subscriptions.update = jestMock.fn(async (subscriptionId, updates) => {
+      return updateSubscription(subscriptionId, updates);
+    });
+    this.subscriptions.cancel = jestMock.fn(async (subscriptionId) => {
+      return updateSubscription(subscriptionId, {
+        status: 'canceled',
+        canceled_at: Math.floor(Date.now() / 1000)
+      });
+    });
 
-    this.prices = {
-      list: jestMock.fn().mockResolvedValue({ data: [] })
-    };
+    // Prices with Proxy fallback
+    this.prices = createStripeResourceProxy('price');
+    this.prices.list = jestMock.fn().mockResolvedValue({ data: [] });
 
-    this.customers = {
-      create: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' }),
-      retrieve: jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' })
-    };
+    // Customers with Proxy fallback
+    this.customers = createStripeResourceProxy('customer');
+    this.customers.create = jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' });
+    this.customers.retrieve = jestMock.fn().mockResolvedValue({ id: 'cus_test', email: 'test@example.com' });
+    this.customers.list = jestMock.fn().mockResolvedValue({ data: [{ id: 'cus_test', email: 'test@example.com' }] });
 
-    this.paymentMethods = {
-      retrieve: jestMock.fn(async (pmId) => {
-        // If override is set, use it
-        if (paymentMethodOverride !== null) {
-          return paymentMethodOverride;
+    // Payment methods with override support (special behavior)
+    this.paymentMethods = createStripeResourceProxy('payment_method');
+    this.paymentMethods.retrieve = jestMock.fn(async (pmId) => {
+      // If override is set, use it
+      if (paymentMethodOverride !== null) {
+        return paymentMethodOverride;
+      }
+      // Default behavior
+      return {
+        card: {
+          last4: '4242',
+          brand: 'visa',
+          exp_month: 12,
+          exp_year: 2030
         }
-        // Default behavior
-        return {
-          card: {
-            last4: '4242',
-            brand: 'visa',
-            exp_month: 12,
-            exp_year: 2030
-          }
-        };
-      })
-    };
+      };
+    });
 
-    this.webhooks = {
-      constructEvent: jestMock.fn((payload) => payload)
-    };
+    // Invoices with Proxy fallback
+    this.invoices = createStripeResourceProxy('invoice');
+    this.invoices.list = jestMock.fn().mockResolvedValue({ data: [] });
+    this.invoices.retrieve = jestMock.fn().mockResolvedValue({
+      id: 'in_test',
+      customer: 'cus_test',
+      subscription: 'sub_test',
+      status: 'paid'
+    });
+
+    // Webhooks with special behavior
+    this.webhooks = createStripeResourceProxy('webhook');
+    this.webhooks.constructEvent = jestMock.fn((payload) => payload);
+
+    // Auto-generate ANY other Stripe resources not explicitly defined
+    // This catches charges, paymentIntents, refunds, disputes, etc.
+    return new Proxy(this, {
+      get(target, prop) {
+        // Return existing property if defined
+        if (target[prop]) {
+          return target[prop];
+        }
+
+        // Auto-generate a resource proxy for any undefined Stripe resource
+        const resource = createStripeResourceProxy(prop);
+        target[prop] = resource;
+        return resource;
+      }
+    });
   }
 }
 
@@ -144,42 +196,124 @@ const StripeConstructor = jestMock.fn(() => {
 function resetStripeMock() {
   // Clear subscription store
   subscriptionStore.clear();
-  
+
   // Reset payment method override
   paymentMethodOverride = null;
-  
+
   // Reset subscription retrieve override
   subscriptionRetrieveOverride = null;
-  
+
   // Reset session counters
   checkoutSessionCounter = 0;
   portalSessionCounter = 0;
-  
-  if (lastInstance) {
-    const sections = [
-      lastInstance.checkout.sessions,
-      lastInstance.billingPortal.sessions,
-      lastInstance.subscriptions,
-      lastInstance.prices,
-      lastInstance.customers,
-      lastInstance.paymentMethods,
-      lastInstance.webhooks
-    ];
 
-    sections.forEach((section) => {
-      Object.values(section).forEach((fn) => {
-        if (typeof fn.mockReset === 'function') {
-          fn.mockReset();
+  if (lastInstance) {
+    // Helper to recursively reset all mock functions in an object
+    function resetAllMocks(obj) {
+      if (!obj || typeof obj !== 'object') return;
+
+      Object.keys(obj).forEach((key) => {
+        const value = obj[key];
+
+        // If it's a mock function, reset it
+        if (value && typeof value.mockReset === 'function') {
+          value.mockReset();
+        }
+
+        // If it's an object, recursively reset its children
+        if (value && typeof value === 'object' && !value.mockReset) {
+          resetAllMocks(value);
         }
       });
-    });
-    
-    // Reset subscription retrieve to default behavior
+    }
+
+    // Reset all resources
+    resetAllMocks(lastInstance.checkout);
+    resetAllMocks(lastInstance.billingPortal);
+    resetAllMocks(lastInstance.subscriptions);
+    resetAllMocks(lastInstance.prices);
+    resetAllMocks(lastInstance.customers);
+    resetAllMocks(lastInstance.paymentMethods);
+    resetAllMocks(lastInstance.invoices);
+    resetAllMocks(lastInstance.webhooks);
+
+    // Re-apply default implementations to special methods
     lastInstance.subscriptions.retrieve.mockImplementation(async (subscriptionId) => {
+      if (subscriptionRetrieveOverride !== null) {
+        if (typeof subscriptionRetrieveOverride === 'function') {
+          return subscriptionRetrieveOverride(subscriptionId);
+        }
+        throw subscriptionRetrieveOverride;
+      }
       const subId = subscriptionId || 'sub_test';
       return getSubscription(subId);
     });
+
+    lastInstance.subscriptions.update.mockImplementation(async (subscriptionId, updates) => {
+      return updateSubscription(subscriptionId, updates);
+    });
+
+    lastInstance.subscriptions.cancel.mockImplementation(async (subscriptionId) => {
+      return updateSubscription(subscriptionId, {
+        status: 'canceled',
+        canceled_at: Math.floor(Date.now() / 1000)
+      });
+    });
+
+    lastInstance.customers.create.mockResolvedValue({ id: 'cus_test', email: 'test@example.com' });
+    lastInstance.customers.retrieve.mockResolvedValue({ id: 'cus_test', email: 'test@example.com' });
+    lastInstance.customers.list.mockResolvedValue({ data: [{ id: 'cus_test', email: 'test@example.com' }] });
+
+    lastInstance.paymentMethods.retrieve.mockImplementation(async (pmId) => {
+      if (paymentMethodOverride !== null) {
+        return paymentMethodOverride;
+      }
+      return {
+        card: {
+          last4: '4242',
+          brand: 'visa',
+          exp_month: 12,
+          exp_year: 2030
+        }
+      };
+    });
+
+    lastInstance.checkout.sessions.create.mockImplementation(async (params) => {
+      checkoutSessionCounter++;
+      const sessionId = `cs_test_${String(checkoutSessionCounter).padStart(5, '0')}`;
+      return {
+        id: sessionId,
+        url: `https://checkout.test/session/${sessionId}`
+      };
+    });
+
+    lastInstance.checkout.sessions.retrieve.mockResolvedValue({
+      id: 'cs_test_00001',
+      line_items: { data: [{ price: { id: 'price_test' } }] }
+    });
+
+    lastInstance.billingPortal.sessions.create.mockImplementation(async (params) => {
+      portalSessionCounter++;
+      const sessionId = `bps_test_${String(portalSessionCounter).padStart(5, '0')}`;
+      return {
+        id: sessionId,
+        url: `https://stripe.test/portal/session/${sessionId}`
+      };
+    });
+
+    lastInstance.prices.list.mockResolvedValue({ data: [] });
+
+    lastInstance.invoices.list.mockResolvedValue({ data: [] });
+    lastInstance.invoices.retrieve.mockResolvedValue({
+      id: 'in_test',
+      customer: 'cus_test',
+      subscription: 'sub_test',
+      status: 'paid'
+    });
+
+    lastInstance.webhooks.constructEvent.mockImplementation((payload) => payload);
   }
+
   StripeConstructor.mockClear();
 }
 

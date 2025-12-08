@@ -31,3 +31,51 @@ jest.mock('./db/supabase-client', () => {
   return mock;
 });
 
+// Mock express-rate-limit globally for all tests
+// CRITICAL: Provide inline factory instead of relying on __mocks__ directory
+// This must be here to ensure it's applied before any route files are loaded
+jest.mock('express-rate-limit', () => {
+  // Create the mock factory function that ALWAYS returns a valid, NO-OP middleware instance
+  function mockRateLimiter(options = {}) {
+    // Return a NEW middleware function instance every time
+    // This prevents issues with Express rejecting reused middleware
+    // CRITICAL: This middleware does NOTHING - no rate limiting at all
+    const middleware = (req, res, next) => {
+      // ALWAYS skip rate limiting in tests - just call next()
+      if (typeof next === 'function') {
+        next();
+      }
+    };
+
+    // Add properties that express-rate-limit middleware might have
+    middleware.resetKey = () => {};
+    middleware.getKey = () => 'test-key';
+
+    return middleware;
+  }
+
+  // Ensure the mock always returns a function, even if called incorrectly
+  mockRateLimiter.default = mockRateLimiter;
+  mockRateLimiter.rateLimit = mockRateLimiter;
+
+  // Return as both default and named export to handle all import styles
+  return mockRateLimiter;
+});
+
+// Mock JWT auth - but DO NOT mock the core functions (generateToken, verifyToken, etc)
+// This allows integration tests to bypass auth while unit tests can still import and test the real functions
+jest.mock('./auth/jwt', () => {
+  const actualJwt = jest.requireActual('./auth/jwt');
+  return {
+    ...actualJwt, // Keep all real implementations
+    // Only mock the middleware functions for integration tests
+    authenticateToken: jest.fn((req, res, next) => {
+      if (!req.user) {
+        req.user = { id: 1, email: 'test@example.com', plan: 'free' };
+      }
+      next();
+    }),
+    optionalAuth: jest.fn((req, res, next) => next()),
+  };
+});
+

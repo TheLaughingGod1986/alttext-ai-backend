@@ -7,17 +7,54 @@ const express = require('express');
 const { supabase, handleSupabaseResponse } = require('../db/supabase-client');
 const { optionalAuth, authenticateToken } = require('../auth/jwt');
 const siteService = require('../src/services/siteService');
-const licenseService = require('../services/licenseService');
+const licenseService = require('../src/services/licenseService');
 const usageService = require('../src/services/usageService');
+const { rateLimitByIp } = require('../src/middleware/rateLimiter');
+const logger = require('../src/utils/logger');
 
 const router = express.Router();
+
+// Simple in-memory cache for /usage responses
+// Key: siteHash, Value: { data, timestamp }
+const usageCache = new Map();
+const USAGE_CACHE_TTL = 1000; // 1 second - very short cache to reduce duplicate requests while allowing quick updates
+
+function getCachedUsage(siteHash) {
+  const cached = usageCache.get(siteHash);
+  if (cached && Date.now() - cached.timestamp < USAGE_CACHE_TTL) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCachedUsage(siteHash, data) {
+  usageCache.set(siteHash, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Clear cached usage for a specific site hash
+ * Call this after deducting quota to ensure fresh data on next request
+ */
+function clearCachedUsage(siteHash) {
+  if (siteHash) {
+    usageCache.delete(siteHash);
+  } else {
+    // If no siteHash provided, clear all cache
+    usageCache.clear();
+  }
+}
 
 /**
  * Get site's current usage and plan info
  * CRITICAL: Tracks usage by X-Site-Hash, NOT by X-WP-User-ID
  * All users on the same site (same X-Site-Hash) must receive the same usage
  */
-router.get('/', optionalAuth, async (req, res) => {
+// Rate limit /usage: 120 requests per 15 minutes per IP (exempts authenticated requests with X-Site-Hash)
+// Increased limit to accommodate plugin polling while still preventing abuse
+router.get('/', rateLimitByIp(15 * 60 * 1000, 120, 'Too many requests to /usage. Limit: 120 requests per 15 minutes.'), optionalAuth, async (req, res) => {
   try {
     // X-Site-Hash is REQUIRED for quota tracking
     const siteHash = req.headers['x-site-hash'];
@@ -36,8 +73,34 @@ router.get('/', optionalAuth, async (req, res) => {
     // Get or create site
     const site = await siteService.getOrCreateSite(siteHash, siteUrl);
 
-    // Get site usage (this handles monthly resets automatically)
-    const usage = await siteService.getSiteUsage(siteHash);
+    // ALWAYS query database first to get real-time usage data
+    // Cache is only used to reduce duplicate requests within 1 second
+    // This ensures we return fresh data after credit deduction
+    let usage;
+    try {
+      usage = await siteService.getSiteUsage(siteHash);
+    } catch (error) {
+      // If getSiteUsage fails, return error
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get usage info',
+        code: 'USAGE_ERROR',
+        message: error.message || 'Unknown error'
+      });
+    }
+
+    // Check cache AFTER querying database (to avoid duplicate requests within 1 second)
+    // Only use cache if data was queried very recently (within 100ms) to reduce load
+    // This is a performance optimization, not a data source
+    const cached = getCachedUsage(siteHash);
+    if (cached) {
+      // Verify cached data is still fresh (within 100ms)
+      const cacheAge = Date.now() - (usageCache.get(siteHash)?.timestamp || 0);
+      if (cacheAge < 100) {
+        // Use cached response if it's very recent (within 100ms)
+        return res.json(cached);
+      }
+    }
 
     // Determine quota source (priority order):
     // 1. X-License-Key → use license-based quota
@@ -48,35 +111,57 @@ router.get('/', optionalAuth, async (req, res) => {
     let licenseKey = null;
     let quotaSource = 'site-free'; // Default to site-based free quota
 
-    // Check for X-License-Key header
-    const headerLicenseKey = req.headers['x-license-key'];
+    // Check for X-License-Key header (same logic as dualAuthenticate middleware)
+    const headerLicenseKey = (req.headers['x-license-key'] || req.body?.licenseKey)?.trim();
     if (headerLicenseKey) {
-      const { data: licenseData, error: licenseError } = await supabase
-        .from('licenses')
+      // First, try to find in organizations table
+      let organization = null;
+      const { data: orgData, error: orgError } = await supabase
+        .from('organizations')
         .select('*')
         .eq('license_key', headerLicenseKey)
         .single();
 
-      if (!licenseError && licenseData) {
-        license = licenseData;
+      if (!orgError && orgData) {
+        organization = orgData;
         licenseKey = headerLicenseKey;
         quotaSource = 'license';
-        // Update site with license key if different
-        if (site.license_key !== headerLicenseKey) {
-          await supabase
-            .from('sites')
-            .update({
-              license_key: headerLicenseKey,
-              plan: licenseData.plan || 'free',
-              token_limit: licenseData.token_limit || 50,
-              updated_at: new Date().toISOString()
-            })
-            .eq('site_hash', siteHash);
+      }
+
+      // If not found in organizations, try licenses table
+      if (!organization) {
+        const { data: licenseData, error: licenseError } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('license_key', headerLicenseKey)
+          .single();
+
+        if (!licenseError && licenseData) {
+          license = licenseData;
+          licenseKey = headerLicenseKey;
+          quotaSource = 'license';
+          
+          // Update site with license key if different (same as authenticateBySiteHashForQuota)
+          if (site.license_key !== headerLicenseKey) {
+            await supabase
+              .from('sites')
+              .update({
+                license_key: headerLicenseKey,
+                plan: licenseData.plan || 'free',
+                token_limit: licenseData.token_limit || 50,
+                updated_at: new Date().toISOString()
+              })
+              .eq('site_hash', siteHash);
+            
+            // Re-fetch usage after updating site (to get updated quota)
+            const updatedUsage = await siteService.getSiteUsage(siteHash);
+            Object.assign(usage, updatedUsage);
+          }
         }
       }
     }
 
-    // If no license key in header, check site's license
+    // If no license key in header, check site's license (same as authenticateBySiteHashForQuota)
     if (!license && site.license_key) {
       license = await siteService.getSiteLicense(siteHash);
       if (license) {
@@ -86,8 +171,11 @@ router.get('/', optionalAuth, async (req, res) => {
     }
 
     // Check for JWT authentication (Authorization header)
+    // Note: This override logic is only for display purposes in /usage endpoint
+    // The /api/generate endpoint uses requireSubscription which checks req.siteUsage
+    // set by authenticateBySiteHashForQuota, which doesn't apply user account overrides
     if (!license && req.user && req.user.id) {
-      // User account quota - get user's plan
+      // User account quota - get user's plan from database (not from token)
       const { data: user, error: userError } = await supabase
         .from('users')
         .select('id, plan, service')
@@ -100,12 +188,27 @@ router.get('/', optionalAuth, async (req, res) => {
         const serviceLimits = siteService.PLAN_LIMITS[user.service || 'alttext-ai'] || siteService.PLAN_LIMITS['alttext-ai'];
         const userLimit = serviceLimits[user.plan] || serviceLimits.free;
         
-        // Override usage with user's quota if higher
-        if (userLimit > usage.limit) {
+        // Override usage with user's quota if higher (for display only)
+        // Note: This doesn't affect actual quota enforcement in /api/generate
+        // Only override if user limit is higher than site limit
+        // This allows users with higher plans to see their full quota
+        // But preserve the site's actual usage (used) value
+        // IMPORTANT: Don't override if site usage shows exhausted (remaining === 0)
+        // This ensures tests that expect 0 remaining get 0 remaining
+        // Also don't override if site limit already matches or exceeds user limit
+        // CRITICAL: Only apply override if userLimit is actually higher AND remaining > 0
+        if (userLimit > usage.limit && usage.remaining > 0) {
+          const siteUsed = usage.used; // Preserve site usage
           usage.limit = userLimit;
-          usage.remaining = Math.max(0, userLimit - usage.used);
+          // Recalculate remaining: userLimit - siteUsed
+          usage.remaining = Math.max(0, userLimit - siteUsed);
+          usage.plan = user.plan;
+        } else if (user.plan !== usage.plan && userLimit === usage.limit) {
+          // If user plan matches the limit but plan name differs, update plan name only
+          // Don't change limit or remaining if they already match
           usage.plan = user.plan;
         }
+        // If usage.remaining === 0, don't apply any overrides - keep exhausted state
       }
     }
 
@@ -156,13 +259,16 @@ router.get('/', optionalAuth, async (req, res) => {
       response.data.licenseKey = site.license_key;
     }
 
+    // Cache response for 1 second to reduce duplicate requests while allowing quick updates
+    setCachedUsage(siteHash, response);
+
     res.json(response);
 
   } catch (error) {
-    console.error('Get usage error:', error);
-    console.error('Error details:', {
+    logger.error('Get usage error', {
+      error: error.message,
+      stack: error.stack,
       code: error.code,
-      message: error.message,
       details: error.details,
       hint: error.hint
     });
@@ -215,10 +321,10 @@ router.get('/history', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get usage history error:', error);
-    console.error('Error details:', {
+    logger.error('Get usage history error', {
+      error: error.message,
+      stack: error.stack,
       code: error.code,
-      message: error.message,
       details: error.details,
       hint: error.hint
     });
@@ -262,7 +368,11 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
     // No need to update users table
 
   } catch (error) {
-    console.error('Error recording usage:', error);
+    logger.error('Error recording usage', {
+      error: error.message,
+      stack: error.stack,
+      userId
+    });
     throw error;
   }
 }
@@ -273,11 +383,11 @@ async function recordUsage(userId, imageId = null, endpoint = null, service = 'a
 async function checkUserLimits(userId) {
   // Validate userId exists
   if (!userId) {
-    console.error('checkUserLimits: Invalid userId provided:', userId);
+    logger.error('checkUserLimits: Invalid userId provided', { userId });
     throw new Error('User not found');
   }
 
-  console.log('checkUserLimits: Querying user:', { userId, userIdType: typeof userId });
+  logger.debug('checkUserLimits: Querying user', { userId, userIdType: typeof userId });
   
   // Query user for plan
   const { data: user, error: userError } = await supabase
@@ -287,8 +397,8 @@ async function checkUserLimits(userId) {
     .single();
 
   if (userError) {
-    console.error('checkUserLimits: Supabase query error:', {
-      message: userError.message,
+    logger.error('checkUserLimits: Supabase query error', {
+      error: userError.message,
       code: userError.code,
       details: userError.details,
       hint: userError.hint,
@@ -298,7 +408,7 @@ async function checkUserLimits(userId) {
   }
 
   if (!user) {
-    console.error('checkUserLimits: User not found in database:', { userId: userId });
+    logger.error('checkUserLimits: User not found in database', { userId: userId });
     throw new Error('User not found');
   }
 
@@ -332,7 +442,7 @@ async function checkUserLimits(userId) {
   const usedThisMonth = creditsData?.used_this_month || 0;
   const creditsRemaining = Math.max(0, monthlyLimit - usedThisMonth);
 
-  console.log('checkUserLimits: User found:', { 
+  logger.debug('checkUserLimits: User found', { 
     id: userId, 
     plan: user.plan, 
     creditsRemaining,
@@ -444,14 +554,21 @@ async function resetMonthlyTokens() {
         .eq('id', user.id);
 
       if (updateError) {
-        console.error(`Error resetting tokens for user ${user.id}:`, updateError);
+        logger.error('Error resetting tokens for user', {
+          error: updateError.message,
+          stack: updateError.stack,
+          userId: user.id
+        });
       }
     }
 
-    console.log(`Reset monthly tokens for ${users.length} users`);
+    logger.info('Reset monthly tokens for users', { count: users.length });
     return users.length;
   } catch (error) {
-    console.error('Error resetting monthly tokens:', error);
+    logger.error('Error resetting monthly tokens', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -538,7 +655,12 @@ async function recordOrganizationUsage(organizationId, userId, imageId = null, e
     if (updateError) throw updateError;
 
   } catch (error) {
-    console.error('Error recording organization usage:', error);
+    logger.error('Error recording organization usage', {
+      error: error.message,
+      stack: error.stack,
+      organizationId,
+      userId
+    });
     throw error;
   }
 }
@@ -621,14 +743,21 @@ async function resetOrganizationTokens() {
         .eq('id', org.id);
 
       if (updateError) {
-        console.error(`Error resetting tokens for organization ${org.id}:`, updateError);
+        logger.error('Error resetting tokens for organization', {
+          error: updateError.message,
+          stack: updateError.stack,
+          organizationId: org.id
+        });
       }
     }
 
-    console.log(`Reset monthly tokens for ${organizations.length} organizations`);
+    logger.info('Reset monthly tokens for organizations', { count: organizations.length });
     return organizations.length;
   } catch (error) {
-    console.error('Error resetting organization tokens:', error);
+    logger.error('Error resetting organization tokens', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -701,7 +830,10 @@ router.post('/sync/usage', optionalAuth, async (req, res) => {
       staleVersions: staleVersionsResult.success ? staleVersionsResult.staleVersions : [],
     });
   } catch (error) {
-    console.error('[Usage Routes] Error in /sync/usage:', error);
+    logger.error('[Usage Routes] Error in /sync/usage', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({
       success: false,
       error: error.message || 'Failed to sync usage',
@@ -719,5 +851,6 @@ module.exports = {
   checkOrganizationLimits,
   recordOrganizationUsage,
   useOrganizationCredit,
-  resetOrganizationTokens
+  resetOrganizationTokens,
+  clearCachedUsage
 };

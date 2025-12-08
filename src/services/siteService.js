@@ -35,9 +35,10 @@ function getTokenLimit(plan, service = 'alttext-ai') {
  * Get or create site record
  * @param {string} siteHash - 32-character site identifier
  * @param {string} siteUrl - WordPress site URL (optional)
+ * @param {string} licenseKey - License key to associate with site (optional)
  * @returns {Promise<Object>} Site record
  */
-async function getOrCreateSite(siteHash, siteUrl = null) {
+async function getOrCreateSite(siteHash, siteUrl = null, licenseKey = null) {
   try {
     // Use upsert to atomically get or create site
     // This prevents race conditions when multiple requests try to create the same site
@@ -55,6 +56,11 @@ async function getOrCreateSite(siteHash, siteUrl = null) {
       reset_date: resetDate,
       updated_at: now.toISOString()
     };
+
+    // If licenseKey provided, include it in siteData
+    if (licenseKey) {
+      siteData.license_key = licenseKey.trim();
+    }
 
     // Only set created_at if this is a new site (upsert won't overwrite existing created_at)
     // Use upsert with ON CONFLICT to handle existing sites gracefully
@@ -74,21 +80,37 @@ async function getOrCreateSite(siteHash, siteUrl = null) {
         .select('*')
         .eq('site_hash', siteHash)
         .single();
+      
+      // Log upsert error for debugging
+      logger.warn('[SiteService] Upsert failed, attempting to get existing site', {
+        siteHash: siteHash.substring(0, 8) + '...',
+        error: upsertError.message
+      });
 
       if (!getError && existingSite) {
-        // Update site_url if provided and different
+        // Update site_url and/or license_key if provided and different
+        const updateData = {};
         if (siteUrl && existingSite.site_url !== siteUrl) {
+          updateData.site_url = siteUrl;
+        }
+        if (licenseKey && existingSite.license_key !== licenseKey.trim()) {
+          updateData.license_key = licenseKey.trim();
+        }
+        
+        if (Object.keys(updateData).length > 0) {
+          updateData.updated_at = now.toISOString();
           const { data: updatedSite, error: updateError } = await supabase
             .from('sites')
-            .update({
-              site_url: siteUrl,
-              updated_at: now.toISOString()
-            })
+            .update(updateData)
             .eq('site_hash', siteHash)
             .select()
             .single();
 
           if (!updateError && updatedSite) {
+            logger.info('[SiteService] Updated existing site', {
+              siteHash: siteHash.substring(0, 8) + '...',
+              updatedFields: Object.keys(updateData)
+            });
             return updatedSite;
           }
         }

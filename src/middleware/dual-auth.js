@@ -145,11 +145,26 @@ async function dualAuthenticate(req, res, next) {
           .single();
 
         if (siteError || !site) {
-          logger.warn('[DualAuth] Site not found for site hash', {
+          // Site not found - auto-create it and associate with license
+          logger.info('[DualAuth] Site not found, auto-creating site with license', {
             siteHash: `${trimmedSiteHash.substring(0, 8)}...`,
             licenseKey: `${trimmedLicenseKey.substring(0, 8)}...`
           });
-          // Don't fail here - site might be created later
+          
+          try {
+            // Auto-create site and associate with license key
+            const siteUrl = req.headers['x-site-url'] || req.body?.siteUrl;
+            await siteService.getOrCreateSite(trimmedSiteHash, siteUrl, trimmedLicenseKey);
+            logger.info('[DualAuth] Successfully auto-created site with license', {
+              siteHash: `${trimmedSiteHash.substring(0, 8)}...`
+            });
+          } catch (createError) {
+            logger.error('[DualAuth] Failed to auto-create site', {
+              error: createError.message,
+              siteHash: `${trimmedSiteHash.substring(0, 8)}...`
+            });
+            // Don't fail here - site creation will be retried later if needed
+          }
         } else {
           // Verify license key matches site's license key
           if (site.license_key && site.license_key !== trimmedLicenseKey) {
@@ -411,8 +426,15 @@ async function authenticateBySiteHashForQuota(req, res, next) {
   }
 
   try {
-    // Get or create site (will create with free plan if doesn't exist)
-    const site = await siteService.getOrCreateSite(siteHash, req.headers['x-site-url'] || req.body?.siteUrl);
+    // Get license key from request if available (may have been set by dualAuthenticate)
+    const licenseKey = req.licenseKey || req.headers['x-license-key'] || req.body?.licenseKey;
+    
+    // Get or create site (will create with free plan if doesn't exist, or associate with license if provided)
+    const site = await siteService.getOrCreateSite(
+      siteHash, 
+      req.headers['x-site-url'] || req.body?.siteUrl,
+      licenseKey ? licenseKey.trim() : null
+    );
 
     // Get site usage/quota info
     const usage = await siteService.getSiteUsage(siteHash);
