@@ -1792,6 +1792,7 @@ try {
             const promptLength = promptText.length;
             const imageContent = userMessage?.content?.find(c => c.type === 'image_url');
             const dataUrlLength = imageContent?.image_url?.url?.length || 0;
+            const detailLevel = imageContent?.image_url?.detail || 'unknown';
             
             logger.error(`[Generate] ⚠️ HIGH TOKEN USAGE DETECTED`, { 
               totalTokens,
@@ -1807,7 +1808,7 @@ try {
               reportedMaxDim,
               promptLength,
               dataUrlLength,
-              detailLevel: imageContent?.image_url?.detail || 'unknown',
+              detailLevel,
               rootCause: base64SizeKB > 500 && reportedMaxDim && reportedMaxDim <= 1024
                 ? 'Base64 contains full-resolution image despite metadata claiming resized dimensions. Plugin needs to resize BEFORE encoding to base64.'
                 : promptTokens > 1000 && detailLevel === 'low'
