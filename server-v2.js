@@ -1044,11 +1044,7 @@ try {
   logger.error('Failed to register licenseRoutes', { error: e.message });
   throw e;
 }
-  // TEMPORARILY DISABLED: Organization routes require organizations and organization_members tables
-  // TODO: Create organizations table and organization_members table in Supabase, then uncomment
-  logger.warn('Organization routes temporarily disabled - missing database tables (organizations, organization_members)');
-
-  /* COMMENTED OUT UNTIL DATABASE TABLES ARE CREATED
+  // Organization routes - tables have been created, enabling routes
   // Load organization routes with error handling
   try {
     // First, verify localAuthenticateToken and safeAuthenticateToken are available BEFORE requiring organization routes
@@ -1207,7 +1203,6 @@ try {
     logger.error('Failed to load organization routes', { error: error.message, stack: error.stack });
     throw error;
   }
-  */
 
   // Register routes with defensive checks to prevent undefined middleware errors
 try {
