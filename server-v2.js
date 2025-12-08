@@ -391,8 +391,35 @@ function buildUserMessage(prompt, imageData, options = {}) {
 
   return {
     role: 'user',
-    content: prompt
+    content: [
+      { type: 'text', text: prompt }
+    ]
   };
+}
+
+// Ensure message content is always an array of parts to avoid runtime errors when iterating
+function normalizeMessageContent(message) {
+  if (!message) return [];
+  const content = message.content;
+
+  if (Array.isArray(content)) {
+    return content;
+  }
+
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }];
+  }
+
+  if (content && typeof content === 'object') {
+    if (typeof content.text === 'string') {
+      return [{ type: 'text', text: content.text }];
+    }
+    if (content.type && content.text) {
+      return [content];
+    }
+  }
+
+  return [];
 }
 
 function getNextResetDate() {
@@ -596,6 +623,7 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
 
   const prompt = buildReviewPrompt(altText, imageData, context);
   const userMessage = buildUserMessage(prompt, imageData);
+  userMessage.content = normalizeMessageContent(userMessage);
 
   let response;
   try {
@@ -611,6 +639,7 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
   } catch (error) {
     if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
       const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+      fallbackMessage.content = normalizeMessageContent(fallbackMessage);
       response = await requestChatCompletion([
         systemMessage,
         fallbackMessage
@@ -1726,6 +1755,7 @@ try {
         let userMessage;
         try {
           userMessage = buildUserMessage(prompt, image_data);
+          userMessage.content = normalizeMessageContent(userMessage);
         } catch (base64Error) {
           // Base64 validation failed - return error to client
           logger.error('[Generate] Base64 validation failed', {
@@ -1857,6 +1887,7 @@ try {
           if (shouldDisableImageInput(error) && messageHasImage(userMessage)) {
             logger.warn('Image fetch failed, retrying without image input');
             const fallbackMessage = buildUserMessage(prompt, null, { forceTextOnly: true });
+            fallbackMessage.content = normalizeMessageContent(fallbackMessage);
             try {
               openaiResponse = await requestChatCompletion([systemMessage, fallbackMessage], {
                 apiKey
@@ -2193,4 +2224,3 @@ if (require.main === module) {
     process.exit(0);
   });
 }
-
