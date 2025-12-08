@@ -30,6 +30,19 @@ const imageDataSchema = z.object({
   {
     message: 'At least one image source (url, base64, or inline.data_url) is required',
   }
+).refine(
+  (data) => {
+    // If base64 is present, width and height are REQUIRED for validation
+    const hasBase64 = !!(data.base64 || data.image_base64);
+    if (hasBase64) {
+      return !!(data.width && data.height);
+    }
+    return true;
+  },
+  {
+    message: 'width and height are required when base64 or image_base64 is provided',
+    path: ['width', 'height'],
+  }
 );
 
 /**

@@ -145,14 +145,36 @@ function buildUserMessage(prompt, imageData, options = {}) {
   // Support both 'base64' and 'image_base64' field names for compatibility
   const base64Data = imageData?.base64 || imageData?.image_base64;
   if (allowImage && base64Data) {
+    // CRITICAL: Require dimensions when base64 is present for validation
+    if (!imageData?.width || !imageData?.height) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image missing dimensions!', {
+        hasWidth: !!imageData?.width,
+        hasHeight: !!imageData?.height,
+        base64Length: base64Data.length,
+        warning: 'Cannot validate base64 size without dimensions. Plugin MUST send width and height with base64 images.'
+      });
+      throw new Error('Base64 image data requires width and height dimensions for validation. Please include width and height in the image_data payload.');
+    }
+    
+    // Validate base64 is actually base64 (not a URL or other data)
+    // Base64 should only contain A-Z, a-z, 0-9, +, /, and = (padding)
+    const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+    const cleanBase64 = base64Data.trim();
+    if (!base64Pattern.test(cleanBase64)) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Invalid base64 data detected!', {
+        base64Preview: cleanBase64.substring(0, 100),
+        looksLikeUrl: cleanBase64.startsWith('http'),
+        warning: 'Base64 data appears to be invalid. It may be a URL or corrupted data.'
+      });
+      throw new Error('Invalid base64 image data. The base64 string contains invalid characters. Please ensure the image is properly encoded to base64.');
+    }
+    
     // Use provided mime_type or default to image/jpeg (most common)
     const mimeType = imageData?.mime_type || 'image/jpeg';
     const dataUrl = `data:${mimeType};base64,${base64Data}`;
     
     // Log image source and dimensions for token cost tracking
-    const dimensions = imageData?.width && imageData?.height 
-      ? `${imageData.width}x${imageData.height}` 
-      : 'unknown';
+    const dimensions = `${imageData.width}x${imageData.height}`;
     const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
     
     // Validate base64 size against reported dimensions
