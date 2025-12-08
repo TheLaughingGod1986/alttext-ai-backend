@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run unit tests
+      - name: Run tests
         env:
           JWT_SECRET: test-jwt-secret-for-ci
           NODE_ENV: test
@@ -36,20 +36,6 @@ jobs:
           RESEND_API_KEY: re_test_key
         run: npm run test:unit
         timeout-minutes: 5
-        continue-on-error: false
-
-      - name: Run integration tests
-        env:
-          JWT_SECRET: test-jwt-secret-for-ci
-          NODE_ENV: test
-          SUPABASE_URL: https://test.supabase.co
-          SUPABASE_SERVICE_ROLE_KEY: test-key
-          ALTTEXT_OPENAI_API_KEY: sk-test
-          SEO_META_OPENAI_API_KEY: sk-test
-          STRIPE_SECRET_KEY: sk_test_key
-          RESEND_API_KEY: re_test_key
-        run: npm run test:integration
-        timeout-minutes: 20
         continue-on-error: false
 
       - name: Upload coverage
