@@ -62,24 +62,6 @@ jest.mock('express-rate-limit', () => {
   return mockRateLimiter;
 });
 
-// Mock auth/jwt module globally but preserve actual implementation for non-middleware functions
-// This ensures authenticateToken and optionalAuth work in tests while keeping real token functions
-jest.mock('./auth/jwt', () => {
-  // Load the actual module for real implementations
-  const actualJwt = jest.requireActual('./auth/jwt');
-
-  // Return real implementations for utility functions, but mock the middleware
-  return {
-    ...actualJwt,
-    // Only mock the middleware functions to avoid authentication in tests
-    authenticateToken: jest.fn((req, res, next) => {
-      // Set a default user if not set by test
-      if (!req.user) {
-        req.user = { id: 1, email: 'test@example.com', plan: 'free' };
-      }
-      next();
-    }),
-    optionalAuth: jest.fn((req, res, next) => next()),
-  };
-});
+// DO NOT mock JWT auth globally - it breaks unit tests that need to test the real implementation
+// Integration tests that need auth bypass should mock JWT locally in their test files
 
