@@ -389,6 +389,19 @@ function buildUserMessage(prompt, imageData, options = {}) {
     };
   }
 
+  // If we reached here, no usable image source was provided (base64/inline/url)
+  // Throw to avoid hallucinating without image context
+  const errMsg = 'No usable image source provided. Send base64/image_base64, inline.data_url, or a publicly reachable HTTPS image_url.';
+  logger.error('[Image Processing] Missing usable image source', {
+    hasBase64: !!(imageData?.base64 || imageData?.image_base64),
+    hasInline: !!imageData?.inline?.data_url,
+    hasUrl: !!imageData?.url,
+    url: imageData?.url,
+    isPublicUrl: imageData?.url ? isLikelyPublicUrl(imageData.url) : false,
+    recommendation: 'Provide a resized base64 with width/height or a public HTTPS URL'
+  });
+  throw new Error(errMsg);
+
   return {
     role: 'user',
     content: [
