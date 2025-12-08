@@ -136,10 +136,25 @@ function buildPrompt(imageData, context, regenerate = false) {
 function buildUserMessage(prompt, imageData, options = {}) {
   const allowImage = !options.forceTextOnly;
   
-  // Use detail: low for resized images to minimize token costs
-  // detail: 'high' forces OpenAI to process at full resolution, causing 25,000+ tokens
-  // detail: 'low' uses ~85-170 tokens for resized images (512-1024px)
-  // We use 'low' because the plugin already resizes images to max 1024px
+  // Detail level strategy:
+  // - detail: 'low' → processes at 512px (85 tokens) or 1024px (170 tokens) based on image size
+  // - detail: 'high' → processes at full resolution (25,000+ tokens for large images)
+  //
+  // Since the plugin already resizes images to max 1024px before encoding to base64,
+  // using 'low' detail is optimal:
+  // - Processes at 1024px (same as what plugin sends)
+  // - Uses ~170 tokens (vs 14,370+ with 'high')
+  // - Quality is sufficient for alt text (doesn't need pixel-perfect detail)
+  // - 98% cost reduction with minimal quality impact
+  //
+  // For alt text generation, 1024px resolution is more than adequate to:
+  // - Identify subjects, objects, people
+  // - Read text in images
+  // - Describe colors, actions, settings
+  // - Generate accurate, WCAG-compliant alt text
+  //
+  // The quality difference between 'low' (1024px) and 'high' (full-res) is minimal
+  // for alt text purposes, but the cost difference is massive (84x more expensive).
   const imageUrlConfig = { detail: 'low' };
 
   // PRIORITY 1: Check for base64-encoded image (from WordPress plugin - resized to max 1024px)
@@ -1795,6 +1810,8 @@ try {
               detailLevel: imageContent?.image_url?.detail || 'unknown',
               rootCause: base64SizeKB > 500 && reportedMaxDim && reportedMaxDim <= 1024
                 ? 'Base64 contains full-resolution image despite metadata claiming resized dimensions. Plugin needs to resize BEFORE encoding to base64.'
+                : promptTokens > 1000 && detailLevel === 'low'
+                ? `High prompt tokens (${promptTokens}) with detail:low suggests base64 may be corrupted/incomplete or contains full-res data. Base64 size (${base64SizeKB}KB) is suspicious for ${imageDimensions} image.`
                 : promptTokens > 1000
                 ? `High prompt tokens (${promptTokens}) - check if prompt is very long or image is being processed at full resolution`
                 : 'Unknown - investigate base64 encoding or image dimensions',
