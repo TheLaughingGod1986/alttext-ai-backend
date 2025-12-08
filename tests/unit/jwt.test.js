@@ -1,4 +1,8 @@
+// Ensure we use the real jsonwebtoken implementation (other suites mock it)
+process.env.JWT_SECRET = 'unit-test-secret';
+jest.unmock('jsonwebtoken');
 const jwt = require('jsonwebtoken');
+// Explicitly load the real JWT module (jest.setup.js mocks middleware globally for integration tests)
 const {
   generateToken,
   verifyToken,
@@ -6,7 +10,7 @@ const {
   comparePassword,
   authenticateToken,
   optionalAuth
-} = require('../../auth/jwt');
+} = jest.requireActual('../../auth/jwt');
 
 describe('JWT utilities', () => {
   test('generateToken and verifyToken round trip', () => {
@@ -27,18 +31,18 @@ describe('JWT utilities', () => {
     expect(isMismatch).toBe(false);
   });
 
-  test.skip('verifyToken rejects tokens signed with different secret', () => {
+  test('verifyToken rejects tokens signed with different secret', () => {
     const rogueToken = jwt.sign({ id: 3, email: 'rogue@example.com' }, 'not-the-right-secret', { expiresIn: '1h' });
     expect(() => verifyToken(rogueToken)).toThrow('Invalid token');
   });
 
-  test.skip('verifyToken rejects expired tokens', () => {
+  test('verifyToken rejects expired tokens', () => {
     const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
     const expiredToken = jwt.sign({ id: 4, email: 'expired@example.com' }, secret, { expiresIn: '-1s' });
     expect(() => verifyToken(expiredToken)).toThrow('Invalid token');
   });
 
-  test.skip('authenticateToken attaches decoded user', () => {
+  test('authenticateToken attaches decoded user', () => {
     const req = { headers: {}, user: null };
     const res = {
       status: jest.fn().mockReturnThis(),
@@ -55,7 +59,7 @@ describe('JWT utilities', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  test.skip('authenticateToken rejects missing token', () => {
+  test('authenticateToken rejects missing token', () => {
     const req = { headers: {} };
     const res = {
       status: jest.fn().mockReturnThis(),
@@ -66,7 +70,7 @@ describe('JWT utilities', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  test.skip('authenticateToken rejects tampered token', () => {
+  test('authenticateToken rejects tampered token', () => {
     const req = {
       headers: {
         authorization: `Bearer ${jwt.sign({ id: 5, email: 'tampered@example.com' }, 'wrong-secret', { expiresIn: '1h' })}`
@@ -83,7 +87,7 @@ describe('JWT utilities', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test.skip('authenticateToken rejects expired token payloads', () => {
+  test('authenticateToken rejects expired token payloads', () => {
     const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
     const expiredToken = jwt.sign({ id: 6, email: 'expired@example.com' }, secret, { expiresIn: '-1s' });
     const req = { headers: { authorization: `Bearer ${expiredToken}` } };
@@ -96,7 +100,7 @@ describe('JWT utilities', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test.skip('optionalAuth ignores invalid token', () => {
+  test('optionalAuth ignores invalid token', () => {
     const req = { headers: { authorization: 'Bearer invalid' } };
     const res = {};
     const next = jest.fn();
@@ -105,8 +109,8 @@ describe('JWT utilities', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  // PHASE 9: JWT Helper Edge Cases (skipped in CI due to JWT mock conflict)
-  describe.skip('PHASE 9: JWT Edge Cases', () => {
+  // PHASE 9: JWT Helper Edge Cases
+  describe('PHASE 9: JWT Edge Cases', () => {
     test('expired token - verifyToken throws after expiration', async () => {
       const secret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
       const expiredToken = jwt.sign({ id: 50, email: 'expired@example.com' }, secret, { expiresIn: '1s' });
