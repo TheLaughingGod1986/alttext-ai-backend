@@ -136,9 +136,11 @@ function buildPrompt(imageData, context, regenerate = false) {
 function buildUserMessage(prompt, imageData, options = {}) {
   const allowImage = !options.forceTextOnly;
   
-  // Use detail: high for better AI analysis and more accurate descriptions
-  // This uses more tokens (~170 vs 85) but provides much better quality
-  const imageUrlConfig = { detail: 'high' };
+  // Use detail: low for resized images to minimize token costs
+  // detail: 'high' forces OpenAI to process at full resolution, causing 25,000+ tokens
+  // detail: 'low' uses ~85-170 tokens for resized images (512-1024px)
+  // We use 'low' because the plugin already resizes images to max 1024px
+  const imageUrlConfig = { detail: 'low' };
 
   // PRIORITY 1: Check for base64-encoded image (from WordPress plugin - resized to max 1024px)
   // When image_base64 is present, ALWAYS use it and ignore image_url to avoid processing full-resolution images
@@ -1713,7 +1715,17 @@ try {
 
         let openaiResponse;
         try {
-          logger.info(`[Generate] Calling OpenAI API`, { imageId: image_data?.image_id || 'unknown' });
+          // Log prompt length for debugging high token usage
+          const promptText = userMessage?.content?.find(c => c.type === 'text')?.text || '';
+          const promptLength = promptText.length;
+          const promptWordCount = promptText.split(/\s+/).filter(w => w.length > 0).length;
+          
+          logger.info(`[Generate] Calling OpenAI API`, { 
+            imageId: image_data?.image_id || 'unknown',
+            promptLength,
+            promptWordCount,
+            hasImage: userMessage?.content?.some(c => c.type === 'image_url') || false
+          });
           const startTime = Date.now();
           openaiResponse = await requestChatCompletion([systemMessage, userMessage], {
             apiKey
@@ -1761,8 +1773,15 @@ try {
             : null;
           
           if (isHighTokenUsage) {
+            const promptText = userMessage?.content?.find(c => c.type === 'text')?.text || '';
+            const promptLength = promptText.length;
+            const imageContent = userMessage?.content?.find(c => c.type === 'image_url');
+            const dataUrlLength = imageContent?.image_url?.url?.length || 0;
+            
             logger.error(`[Generate] ⚠️ HIGH TOKEN USAGE DETECTED`, { 
               totalTokens,
+              promptTokens,
+              completionTokens,
               expectedTokens,
               imageDimensions,
               imageSource,
@@ -1771,8 +1790,13 @@ try {
               base64Length: base64Data?.length || 0,
               base64SizeKB,
               reportedMaxDim,
+              promptLength,
+              dataUrlLength,
+              detailLevel: imageContent?.image_url?.detail || 'unknown',
               rootCause: base64SizeKB > 500 && reportedMaxDim && reportedMaxDim <= 1024
                 ? 'Base64 contains full-resolution image despite metadata claiming resized dimensions. Plugin needs to resize BEFORE encoding to base64.'
+                : promptTokens > 1000
+                ? `High prompt tokens (${promptTokens}) - check if prompt is very long or image is being processed at full resolution`
                 : 'Unknown - investigate base64 encoding or image dimensions',
               warning: tokenWarning
             });
