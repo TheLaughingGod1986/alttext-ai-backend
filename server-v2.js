@@ -188,13 +188,14 @@ function buildUserMessage(prompt, imageData, options = {}) {
       ? imageData.width * imageData.height 
       : null;
     
-    // Calculate expected max size based on pixel count
+    // Calculate expected size range based on pixel count
     // Properly resized/compressed JPEG: ~0.1-0.3 bits per pixel (0.0125-0.0375 bytes per pixel)
     // For 1024x1024 (1MP): ~130-400KB raw = ~170-530KB base64
     // But with good compression: ~50-150KB base64 is more realistic
     // For 1164x1473 (1.7MP): ~220-660KB raw = ~290-880KB base64
     // But properly resized: ~85-255KB base64 is expected
     
+    let expectedMinSizeKB = 5; // Minimum reasonable size (very compressed small image)
     let expectedMaxSizeKB = 200; // Default conservative limit
     if (pixelCount) {
       // Calculate based on pixel count with conservative compression estimate
@@ -203,12 +204,39 @@ function buildUserMessage(prompt, imageData, options = {}) {
       expectedMaxSizeKB = Math.round(expectedRawKB * 1.33); // Base64 is ~33% larger than raw
       // Add 50% buffer for variation, but cap at reasonable limits
       expectedMaxSizeKB = Math.min(expectedMaxSizeKB * 1.5, reportedMaxDim && reportedMaxDim <= 1024 ? 200 : 500);
+      
+      // Calculate minimum expected size (very aggressive compression)
+      // Minimum: 0.05 bits per pixel (0.00625 bytes per pixel) for extremely compressed images
+      const expectedMinRawKB = (pixelCount * 0.00625) / 1024;
+      expectedMinSizeKB = Math.round(expectedMinRawKB * 1.33);
+      // Ensure minimum is reasonable (at least 2KB for any image)
+      expectedMinSizeKB = Math.max(expectedMinSizeKB, 2);
     } else if (reportedMaxDim) {
       // Fallback to dimension-based estimate
       expectedMaxSizeKB = reportedMaxDim <= 1024 ? 200 : 500;
+      expectedMinSizeKB = Math.max(Math.round((reportedMaxDim * reportedMaxDim * 0.00625 * 1.33) / 1024), 2);
     }
     
+    // Check for suspiciously small base64 (might be truncated, corrupted, or placeholder)
+    const isSuspiciouslySmall = base64SizeKB < expectedMinSizeKB;
     const isSuspiciouslyLarge = base64SizeKB > expectedMaxSizeKB;
+    
+    if (isSuspiciouslySmall) {
+      logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously SMALL for reported dimensions!', {
+        source: base64Field,
+        reportedDimensions: dimensions,
+        pixelCount,
+        base64SizeKB,
+        expectedMinSizeKB,
+        expectedMaxSizeKB,
+        ratio: (base64SizeKB / expectedMinSizeKB).toFixed(2),
+        warning: 'This base64 is too small for the reported dimensions. It may be truncated, corrupted, or a placeholder. OpenAI may process it incorrectly, causing unexpected token costs!',
+        recommendation: 'Plugin MUST send complete, valid base64 image data. Current base64 size suggests incomplete or corrupted data.',
+        action: 'REJECTING REQUEST to prevent unexpected token costs'
+      });
+      
+      throw new Error(`Base64 image size (${base64SizeKB}KB) is too small for reported dimensions (${dimensions}). Expected minimum ${expectedMinSizeKB}KB. This suggests the base64 data is incomplete, truncated, or corrupted. Please ensure the image is properly encoded to base64.`);
+    }
     
     if (isSuspiciouslyLarge) {
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously large for reported dimensions!', {
