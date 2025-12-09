@@ -233,6 +233,26 @@ function buildUserMessage(prompt, imageData, options = {}) {
     const pixelCount = imageData?.width && imageData?.height 
       ? imageData.width * imageData.height 
       : null;
+    const base64Bytes = Math.round(base64Data.length * 0.75);
+    const bytesPerPixel = pixelCount ? base64Bytes / pixelCount : null;
+    const maxDim = Math.max(imageData.width, imageData.height);
+    const MAX_DIMENSION = 1536; // hard cap to keep token usage low
+    const MIN_BPP = 0.01; // ~1 byte per 100 pixels (too small is likely corrupted/placeholder)
+    const MAX_BPP = 0.3;  // ~0.3 bytes per pixel (too large is likely full-res/uncompressed)
+
+    // Enforce dimension cap to prevent full-res token blowups
+    if (maxDim > MAX_DIMENSION) {
+      throw new Error(`Image dimensions too large (${imageData.width}x${imageData.height}). Please resize the image to ${MAX_DIMENSION}px max on the longest side before sending base64.`);
+    }
+
+    if (bytesPerPixel !== null) {
+      if (bytesPerPixel < MIN_BPP) {
+        throw new Error(`Base64 payload is too small for the reported dimensions (${imageData.width}x${imageData.height}). Ensure the image is properly encoded and resized (current bytes/px: ${bytesPerPixel.toFixed(4)}).`);
+      }
+      if (bytesPerPixel > MAX_BPP) {
+        throw new Error(`Base64 payload is too large for the reported dimensions (${imageData.width}x${imageData.height}). Please resize/compress before encoding (current bytes/px: ${bytesPerPixel.toFixed(3)}).`);
+      }
+    }
     
     // Calculate expected size range based on pixel count
     // Properly resized/compressed JPEG: ~0.1-0.3 bits per pixel (0.0125-0.0375 bytes per pixel)
