@@ -1664,6 +1664,12 @@ try {
         }
 
         const { image_data, context, regenerate = false, service = 'alttext-ai', type } = validation.data;
+        // Debug: log parsed image payload summary before further validation/processing
+        try {
+          logImageMeta('info', image_data, { source: 'payload', validationRule: 'pre:request_payload' });
+        } catch (e) {
+          logger.warn('[Image Processing] Failed to log image meta', { error: e.message });
+        }
         
         // Log detailed image data info for debugging token costs
         const hasBase64 = !!(image_data?.base64 || image_data?.image_base64);
