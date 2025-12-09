@@ -138,6 +138,55 @@ function buildPrompt(imageData, context, regenerate = false) {
   return lines.join('\n');
 }
 
+function buildImageMeta(imageData = {}, extras = {}) {
+  const hasBase64 = !!(imageData?.base64 || imageData?.image_base64);
+  const hasInline = !!imageData?.inline?.data_url;
+  const hasUrl = !!imageData?.url;
+  const isPublicUrl = hasUrl ? isLikelyPublicUrl(imageData.url) : false;
+  const width = imageData?.width || null;
+  const height = imageData?.height || null;
+  const pixelCount = width && height ? width * height : null;
+  const base64Data = imageData?.base64 || imageData?.image_base64;
+  const base64SizeKB = base64Data ? Math.round(base64Data.length * 0.75 / 1024) : null;
+  const base64Bytes = base64Data ? Math.round(base64Data.length * 0.75) : null;
+  const bytesPerPixel = base64Bytes && pixelCount ? Number((base64Bytes / pixelCount).toFixed(4)) : null;
+
+  const imageDataKeys = {
+    image_base64: !!imageData?.image_base64,
+    base64: !!imageData?.base64,
+    mime_type: !!imageData?.mime_type,
+    width: !!imageData?.width,
+    height: !!imageData?.height,
+    url: !!imageData?.url,
+    inline_data_url: !!imageData?.inline?.data_url,
+    image_id: !!imageData?.image_id,
+    filename: !!imageData?.filename,
+    image_source: !!imageData?.image_source
+  };
+
+  return {
+    hasBase64,
+    hasInline,
+    hasUrl,
+    isPublicUrl,
+    reportedDimensions: width && height ? { width, height } : null,
+    pixelCount,
+    base64SizeKB,
+    bytesPerPixel,
+    imageDataKeys,
+    source: extras.source || null,
+    validationRule: extras.validationRule || 'passed',
+    skippedUrlReason: extras.skippedUrlReason || null,
+    ...extras.meta
+  };
+}
+
+function logImageMeta(level, imageData, extras = {}) {
+  const meta = buildImageMeta(imageData, extras);
+  const logLevel = typeof logger[level] === 'function' ? level : 'info';
+  logger[logLevel]('[Image Processing] Meta', meta);
+}
+
 function buildUserMessage(prompt, imageData, options = {}) {
   const allowImage = !options.forceTextOnly;
   
@@ -161,14 +210,17 @@ function buildUserMessage(prompt, imageData, options = {}) {
   // The quality difference between 'low' (1024px) and 'high' (full-res) is minimal
   // for alt text purposes, but the cost difference is massive (84x more expensive).
   const imageUrlConfig = { detail: 'low' };
+  const urlIsPublic = imageData?.url ? isLikelyPublicUrl(imageData.url) : false;
 
   // PRIORITY 1: Check for base64-encoded image (from WordPress plugin - resized to max 1024px)
   // When image_base64 is present, ALWAYS use it and ignore image_url to avoid processing full-resolution images
   // Support both 'base64' and 'image_base64' field names for compatibility
   const base64Data = imageData?.base64 || imageData?.image_base64;
+  const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
   if (allowImage && base64Data) {
     // CRITICAL: Require dimensions when base64 is present for validation
     if (!imageData?.width || !imageData?.height) {
+      logImageMeta('error', imageData, { source: base64Field, validationRule: 'error:missing_dimensions' });
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image missing dimensions!', {
         hasWidth: !!imageData?.width,
         hasHeight: !!imageData?.height,
@@ -221,7 +273,6 @@ function buildUserMessage(prompt, imageData, options = {}) {
     
     // Log image source and dimensions for token cost tracking
     const dimensions = `${imageData.width}x${imageData.height}`;
-    const base64Field = imageData?.base64 ? 'base64' : 'image_base64';
     
     // Validate base64 size against reported dimensions
     // A properly resized 1024x1024 JPEG should be ~50-150KB base64
@@ -242,14 +293,29 @@ function buildUserMessage(prompt, imageData, options = {}) {
 
     // Enforce dimension cap to prevent full-res token blowups
     if (maxDim > MAX_DIMENSION) {
+      logImageMeta('error', imageData, {
+        source: base64Field,
+        validationRule: 'error:oversized_dimensions',
+        meta: { maxDim, width: imageData.width, height: imageData.height }
+      });
       throw new Error(`Image dimensions too large (${imageData.width}x${imageData.height}). Please resize the image to ${MAX_DIMENSION}px max on the longest side before sending base64.`);
     }
 
     if (bytesPerPixel !== null) {
       if (bytesPerPixel < MIN_BPP) {
+        logImageMeta('error', imageData, {
+          source: base64Field,
+          validationRule: 'error:bytes_per_pixel_low',
+          meta: { bytesPerPixel, minBytesPerPixel: MIN_BPP }
+        });
         throw new Error(`Base64 payload is too small for the reported dimensions (${imageData.width}x${imageData.height}). Ensure the image is properly encoded and resized (current bytes/px: ${bytesPerPixel.toFixed(4)}).`);
       }
       if (bytesPerPixel > MAX_BPP) {
+        logImageMeta('error', imageData, {
+          source: base64Field,
+          validationRule: 'error:bytes_per_pixel_high',
+          meta: { bytesPerPixel, maxBytesPerPixel: MAX_BPP }
+        });
         throw new Error(`Base64 payload is too large for the reported dimensions (${imageData.width}x${imageData.height}). Please resize/compress before encoding (current bytes/px: ${bytesPerPixel.toFixed(3)}).`);
       }
     }
@@ -299,6 +365,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
     const shouldBeLarger = pixelCount && pixelCount > 50000; // Images > 50K pixels should be larger
     
     if (isSuspiciouslySmall) {
+      logImageMeta('error', imageData, {
+        source: base64Field,
+        validationRule: 'error:suspiciously_small',
+        meta: { base64SizeKB, expectedMinSizeKB, expectedMaxSizeKB, bytesPerPixel }
+      });
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously SMALL for reported dimensions!', {
         source: base64Field,
         reportedDimensions: dimensions,
@@ -320,6 +391,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
     // Based on logs: 13KB base64 for 1000x750 resulted in 3,017 tokens despite detail:low
     // This suggests the base64 contains full-res data or is corrupted
     if (isInGrayZone && shouldBeLarger) {
+      logImageMeta('error', imageData, {
+        source: base64Field,
+        validationRule: 'error:gray_zone_small',
+        meta: { base64SizeKB, expectedMinSizeKB, expectedMaxSizeKB, bytesPerPixel }
+      });
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is in gray zone - rejecting to prevent high token costs', {
         source: base64Field,
         reportedDimensions: dimensions,
@@ -341,6 +417,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
     }
     
     if (isSuspiciouslyLarge) {
+      logImageMeta('error', imageData, {
+        source: base64Field,
+        validationRule: 'error:suspiciously_large',
+        meta: { base64SizeKB, expectedMinSizeKB, expectedMaxSizeKB, bytesPerPixel }
+      });
       logger.error('[Image Processing] ⚠️ CRITICAL: Base64 image is suspiciously large for reported dimensions!', {
         source: base64Field,
         reportedDimensions: dimensions,
@@ -367,6 +448,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
         ignoredImageUrl: !!imageData?.url, // Log that URL is being ignored
         urlPreview: imageData?.url ? imageData.url.substring(0, 100) + '...' : null
       });
+      logImageMeta('info', imageData, {
+        source: base64Field,
+        validationRule: 'passed:base64',
+        meta: { base64SizeKB, bytesPerPixel }
+      });
     }
     
     return {
@@ -381,6 +467,7 @@ function buildUserMessage(prompt, imageData, options = {}) {
   // PRIORITY 2: Check for inline data URL
   if (allowImage && imageData?.inline?.data_url) {
     logger.info('[Image Processing] Using inline data URL', { source: 'inline.data_url' });
+    logImageMeta('info', imageData, { source: 'inline.data_url', validationRule: 'passed:inline' });
     return {
       role: 'user',
       content: [
@@ -392,7 +479,11 @@ function buildUserMessage(prompt, imageData, options = {}) {
 
   // PRIORITY 3: Check for public URL (only if base64 is NOT present)
   // This ensures we never download full-resolution images when resized base64 is available
-  const hasUsableUrl = allowImage && imageData?.url && isLikelyPublicUrl(imageData.url);
+  if (allowImage && imageData?.url && !urlIsPublic) {
+    logImageMeta('warn', imageData, { source: 'image_url', validationRule: 'skip:url_not_public', skippedUrlReason: 'non_public_url' });
+  }
+
+  const hasUsableUrl = allowImage && imageData?.url && urlIsPublic;
   if (hasUsableUrl) {
     logger.warn('[Image Processing] ⚠️ Using public URL (fallback - no base64 provided)', { 
       source: 'image_url',
@@ -400,6 +491,7 @@ function buildUserMessage(prompt, imageData, options = {}) {
       dimensions: imageData?.width && imageData?.height ? `${imageData.width}x${imageData.height}` : 'unknown',
       warning: 'This will process full-resolution image and use high tokens!'
     });
+    logImageMeta('warn', imageData, { source: 'image_url', validationRule: 'fallback:url_public' });
     return {
       role: 'user',
       content: [
@@ -420,6 +512,7 @@ function buildUserMessage(prompt, imageData, options = {}) {
     isPublicUrl: imageData?.url ? isLikelyPublicUrl(imageData.url) : false,
     recommendation: 'Provide a resized base64 with width/height or a public HTTPS URL'
   });
+  logImageMeta('error', imageData, { validationRule: 'error:no_usable_image', skippedUrlReason: imageData?.url && !urlIsPublic ? 'non_public_url' : null });
   throw new Error(errMsg);
 
   return {
@@ -678,6 +771,12 @@ async function reviewAltText(altText, imageData, context, apiKey = null) {
         imageUrlPreview: imageData?.url ? imageData.url.substring(0, 120) : null,
         hasBase64: !!(imageData?.base64 || imageData?.image_base64),
         hasInline: !!imageData?.inline?.data_url
+      });
+      logImageMeta('error', imageData, {
+        source: imageData?.url ? 'image_url' : 'base64',
+        validationRule: 'error:image_fetch_failed',
+        skippedUrlReason: 'IMAGE_FETCH_FAILED',
+        meta: { status: error.response?.status, openaiMessage: openaiMsg }
       });
       return null; // Skip review rather than hallucinating without image
     }
@@ -1923,6 +2022,12 @@ try {
               imageUrlPreview: image_data?.url ? image_data.url.substring(0, 120) : null,
               hasBase64: !!(image_data?.base64 || image_data?.image_base64),
               hasInline: !!image_data?.inline?.data_url
+            });
+            logImageMeta('error', image_data, {
+              source: image_data?.url ? 'image_url' : 'base64',
+              validationRule: 'error:image_fetch_failed',
+              skippedUrlReason: 'IMAGE_FETCH_FAILED',
+              meta: { status: error.response?.status, openaiMessage: openaiMsg }
             });
             return httpErrors.validationFailed(
               res,
