@@ -12,7 +12,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --runInBand --coverage --ci",
-    "email:build": "tsc src/emails/*.tsx --jsx react --outDir src/emails/dist --module commonjs --esModuleInterop --skipLibCheck || true"
+    "email:build": "tsc src/emails/*.tsx --jsx react --outDir src/emails/dist --module commonjs --esModuleInterop --skipLibCheck || true",
+    "start:fresh": "node fresh-stack/server.js"
   },
   "keywords": [
     "alttext",
@@ -23,7 +24,6 @@
   "author": "AltText AI",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.0.55",
     "@react-email/components": "^1.0.1",
     "@react-email/render": "^2.0.0",
     "@supabase/supabase-js": "^2.84.0",
@@ -41,7 +41,8 @@
     "react-dom": "^19.2.0",
     "resend": "^6.3.0",
     "stripe": "^19.1.0",
-    "zod": "^4.1.13"
+    "zod": "^4.1.13",
+    "ioredis": "^5.4.2"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",
