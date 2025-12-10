@@ -245,13 +245,30 @@ app.post('/api/alt-text', async (req, res) => {
       try {
         const cached = await redis.get(`alttext:cache:${cacheKey}`);
         if (cached) {
-          return res.json({ ...JSON.parse(cached), cached: true });
+          const parsed = JSON.parse(cached);
+          console.info('[alt-text] cache hit', {
+            width: image.width,
+            height: image.height,
+            cached: true,
+            prompt_tokens: parsed?.usage?.prompt_tokens,
+            completion_tokens: parsed?.usage?.completion_tokens,
+            model: parsed?.meta?.modelUsed
+          });
+          return res.json({ ...parsed, cached: true });
         }
       } catch (e) {
         // fall through on cache errors
       }
     } else if (resultCache.has(cacheKey)) {
       const cached = resultCache.get(cacheKey);
+      console.info('[alt-text] cache hit', {
+        width: image.width,
+        height: image.height,
+        cached: true,
+        prompt_tokens: cached?.usage?.prompt_tokens,
+        completion_tokens: cached?.usage?.completion_tokens,
+        model: cached?.meta?.modelUsed
+      });
       return res.json({ ...cached, cached: true });
     }
   }
@@ -289,6 +306,15 @@ app.post('/api/alt-text', async (req, res) => {
       resultCache.set(cacheKey, payload);
     }
   }
+
+  console.info('[alt-text] usage', {
+    width: normalized.width,
+    height: normalized.height,
+    prompt_tokens: usage?.prompt_tokens,
+    completion_tokens: usage?.completion_tokens,
+    model: meta?.modelUsed,
+    cached: false
+  });
 
   res.json({
     altText,
