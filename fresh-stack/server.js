@@ -510,6 +510,27 @@ app.post('/billing/checkout', async (req, res) => {
   if (!priceId || !Object.values(priceIds).includes(priceId)) {
     return res.status(400).json({ error: 'Invalid or missing priceId', valid: priceIds });
   }
+  // Enforce site limit for PRO: only 1 site per subscription
+  if (priceId === priceIds.pro && supabase) {
+    try {
+      // Count active PRO subscriptions for this site
+      const { data: subs } = await supabase
+        .from('subscriptions')
+        .select('id')
+        .eq('site_hash', siteKey)
+        .in('status', ['active', 'trial', 'past_due']);
+      if (subs && subs.length > 0) {
+        return res.status(403).json({
+          error: 'SITE_LIMIT_EXCEEDED',
+          message: 'Pro plan is limited to 1 site per subscription.',
+          plan: 'pro'
+        });
+      }
+    } catch (e) {
+      // fail-open on sub query errors
+    }
+  }
+
   const stripeClient = getStripe();
   if (!stripeClient) {
     return res.status(501).json({ error: 'Stripe not configured' });
