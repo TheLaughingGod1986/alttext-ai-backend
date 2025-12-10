@@ -1,16 +1,24 @@
 /**
  * Supabase Client Configuration
- * 
- * This file provides a configured Supabase client instance for database operations.
- * Replace all Prisma calls with Supabase client calls using this instance.
- * 
- * Environment Variables Required:
- * - SUPABASE_URL: Your Supabase project URL
- * - SUPABASE_ANON_KEY: Your Supabase anonymous/public key
- * - SUPABASE_SERVICE_ROLE_KEY: Your Supabase service role key (for server-side operations)
+ *
+ * Production uses platform-provided env vars (Render, Vercel, etc). For local
+ * development, we load .env only when needed so we never depend on a file
+ * existing in production containers.
+ *
+ * Required:
+ * - SUPABASE_URL
+ * - SUPABASE_SERVICE_ROLE_KEY (service role, server-side only)
  */
 
-require('dotenv').config();
+// Load .env only when not already provided (e.g., local dev). In production,
+// platform env vars are injected and we must not rely on a .env file.
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  try {
+    require('dotenv').config();
+  } catch (e) {
+    // ignore if dotenv is unavailable
+  }
+}
 const { createClient } = require('@supabase/supabase-js');
 
 // In tests, use the Jest mock and expose the same helpers to keep imports consistent.

@@ -12,6 +12,9 @@ let supabase = null;
 try {
   const supabaseClient = require('../db/supabase-client');
   supabase = supabaseClient.supabase || supabaseClient;
+  if (supabase) {
+    console.info('[usage] Supabase client initialized');
+  }
 } catch (e) {
   console.warn('[usage] Supabase client not available; /api/usage will return minimal data');
 }
