@@ -254,7 +254,11 @@ app.use('/api/usage', createUsageRouter({ supabase, requiredToken }));
 app.use('/billing', createBillingRouter({ supabase, requiredToken, getStripe, priceIds }));
 
 async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
-  if (!supabaseClient || !siteKey) return;
+  if (!siteKey) return;
+  if (!supabaseClient) {
+    console.warn('[usage] Supabase not configured; skipping usage log');
+    return;
+  }
   const promptTokens = Number(usage?.prompt_tokens || 0);
   const completionTokens = Number(usage?.completion_tokens || 0);
   const totalTokens = promptTokens + completionTokens;
@@ -263,6 +267,7 @@ async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
 
   // 1) Write usage log
   try {
+    console.info('[usage] logging usage', { siteKey, promptTokens, completionTokens, totalTokens });
     await supabaseClient.from('usage_logs').insert({
       site_hash: siteKey,
       images: 1,
@@ -289,11 +294,13 @@ async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
     const nextUsedTotal = Number(creditsRow?.used_total || 0) + 1;
 
     if (creditsRow) {
+      console.info('[usage] updating credits', { siteKey, nextUsedThisMonth, nextUsedTotal });
       await supabaseClient
         .from('credits')
         .update({ used_this_month: nextUsedThisMonth, used_total: nextUsedTotal })
         .eq('site_hash', siteKey);
     } else {
+      console.info('[usage] creating credits row', { siteKey });
       await supabaseClient
         .from('credits')
         .insert({ site_hash: siteKey, used_this_month: 1, used_total: 1 });
