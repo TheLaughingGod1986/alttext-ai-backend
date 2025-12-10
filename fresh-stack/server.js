@@ -392,6 +392,11 @@ app.post('/api/alt-text', async (req, res) => {
 
   // Record usage/credits for successful, non-cached generations
   if (!bypassCache && usage) {
+    console.info('[usage] attempting to record usage', {
+      siteKey,
+      prompt_tokens: usage?.prompt_tokens,
+      completion_tokens: usage?.completion_tokens
+    });
     await recordUsage({
       siteKey,
       usage,
