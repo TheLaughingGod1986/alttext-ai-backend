@@ -80,13 +80,32 @@ function validateLicenseKey(supabase) {
   };
 }
 
+// In-memory quota cache (1 minute TTL) to reduce database load
+const quotaCache = new Map();
+const QUOTA_CACHE_TTL = 60 * 1000; // 1 minute
+
 /**
  * Get site data from X-Site-Key header and license (if provided)
  * Creates site if doesn't exist
+ *
+ * Performance optimizations:
+ * - 1-minute cache to avoid repeated DB queries
+ * - Can disable quota checks with SKIP_QUOTA_CHECK=true for development
  */
 async function getSiteFromHeaders(supabase, req) {
   const siteKey = req.header('X-Site-Key') || 'default';
   const licenseKey = req.license?.license_key || null;
+
+  // Skip quota checks entirely if SKIP_QUOTA_CHECK env var is set (for development)
+  if (process.env.SKIP_QUOTA_CHECK === 'true') {
+    return {
+      siteKey,
+      plan: licenseKey ? (req.license?.plan || 'pro') : 'free',
+      quota: 999999,
+      used: 0,
+      remaining: 999999
+    };
+  }
 
   if (!supabase) {
     return {
@@ -96,6 +115,13 @@ async function getSiteFromHeaders(supabase, req) {
       used: 0,
       remaining: 50
     };
+  }
+
+  // Check cache first
+  const cacheKey = `${siteKey}:${licenseKey || 'none'}`;
+  const cached = quotaCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < QUOTA_CACHE_TTL) {
+    return cached.data;
   }
 
   try {
@@ -157,7 +183,7 @@ async function getSiteFromHeaders(supabase, req) {
 
     const remaining = Math.max(quota - used, 0);
 
-    return {
+    const result = {
       siteKey,
       plan,
       quota,
@@ -165,6 +191,20 @@ async function getSiteFromHeaders(supabase, req) {
       remaining,
       site
     };
+
+    // Cache the result
+    quotaCache.set(cacheKey, {
+      data: result,
+      timestamp: Date.now()
+    });
+
+    // Clean up old cache entries (keep cache size manageable)
+    if (quotaCache.size > 1000) {
+      const oldestKey = quotaCache.keys().next().value;
+      quotaCache.delete(oldestKey);
+    }
+
+    return result;
 
   } catch (err) {
     console.error('[Auth] Error fetching site data', { error: err.message });
