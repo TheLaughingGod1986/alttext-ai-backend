@@ -518,6 +518,7 @@ app.post('/billing/checkout', async (req, res) => {
         .from('subscriptions')
         .select('id')
         .eq('site_hash', siteKey)
+        .eq('plan', 'pro')
         .in('status', ['active', 'trial', 'past_due']);
       if (subs && subs.length > 0) {
         return res.status(403).json({
