@@ -410,8 +410,8 @@ async function handleInvoicePaidWebhook(event) {
     let pluginSlug = 'alttext-ai'; // Default
     if (subscriptionId) {
       try {
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-        pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      pluginSlug = subscription.metadata?.plugin_slug || 'alttext-ai';
       } catch (subError) {
         // If subscription retrieval fails, use default plugin slug
         console.warn(`[Webhook] Could not retrieve subscription ${subscriptionId}:`, subError.message);
