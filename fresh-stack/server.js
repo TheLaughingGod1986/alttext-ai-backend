@@ -253,6 +253,56 @@ app.get('/health', (_req, res) => {
 app.use('/api/usage', createUsageRouter({ supabase, requiredToken }));
 app.use('/billing', createBillingRouter({ supabase, requiredToken, getStripe, priceIds }));
 
+async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
+  if (!supabaseClient || !siteKey) return;
+  const promptTokens = Number(usage?.prompt_tokens || 0);
+  const completionTokens = Number(usage?.completion_tokens || 0);
+  const totalTokens = promptTokens + completionTokens;
+  const userId = headers['x-wp-user-id'] || headers['x-user-id'] || null;
+  const userEmail = headers['x-wp-user-email'] || headers['x-user-email'] || null;
+
+  // 1) Write usage log
+  try {
+    await supabaseClient.from('usage_logs').insert({
+      site_hash: siteKey,
+      images: 1,
+      images_used: 1,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      tokens: totalTokens,
+      user_id: userId,
+      user_email: userEmail
+    });
+  } catch (e) {
+    console.warn('[usage] failed to insert usage log', e.message);
+  }
+
+  // 2) Increment credits counters (best-effort)
+  try {
+    const { data: creditsRow } = await supabaseClient
+      .from('credits')
+      .select('*')
+      .eq('site_hash', siteKey)
+      .single();
+
+    const nextUsedThisMonth = Number(creditsRow?.used_this_month || creditsRow?.used_total || 0) + 1;
+    const nextUsedTotal = Number(creditsRow?.used_total || 0) + 1;
+
+    if (creditsRow) {
+      await supabaseClient
+        .from('credits')
+        .update({ used_this_month: nextUsedThisMonth, used_total: nextUsedTotal })
+        .eq('site_hash', siteKey);
+    } else {
+      await supabaseClient
+        .from('credits')
+        .insert({ site_hash: siteKey, used_this_month: 1, used_total: 1 });
+    }
+  } catch (e) {
+    console.warn('[usage] failed to update credits', e.message);
+  }
+}
+
 app.post('/api/alt-text', async (req, res) => {
   const parsed = requestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -329,6 +379,16 @@ app.post('/api/alt-text', async (req, res) => {
     image: normalized,
     context: { ...context, filename: normalized.filename }
   });
+
+  // Record usage/credits for successful, non-cached generations
+  if (!bypassCache && usage) {
+    await recordUsage({
+      siteKey,
+      usage,
+      supabaseClient: supabase,
+      headers: req.headers
+    });
+  }
 
   if (cacheKey && !bypassCache) {
     const payload = { altText, warnings, usage, meta };
