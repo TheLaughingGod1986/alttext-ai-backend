@@ -7,7 +7,7 @@
  * License key middleware - validates X-License-Key header
  * Sets req.license with license data for quota tracking
  */
-async function validateLicenseKey(supabase) {
+function validateLicenseKey(supabase) {
   return async (req, res, next) => {
     const licenseKey = req.header('X-License-Key');
 
