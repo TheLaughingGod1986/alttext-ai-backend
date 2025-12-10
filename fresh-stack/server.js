@@ -231,6 +231,7 @@ app.post('/api/alt-text', async (req, res) => {
 
   const { image, context = {} } = parsed.data;
   const siteKey = req.header('X-Site-Key') || 'default';
+  const bypassCache = req.header('X-Bypass-Cache') === 'true' || req.query.no_cache === '1';
 
   // Rate limit per site
   if (!(await checkRateLimit(siteKey))) {
@@ -240,7 +241,7 @@ app.post('/api/alt-text', async (req, res) => {
   // Deduplication via hash
   const base64Data = image.base64 || image.image_base64 || '';
   const cacheKey = base64Data ? hashPayload(base64Data) : null;
-  if (cacheKey) {
+  if (cacheKey && !bypassCache) {
     if (redis) {
       try {
         const cached = await redis.get(`alttext:cache:${cacheKey}`);
@@ -298,7 +299,7 @@ app.post('/api/alt-text', async (req, res) => {
     context: { ...context, filename: normalized.filename }
   });
 
-  if (cacheKey) {
+  if (cacheKey && !bypassCache) {
     const payload = { altText, warnings, usage, meta };
     if (redis) {
       redis.set(`alttext:cache:${cacheKey}`, JSON.stringify(payload), 'EX', 60 * 60 * 24 * 7).catch(() => {});
