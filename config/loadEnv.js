@@ -5,6 +5,20 @@
 
 require('dotenv').config();
 
+const REQUIRED_VARS = [
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'STRIPE_SECRET_KEY',
+  'OPENAI_API_KEY'
+];
+
+function validateRequired(envKeys = REQUIRED_VARS) {
+  const missing = envKeys.filter((k) => !process.env[k]);
+  if (missing.length) {
+    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  }
+}
+
 /**
  * Get environment variable with optional default
  */
@@ -49,6 +63,7 @@ module.exports = {
   requireEnv,
   isProduction,
   isDevelopment,
-  isTest
+  isTest,
+  validateRequired
 };
 

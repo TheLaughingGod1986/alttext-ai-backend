@@ -4,9 +4,22 @@ Lightweight backend + frontend built together for quick alt-text generation with
 
 ## Run locally
 ```bash
-npm run start:fresh
-# opens on http://localhost:4000
+npm start        # uses fresh-stack/server.js
+# http://localhost:4000/health
 ```
+
+## Required env
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `ALTTEXT_AI_STRIPE_PRICE_PRO`
+- `ALTTEXT_AI_STRIPE_PRICE_AGENCY`
+- `ALTTEXT_AI_STRIPE_PRICE_CREDITS`
+- `OPENAI_API_KEY`
+- `ALLOWED_ORIGINS` (comma-separated)
+- Optional: `ALT_API_TOKEN`, `FRONTEND_URL`, `FRONTEND_DASHBOARD_URL`
+- Optional: `RATE_LIMIT_PER_SITE`, `RATE_LIMIT_GLOBAL`, `JOB_CONCURRENCY`, `JOB_TTL_SECONDS`, `SKIP_QUOTA_CHECK_SITE_IDS`
 
 ## API
 - `POST /api/alt-text`
@@ -28,10 +41,16 @@ npm run start:fresh
 - `POST /billing/checkout` (token + `X-Site-Key`; creates Stripe checkout session)
 - `POST /billing/portal` (token + `X-Site-Key`; requires `customerId`)
 - `GET /billing/subscription` (token + `X-Site-Key`; optional)
+- `GET /ready` - basic readiness (redis + supabase presence)
 
 ## Notes
+- Health: `GET /health`
+- Readiness: `GET /ready` (checks redis ping and supabase presence)
+- Headers: use `X-Site-Key` for site context; optional bearer/API token for protected routes
 - Validation is gentle: only blocks clearly bad payloads (invalid base64 or >512KB); otherwise returns warnings.
-- If `ALTTEXT_OPENAI_API_KEY` (or `OPENAI_API_KEY`) is missing, the service returns a deterministic fallback alt text instead of erroring.
-- Frontend lives in `fresh-stack/frontend` and is served by the same Express app. Uploading an image auto-fills dimensions to keep token costs predictable.
-- Env sample: see `fresh-stack/.env.example`.
-- Optional Redis for cache/rate limit/queue: set `REDIS_URL`. Billing uses Stripe; set `STRIPE_SECRET_KEY` and price IDs (`ALTTEXT_AI_STRIPE_PRICE_PRO/AGENCY/CREDITS`).
+- Optional Redis for cache/rate limit/queue: set `REDIS_URL`.
+
+## Smoke
+```bash
+npm run smoke   # curls health, ready, billing/plans, usage, alt-text
+```

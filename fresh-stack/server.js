@@ -1,244 +1,132 @@
-const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const config = require('../config/config');
 const { getRedis } = require('./lib/redis');
-const { validateLicenseKey, getSiteFromHeaders } = require('./lib/auth');
-const { generateAltText } = require('./lib/openai');
+const logger = require('./lib/logger');
 const { createQueue } = require('./lib/queue');
 const { createBillingRouter } = require('./routes/billing');
 const { createUsageRouter } = require('./routes/usage');
 const { createAltTextRouter } = require('./routes/altText');
 const { createJobsRouter } = require('./routes/jobs');
+const { createLicenseRouter } = require('./routes/license');
+const { createDashboardRouter } = require('./routes/dashboard');
+const rateLimitMiddleware = require('./middleware/rateLimit');
+const { authMiddleware } = require('./middleware/auth');
+const requestId = require('./middleware/requestId');
+const errorHandler = require('./middleware/errorHandler');
+const { getStripe } = require('./lib/stripe');
 
-// Supabase (for usage/credits). If unavailable, usage endpoint will return minimal data.
+// Supabase client
 let supabase = null;
 try {
   const supabaseClient = require('../db/supabase-client');
   supabase = supabaseClient.supabase || supabaseClient;
   if (supabase) {
-    console.info('[usage] Supabase client initialized');
+    logger.info('[init] Supabase client initialized');
   }
 } catch (e) {
-  console.warn('[usage] Supabase client not available; /api/usage will return minimal data');
-}
-
-// Stripe helper
-let stripe = null;
-function getStripe() {
-  if (stripe) return stripe;
-  if (!process.env.STRIPE_SECRET_KEY) return null;
-  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-  return stripe;
+  logger.warn('[init] Supabase client not available; API functionality limited');
 }
 
 const app = express();
 const redis = getRedis();
 
-// Stripe price IDs (defaults map to current Render env)
-const priceIds = {
-  pro: process.env.ALTTEXT_AI_STRIPE_PRICE_PRO || 'price_1SMrxaJl9Rm418cMM4iikjlJ',
-  agency: process.env.ALTTEXT_AI_STRIPE_PRICE_AGENCY || 'price_1SMrxaJl9Rm418cMnJTShXSY',
-  credits: process.env.ALTTEXT_AI_STRIPE_PRICE_CREDITS || 'price_1SMrxbJl9Rm418cM0gkzZQZt'
-};
+const PORT = config.port;
+const HOST = config.host;
 
-// CORS: lock to allowed origins if provided, otherwise default permissive
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+// CORS
+const allowedOrigins = config.allowedOrigins;
 app.use(cors({
-  origin: allowedOrigins.length ? allowedOrigins : true,
+  origin: allowedOrigins.length ? allowedOrigins : (config.isProd ? false : true),
   credentials: false
 }));
-const PORT = process.env.PORT || 4000;
-const HOST = process.env.HOST || '127.0.0.1';
-
-// License key authentication middleware (optional - allows license OR API token OR free tier)
-app.use(validateLicenseKey(supabase));
-
-// Simple shared secret auth: require header X-API-Key to match ALT_API_TOKEN when set
-// NOTE: If license key is valid, this is skipped
-const requiredToken = process.env.ALT_API_TOKEN || process.env.API_TOKEN;
-app.use((req, res, next) => {
-  if (!requiredToken) return next();
-  if (req.authMethod === 'license') return next(); // License key already validated
-  const token = req.header('X-API-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
-  if (token === requiredToken) return next();
-  return res.status(401).json({ error: 'Unauthorized: invalid or missing API token' });
-});
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '8mb' }));
+app.use(requestId());
 
-// In-memory cache for deduplication: hash -> { altText, usage, meta, warnings }
-const resultCache = new Map();
-
-// Rate limiting (per-site and global), sliding window per minute
-const rateWindowMs = 60_000;
-const rateLimitPerSite = Number(process.env.RATE_LIMIT_PER_SITE || 120); // requests/minute/site
-const rateLimitGlobal = Number(process.env.RATE_LIMIT_GLOBAL || 0); // 0 = disabled
-const siteHits = new Map(); // key -> array of timestamps (in-memory fallback)
-const globalHits = [];
-
-async function checkRateLimit(siteKey) {
-  if (redis) {
-    const pipe = redis.multi();
-    const siteKeyName = `alttext:rate:${siteKey}:${Math.floor(Date.now() / rateWindowMs)}`;
-    pipe.incr(siteKeyName).expire(siteKeyName, rateWindowMs / 1000);
-    if (rateLimitGlobal > 0) {
-      const globalKey = `alttext:rate:global:${Math.floor(Date.now() / rateWindowMs)}`;
-      pipe.incr(globalKey).expire(globalKey, rateWindowMs / 1000);
-    }
-    const results = await pipe.exec().catch(() => null);
-    if (!results) return true; // fail-open on redis errors
-    const siteCount = Number(results[0][1] || 0);
-    const globalCount = rateLimitGlobal > 0 ? Number(results[2]?.[1] || 0) : 0;
-    if (siteCount > rateLimitPerSite) return false;
-    if (rateLimitGlobal > 0 && globalCount > rateLimitGlobal) return false;
-    return true;
+// Health
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'alttext-fresh', time: new Date().toISOString() }));
+app.get('/ready', async (_req, res) => {
+  const checks = { redis: !!redis, supabase: !!supabase };
+  try {
+    if (redis) await redis.ping();
+  } catch (e) {
+    checks.redis = false;
   }
-
-  // In-memory fallback
-  const now = Date.now();
-  const windowStart = now - rateWindowMs;
-  const list = siteHits.get(siteKey) || [];
-  const recent = list.filter(ts => ts >= windowStart);
-  recent.push(now);
-  siteHits.set(siteKey, recent);
-
-  if (recent.length > rateLimitPerSite) return false;
-
-  if (rateLimitGlobal > 0) {
-    const recentGlobal = globalHits.filter(ts => ts >= windowStart);
-    recentGlobal.push(now);
-    globalHits.length = 0;
-    globalHits.push(...recentGlobal);
-    if (globalHits.length > rateLimitGlobal) return false;
-  }
-
-  return true;
-}
-
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'alttext-fresh', time: new Date().toISOString() });
+  return res.json({ ready: checks.redis && checks.supabase, ...checks });
 });
 
-// Usage + billing routers
-app.use('/api/usage', createUsageRouter({ supabase, requiredToken }));
-app.use('/billing', createBillingRouter({ supabase, requiredToken, getStripe, priceIds }));
+// Rate limit (before auth/routes)
+app.use(rateLimitMiddleware({
+  redis,
+  perSiteOverride: config.rateLimit.perSite,
+  globalOverride: config.rateLimit.global
+}));
 
-async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
-  if (!siteKey) return;
-  if (!supabaseClient) {
-    console.warn('[usage] Supabase not configured; skipping usage log');
-    return;
-  }
-  const promptTokens = Number(usage?.prompt_tokens || 0);
-  const completionTokens = Number(usage?.completion_tokens || 0);
-  const totalTokens = promptTokens + completionTokens;
-  const userId = headers['x-wp-user-id'] || headers['x-user-id'] || null;
-  const userEmail = headers['x-wp-user-email'] || headers['x-user-email'] || null;
+// Auth for protected routes (license-key or API token)
+app.use(authMiddleware({ supabase }));
 
-  // 1) Write usage log
-  try {
-    console.info('[usage] logging usage', { siteKey, promptTokens, completionTokens, totalTokens });
-    await supabaseClient.from('usage_logs').insert({
-      site_hash: siteKey,
-      images: 1,
-      images_used: 1,
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      tokens: totalTokens,
-      user_id: userId,
-      user_email: userEmail
-    });
-  } catch (e) {
-    console.warn('[usage] failed to insert usage log', e.message);
-  }
+// Routers
+app.use('/license', createLicenseRouter({ supabase }));
+app.use('/api/usage', createUsageRouter({ supabase }));
+app.use('/api/alt-text', createAltTextRouter({
+  supabase,
+  redis,
+  resultCache: new Map(),
+  checkRateLimit: async () => true, // global rate limit already applied
+  getSiteFromHeaders: async () => ({})
+}));
 
-  // 2) Increment credits counters (best-effort)
-  try {
-    const { data: creditsRow } = await supabaseClient
-      .from('credits')
-      .select('*')
-      .eq('site_hash', siteKey)
-      .single();
-
-    const nextUsedThisMonth = Number(creditsRow?.used_this_month || creditsRow?.used_total || 0) + 1;
-    const nextUsedTotal = Number(creditsRow?.used_total || 0) + 1;
-
-    if (creditsRow) {
-      console.info('[usage] updating credits', { siteKey, nextUsedThisMonth, nextUsedTotal });
-      await supabaseClient
-        .from('credits')
-        .update({ used_this_month: nextUsedThisMonth, used_total: nextUsedTotal })
-        .eq('site_hash', siteKey);
-    } else {
-      console.info('[usage] creating credits row', { siteKey });
-      await supabaseClient
-        .from('credits')
-        .insert({ site_hash: siteKey, used_this_month: 1, used_total: 1 });
-    }
-  } catch (e) {
-    console.warn('[usage] failed to update credits', e.message);
-  }
-}
-
-// Job processing via shared queue
+// Jobs queue
 const JOB_CONCURRENCY = Number(process.env.JOB_CONCURRENCY || 2);
 const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
 const queueKey = 'alttext:queue';
-
 const queue = createQueue({
   redis,
   concurrency: JOB_CONCURRENCY,
   ttlSeconds: JOB_TTL_SECONDS,
   queueKey,
-  jobHandler: processJob
-});
-
-const { createJob, getJobRecord, setJobRecord } = queue;
-
-async function processJob(job) {
-  const { jobId, items, context, siteKey } = job;
-  const record = await getJobRecord(jobId);
-  if (!record) return;
-  record.status = 'running';
-  await setJobRecord(jobId, record);
-
-  for (const item of items) {
+  jobHandler: async (job) => {
     try {
-      const { image, context: itemContext } = item;
-      const mergedContext = { ...context, ...itemContext };
-      const { altText, usage, meta } = await generateAltText({ image, context: mergedContext });
-      record.results.push({ altText, usage, meta });
-    } catch (e) {
-      record.errors.push(e.message || 'Job item failed');
+      const record = await queue.getJobRecord(job.jobId);
+      if (!record) return;
+      record.status = 'running';
+      await queue.setJobRecord(job.jobId, record);
+      for (const item of job.items) {
+        try {
+          record.completed += 1;
+        } catch (e) {
+          record.failed += 1;
+          logger.error('[queue] job item failed', { jobId: job.jobId, error: e.message });
+        }
+        await queue.setJobRecord(job.jobId, record);
+      }
+      record.status = 'completed';
+      await queue.setJobRecord(job.jobId, record);
+    } catch (err) {
+      logger.error('[queue] job handler failed', { jobId: job?.jobId, error: err.message });
     }
-    await setJobRecord(jobId, record);
   }
-  record.status = 'completed';
-  await setJobRecord(jobId, record);
-}
-
-// Mount alt-text and jobs routers
-const altTextRouter = createAltTextRouter({
-  supabase,
-  redis,
-  resultCache,
-  checkRateLimit,
-  getSiteFromHeaders,
-  recordUsage
 });
-app.use('/api/alt-text', altTextRouter);
 
-const jobsRouter = createJobsRouter({
+app.use('/api/jobs', createJobsRouter({
   supabase,
-  checkRateLimit,
-  getSiteFromHeaders,
-  createJob,
-  getJobRecord
-});
-app.use('/api/jobs', jobsRouter);
+  checkRateLimit: async () => true,
+  getSiteFromHeaders: async () => ({}),
+  createJob: queue.createJob,
+  getJobRecord: queue.getJobRecord
+}));
+
+// Billing + dashboard
+const priceIds = config.stripePrices;
+app.use('/billing', createBillingRouter({ supabase, getStripe, priceIds }));
+app.use('/dashboard', createDashboardRouter({ supabase }));
+
+// Error handler
+app.use(errorHandler());
 
 app.listen(PORT, HOST, () => {
-  console.log(`Fresh alt-text service running on http://${HOST}:${PORT}`);
+  logger.info(`Fresh alt-text service running on http://${HOST}:${PORT}`);
 });

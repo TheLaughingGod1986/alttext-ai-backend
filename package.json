@@ -2,17 +2,17 @@
   "name": "alttext-ai-api",
   "version": "1.0.0",
   "description": "Proxy API for AltText AI WordPress plugin",
-  "main": "server-v2.js",
+  "main": "fresh-stack/server.js",
   "scripts": {
-    "start": "node server-v2.js",
-    "dev": "nodemon server-v2.js",
+    "start": "node fresh-stack/server.js",
+    "dev": "nodemon fresh-stack/server.js",
     "test": "jest --runInBand --forceExit",
     "test:unit": "jest tests/unit --runInBand --forceExit",
     "test:integration": "jest tests/integration --runInBand --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --runInBand --coverage --ci",
-    "email:build": "tsc src/emails/*.tsx --jsx react --outDir src/emails/dist --module commonjs --esModuleInterop --skipLibCheck || true",
+    "smoke": "bash fresh-stack/tests/smoke.sh",
     "start:fresh": "node fresh-stack/server.js"
   },
   "keywords": [

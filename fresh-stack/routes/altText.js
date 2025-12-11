@@ -3,6 +3,9 @@ const crypto = require('crypto');
 const { z } = require('zod');
 const { validateImagePayload } = require('../lib/validation');
 const { generateAltText } = require('../lib/openai');
+const { enforceQuota } = require('../services/quota');
+const { recordUsage } = require('../services/usage');
+const { extractUserInfo } = require('../middleware/auth');
 
 function hashPayload(base64) {
   return crypto.createHash('md5').update(base64).digest('hex');
@@ -38,38 +41,43 @@ function createAltTextRouter({
   redis,
   resultCache,
   checkRateLimit,
-  getSiteFromHeaders,
-  recordUsage
+  getSiteFromHeaders
 }) {
   const router = express.Router();
 
   router.post('/', async (req, res) => {
     const parsed = requestSchema.safeParse(req.body);
     if (!parsed.success) {
-      console.warn('[alt-text] invalid payload', parsed.error.issues?.[0]);
-      return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
+      return res.status(400).json({ error: 'INVALID_REQUEST', message: 'Invalid payload', details: parsed.error.flatten() });
     }
 
     const { image, context = {} } = parsed.data;
     const siteKey = req.header('X-Site-Key') || 'default';
+    const licenseKey = req.header('X-License-Key');
+    const userInfo = extractUserInfo(req);
     const bypassCache = req.header('X-Bypass-Cache') === 'true' || req.query.no_cache === '1';
 
-    // Get site data and check quota
-    const siteData = await getSiteFromHeaders(supabase, req);
-    if (siteData.remaining <= 0) {
-      return res.status(402).json({
-        error: 'Quota exceeded for this billing period',
-        code: 'QUOTA_EXCEEDED',
-        quota: siteData.quota,
-        used: siteData.used,
-        remaining: 0,
-        plan: siteData.plan
+    // Quota enforcement
+    try {
+      await enforceQuota(supabase, { licenseKey, siteHash: siteKey, creditsNeeded: 1 });
+    } catch (err) {
+      return res.status(err.status || 402).json({
+        error: err.code || 'QUOTA_EXCEEDED',
+        message: err.message,
+        code: err.code || 'QUOTA_EXCEEDED',
+        credits_used: err.payload?.credits_used,
+        total_limit: err.payload?.total_limit,
+        reset_date: err.payload?.reset_date
       });
     }
 
-    // Rate limit per site
+    // Rate limit per site/license
     if (!(await checkRateLimit(siteKey))) {
-      return res.status(429).json({ error: 'Rate limit exceeded for this site. Please retry later.' });
+      return res.status(429).json({
+        error: 'RATE_LIMIT_EXCEEDED',
+        message: 'Rate limit exceeded for this site. Please retry later.',
+        code: 'RATE_LIMIT_EXCEEDED'
+      });
     }
 
     // Deduplication via hash
@@ -81,51 +89,20 @@ function createAltTextRouter({
           const cached = await redis.get(`alttext:cache:${cacheKey}`);
           if (cached) {
             const parsed = JSON.parse(cached);
-            console.info('[alt-text] cache hit', {
-              width: image.width,
-              height: image.height,
-              cached: true,
-              prompt_tokens: parsed?.usage?.prompt_tokens,
-              completion_tokens: parsed?.usage?.completion_tokens,
-              model: parsed?.meta?.modelUsed
-            });
             return res.json({ ...parsed, cached: true });
           }
         } catch (e) {
-          // fall through on cache errors
+          // ignore cache errors
         }
       } else if (resultCache.has(cacheKey)) {
         const cached = resultCache.get(cacheKey);
-        console.info('[alt-text] cache hit', {
-          width: image.width,
-          height: image.height,
-          cached: true,
-          prompt_tokens: cached?.usage?.prompt_tokens,
-          completion_tokens: cached?.usage?.completion_tokens,
-          model: cached?.meta?.modelUsed
-        });
         return res.json({ ...cached, cached: true });
       }
     }
 
-    console.info('[alt-text] request received', {
-      hasBase64: Boolean(image.base64 || image.image_base64),
-      hasUrl: Boolean(image.url),
-      width: image.width,
-      height: image.height
-    });
     const { errors, warnings, normalized } = validateImagePayload(image);
-    if (normalized?.base64) {
-      const sizeKb = Math.round((normalized.base64.length * 3) / 4096);
-      const bpp = normalized.width && normalized.height
-        ? Math.round(((normalized.base64.length * 0.75) / (normalized.width * normalized.height)) * 10000) / 10000
-        : null;
-      console.info('[alt-text] base64 meta', { kb: sizeKb, width: normalized.width, height: normalized.height, bpp });
-    }
-
     if (errors.length) {
-      console.warn('[alt-text] validation failed', { errors, warnings });
-      return res.status(400).json({ error: 'Image validation failed', errors, warnings });
+      return res.status(400).json({ error: 'INVALID_REQUEST', errors, warnings });
     }
 
     const { altText, usage, meta } = await generateAltText({
@@ -133,20 +110,25 @@ function createAltTextRouter({
       context: { ...context, filename: normalized.filename }
     });
 
-    // Record usage/credits for successful, non-cached generations
-    if (!bypassCache && usage) {
-      console.info('[usage] attempting to record usage', {
-        siteKey,
-        prompt_tokens: usage?.prompt_tokens,
-        completion_tokens: usage?.completion_tokens
-      });
-      await recordUsage({
-        siteKey,
-        usage,
-        supabaseClient: supabase,
-        headers: req.headers
-      });
-    }
+    // Record usage/credits
+    await recordUsage(supabase, {
+      licenseKey,
+      siteHash: siteKey,
+      userId: userInfo.user_id,
+      userEmail: userInfo.user_email,
+      pluginVersion: userInfo.plugin_version,
+      creditsUsed: 1,
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      totalTokens: usage?.total_tokens,
+      cached: false,
+      modelUsed: meta?.modelUsed,
+      generationTimeMs: meta?.generation_time_ms,
+      imageUrl: normalized.url,
+      imageFilename: normalized.filename,
+      endpoint: 'api/alt-text',
+      status: 'success'
+    });
 
     if (cacheKey && !bypassCache) {
       const payload = { altText, warnings, usage, meta };
@@ -157,20 +139,20 @@ function createAltTextRouter({
       }
     }
 
-    console.info('[alt-text] usage', {
-      width: normalized.width,
-      height: normalized.height,
-      prompt_tokens: usage?.prompt_tokens,
-      completion_tokens: usage?.completion_tokens,
-      model: meta?.modelUsed,
-      cached: false
-    });
-
     res.json({
       altText,
-      warnings,
-      usage,
-      meta
+      credits_used: 1,
+      credits_remaining: usage?.credits_remaining,
+      usage: {
+        prompt_tokens: usage?.prompt_tokens,
+        completion_tokens: usage?.completion_tokens,
+        total_tokens: usage?.total_tokens
+      },
+      meta: {
+        modelUsed: meta?.modelUsed,
+        cached: false,
+        generation_time_ms: meta?.generation_time_ms
+      }
     });
   });
 

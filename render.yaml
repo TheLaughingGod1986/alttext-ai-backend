@@ -13,102 +13,37 @@ services:
         value: production
       - key: PORT
         value: 3001
-
-      # Database (from Render PostgreSQL)
-      - key: DATABASE_URL
+      - key: ALLOWED_ORIGINS
         sync: false
-        # Format: postgresql://user:pass@host:5432/dbname
-      
-      # Supabase (Required for production)
+
+      # Supabase (required)
       - key: SUPABASE_URL
         sync: false
-        # Format: https://your-project.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-        # Your Supabase service role key
-      - key: SUPABASE_ANON_KEY
-        sync: false
-        # Supabase anonymous key (optional, for client-side operations)
 
-      # JWT Authentication
-      - key: JWT_SECRET
-        generateValue: true
-        # Will auto-generate a secure random string
-      - key: JWT_EXPIRES_IN
-        value: 7d
-
-      # OpenAI API
-      - key: OPENAI_API_KEY
-        sync: false
-        # Fallback key used if service-specific keys are not set
-      - key: ALTTEXT_OPENAI_API_KEY
-        sync: false
-        # Primary API key for alttext-ai service
-      - key: SEO_META_OPENAI_API_KEY
-        sync: false
-        # Primary API key for seo-ai-meta service
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
-      - key: OPENAI_REVIEW_API_KEY
-        sync: false
-      - key: OPENAI_REVIEW_MODEL
-        value: gpt-4o-mini
-
-      # Stripe (Test keys initially)
+      # Stripe (required)
       - key: STRIPE_SECRET_KEY
         sync: false
-        # Start with sk_test_..., upgrade to sk_live_... later
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
-        # Stripe publishable key (optional, for frontend)
-      # AltText AI Stripe Prices
       - key: ALTTEXT_AI_STRIPE_PRICE_PRO
         sync: false
-        # Pro plan price ID for alttext-ai service
       - key: ALTTEXT_AI_STRIPE_PRICE_AGENCY
         sync: false
-        # Agency plan price ID for alttext-ai service
       - key: ALTTEXT_AI_STRIPE_PRICE_CREDITS
         sync: false
-        # Credits price ID for alttext-ai service
-      # SEO AI Meta Stripe Prices
-      - key: SEO_AI_META_STRIPE_PRICE_PRO
-        sync: false
-        # Pro plan price ID for seo-ai-meta service
-      - key: SEO_AI_META_STRIPE_PRICE_AGENCY
-        sync: false
-        # Agency plan price ID for seo-ai-meta service
 
-      # Frontend URL (WordPress site)
-      - key: FRONTEND_URL
+      # OpenAI (required)
+      - key: OPENAI_API_KEY
         sync: false
-        # Your WordPress site URL for CORS
-      - key: FRONTEND_DASHBOARD_URL
-        sync: false
-        # Dashboard URL for CORS (optional, falls back to FRONTEND_URL)
-
-      # Email (Required for email functionality)
-      - key: RESEND_API_KEY
-        sync: false
-        # Resend API key for sending emails
-      - key: EMAIL_FROM
-        sync: false
-        # Format: "Name <email@domain.com>"
-      - key: EMAIL_BRAND_NAME
-        sync: false
-        # Brand name for emails (optional)
-      - key: RESEND_FROM_EMAIL
-        sync: false
-        # Legacy support (optional, use EMAIL_FROM instead)
-      - key: RESEND_AUDIENCE_ID
-        sync: false
-        # Resend audience ID for subscriber management (optional)
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
 
       # Optional
-      - key: WEBHOOK_SECRET
-        generateValue: true
-      - key: SENTRY_DSN
+      - key: ALT_API_TOKEN
         sync: false
-        # Sentry DSN for error tracking (optional)
+      - key: FRONTEND_URL
+        sync: false
+      - key: FRONTEND_DASHBOARD_URL
+        sync: false

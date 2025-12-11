@@ -1,152 +1,92 @@
 const express = require('express');
+const { getQuotaStatus } = require('../services/quota');
+const { getUserUsage, getSiteUsage, getPeriodBounds } = require('../services/usage');
 
-function createUsageRouter({ supabase, requiredToken }) {
+function createUsageRouter({ supabase }) {
   const router = express.Router();
 
+  // GET /usage - current quota status
   router.get('/', async (req, res) => {
+    const licenseKey = req.header('X-License-Key');
     const siteKey = req.header('X-Site-Key');
-    if (!siteKey) {
-      return res.status(400).json({ error: 'Missing X-Site-Key header' });
-    }
-    if (requiredToken) {
-      const token = req.header('Authorization')?.replace(/^Bearer\\s+/i, '') || req.header('X-API-Key');
-      if (token !== requiredToken) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+
+    const status = await getQuotaStatus(supabase, { licenseKey, siteHash: siteKey });
+    if (status.error) {
+      return res.status(status.status || 401).json(status);
     }
 
-    if (!supabase) {
-      return res.json({
-        success: true,
-        siteId: siteKey,
-        subscription: {
-          plan: 'unknown',
-          status: 'unknown',
-          quota: null,
-          used: null,
-          remaining: null,
-          periodStart: null,
-          periodEnd: null,
-          scope: 'unknown'
-        },
-        credits: {
-          total: null,
-          used: null,
-          remaining: null,
-          scope: 'unknown'
-        },
-        users: []
+    return res.json({
+      credits_used: status.credits_used,
+      credits_remaining: status.credits_remaining,
+      total_limit: status.total_limit,
+      plan_type: status.plan_type,
+      reset_date: status.reset_date,
+      billing_cycle: 'monthly',
+      warning_threshold: status.warning_threshold,
+      is_near_limit: status.is_near_limit,
+      rate_limit: {
+        requests_per_minute: status.plan_type === 'agency' ? 240 : status.plan_type === 'pro' ? 120 : 60,
+        burst_limit: status.plan_type === 'agency' ? 240 : status.plan_type === 'pro' ? 120 : 60
+      }
+    });
+  });
+
+  // GET /usage/users - per-user breakdown
+  router.get('/users', async (req, res) => {
+    const licenseKey = req.header('X-License-Key');
+    const siteKey = req.header('X-Site-Key');
+    if (!siteKey) return res.status(400).json({ error: 'INVALID_REQUEST', message: 'X-Site-Key required' });
+
+    const { periodStart, periodEnd } = getPeriodBounds(new Date().getUTCDate());
+    const result = await getUserUsage(supabase, { licenseKey, siteHash: siteKey, periodStart, periodEnd });
+    if (result.error) return res.status(500).json({ error: 'SERVER_ERROR', message: result.error.message });
+
+    return res.json({
+      site_id: siteKey,
+      period_start: periodStart.toISOString(),
+      period_end: periodEnd.toISOString(),
+      total_credits_used: (result.users || []).reduce((s, u) => s + (u.credits_used || 0), 0),
+      users: result.users || []
+    });
+  });
+
+  // GET /usage/sites - per-site breakdown (agency)
+  router.get('/sites', async (req, res) => {
+    const licenseKey = req.header('X-License-Key');
+    if (!licenseKey) return res.status(401).json({ error: 'INVALID_LICENSE', message: 'X-License-Key required' });
+
+    // Ensure plan is agency
+    const { data: lic } = await supabase.from('licenses').select('plan').eq('license_key', licenseKey).single();
+    if (!lic) return res.status(401).json({ error: 'INVALID_LICENSE', message: 'License not found' });
+    if (lic.plan !== 'agency') {
+      return res.status(403).json({
+        error: 'PLAN_NOT_SUPPORTED',
+        message: 'Multi-site usage tracking requires an Agency plan',
+        code: 'PLAN_NOT_SUPPORTED'
       });
     }
 
-    try {
-      const userIdFilter = req.header('X-WP-User-ID') || null;
-      const userEmailFilter = req.header('X-WP-User-Email') || null;
+    const { periodStart, periodEnd } = getPeriodBounds(new Date().getUTCDate());
+    const result = await getSiteUsage(supabase, { licenseKey, periodStart, periodEnd });
+    if (result.error) return res.status(500).json({ error: 'SERVER_ERROR', message: result.error.message });
 
-      const { data: site } = await supabase.from('sites').select('*').eq('site_hash', siteKey).single();
-      const siteCreatedAt = site?.created_at ? new Date(site.created_at) : null;
-      const plan = site?.plan || 'free';
+    const totals = (result.sites || []).reduce(
+      (acc, s) => {
+        acc.total += s.credits_used || 0;
+        return acc;
+      },
+      { total: 0 }
+    );
 
-      const planScopes = { pro: 'site', agency: 'shared', free: 'site', credits: 'site' };
-      const defaultQuotas = { pro: 1000, agency: 10000, free: 50, credits: 0 };
-
-      const { data: subscription } = supabase
-        ? await supabase.from('subscriptions').select('*').eq('site_hash', siteKey).single()
-        : { data: null };
-
-      const subscriptionPlan = subscription?.plan || plan || 'free';
-      const quota = site?.monthly_limit || defaultQuotas[subscriptionPlan] || 0;
-      const scope = planScopes[subscriptionPlan] || 'site';
-
-      const now = new Date();
-      let periodStart = siteCreatedAt || now;
-      if (subscription?.current_period_start && subscription?.current_period_end) {
-        periodStart = new Date(subscription.current_period_start);
-      }
-      if (siteCreatedAt) {
-        const start = new Date(now);
-        start.setDate(siteCreatedAt.getDate());
-        start.setHours(0, 0, 0, 0);
-        if (start > now) {
-          start.setMonth(start.getMonth() - 1);
-        }
-        periodStart = start;
-      }
-      const periodEnd = new Date(periodStart);
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
-
-      let usedImages = 0;
-      let usedPromptTokens = 0;
-      let usedCompletionTokens = 0;
-      let usersBreakdown = [];
-
-      const { data: logs } = await supabase
-        .from('usage_logs')
-        .select('*')
-        .eq('site_hash', siteKey)
-        .gte('created_at', periodStart.toISOString());
-
-      if (logs) {
-        logs.forEach((log) => {
-          usedImages += Number(log.images || log.images_used || 0);
-          usedPromptTokens += Number(log.prompt_tokens || log.tokens || 0);
-          usedCompletionTokens += Number(log.completion_tokens || 0);
-        });
-        if (userIdFilter || userEmailFilter) {
-          const byUser = {};
-          logs.forEach((log) => {
-            const uid = log.user_id || log.user || 'unknown';
-            if (userIdFilter && String(uid) !== String(userIdFilter)) return;
-            if (!byUser[uid]) {
-              byUser[uid] = { images: 0, prompt_tokens: 0, completion_tokens: 0 };
-            }
-            byUser[uid].images += Number(log.images || log.images_used || 0);
-            byUser[uid].prompt_tokens += Number(log.prompt_tokens || log.tokens || 0);
-            byUser[uid].completion_tokens += Number(log.completion_tokens || 0);
-          });
-          usersBreakdown = Object.entries(byUser).map(([userId, usage]) => ({ userId, used: usage }));
-        }
-      }
-
-      let creditsTotal = null;
-      let creditsUsed = null;
-      let creditsRemaining = null;
-      const { data: credits } = await supabase.from('credits').select('*').eq('site_hash', siteKey).single();
-      if (credits) {
-        creditsTotal = Number(credits.monthly_limit || credits.total || credits.credits || 0);
-        creditsUsed = Number(credits.used_this_month || credits.used_total || 0);
-        creditsRemaining = Math.max(creditsTotal - creditsUsed, 0);
-      }
-
-      const subscriptionStatus = subscription?.status || site?.plan || 'free';
-      const subscriptionUsed = usedImages;
-      const subscriptionRemaining = quota ? Math.max(quota - subscriptionUsed, 0) : null;
-
-      res.json({
-        success: true,
-        siteId: siteKey,
-        subscription: {
-          plan: subscriptionPlan,
-          status: subscriptionStatus,
-          quota,
-          used: subscriptionUsed,
-          remaining: subscriptionRemaining,
-          periodStart: periodStart.toISOString(),
-          periodEnd: periodEnd.toISOString(),
-          scope
-        },
-        credits: {
-          total: creditsTotal,
-          used: creditsUsed,
-          remaining: creditsRemaining,
-          scope: 'site'
-        },
-        users: usersBreakdown
-      });
-    } catch (error) {
-      console.error('[usage] error', error.message);
-      res.status(500).json({ error: 'Failed to fetch usage' });
-    }
+    return res.json({
+      license_id: licenseKey,
+      plan_type: 'agency',
+      total_credits_used: totals.total,
+      total_limit: 10000,
+      credits_remaining: Math.max(10000 - totals.total, 0),
+      reset_date: periodEnd.toISOString(),
+      sites: result.sites || []
+    });
   });
 
   return router;
