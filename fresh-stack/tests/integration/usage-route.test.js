@@ -2,29 +2,48 @@ const express = require('express');
 const request = require('supertest');
 const { createUsageRouter } = require('../../routes/usage');
 
-function createSupabaseMock() {
+/**
+ * Creates a chainable mock that supports all Supabase query methods.
+ */
+function createChainableMock(resolveData = null, resolveError = null) {
+  const chainable = {
+    select: () => chainable,
+    eq: () => chainable,
+    neq: () => chainable,
+    gt: () => chainable,
+    gte: () => chainable,
+    lt: () => chainable,
+    lte: () => chainable,
+    like: () => chainable,
+    ilike: () => chainable,
+    is: () => chainable,
+    in: () => chainable,
+    order: () => chainable,
+    limit: () => chainable,
+    single: () => Promise.resolve({ data: resolveData, error: resolveError }),
+    maybeSingle: () => Promise.resolve({ data: resolveData, error: resolveError }),
+    then: (resolve) => resolve({ data: resolveData ? [resolveData] : [], error: resolveError })
+  };
+  return chainable;
+}
+
+function createSupabaseMock(plan = 'agency') {
   return {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: () => Promise.resolve({ data: { plan: 'agency' }, error: null })
-        })
-      })
-    })
+    from: (table) => {
+      if (table === 'licenses') {
+        return createChainableMock({ id: 'lic-1', license_key: 'key', plan, status: 'active' });
+      }
+      if (table === 'usage_logs') {
+        return createChainableMock(null); // Empty usage logs
+      }
+      return createChainableMock(null);
+    }
   };
 }
 
 describe('GET /usage/sites', () => {
   test('rejects non-agency license', async () => {
-    const supabase = {
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            single: () => Promise.resolve({ data: { plan: 'pro' }, error: null })
-          })
-        })
-      })
-    };
+    const supabase = createSupabaseMock('pro');
     const app = express();
     app.use('/usage', createUsageRouter({ supabase }));
     const res = await request(app).get('/usage/sites').set('X-License-Key', 'key');
@@ -33,7 +52,7 @@ describe('GET /usage/sites', () => {
   });
 
   test('returns sites for agency license (empty list mocked)', async () => {
-    const supabase = createSupabaseMock();
+    const supabase = createSupabaseMock('agency');
     const app = express();
     app.use('/usage', createUsageRouter({ supabase }));
     const res = await request(app).get('/usage/sites').set('X-License-Key', 'key');

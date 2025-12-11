@@ -16,6 +16,11 @@ function createSupabaseMock() {
                 Promise.resolve({
                   data: { id: 'lic-1', license_key: 'key-123', plan: 'pro', status: 'active', billing_day_of_month: 1 },
                   error: null
+                }),
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { id: 'lic-1', license_key: 'key-123', plan: 'pro', status: 'active', billing_day_of_month: 1 },
+                  error: null
                 })
             })
           })
@@ -24,11 +29,10 @@ function createSupabaseMock() {
       if (table === 'sites') {
         return {
           select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: () => Promise.resolve({ data: null }),
-                single: () => Promise.resolve({ data: null })
-              })
+            eq: (field) => ({
+              eq: () => Promise.resolve({ data: [], error: null }),
+              maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              single: () => Promise.resolve({ data: null, error: null })
             })
           }),
           upsert: (payload) => ({

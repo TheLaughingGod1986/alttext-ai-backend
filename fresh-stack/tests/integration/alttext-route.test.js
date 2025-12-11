@@ -9,17 +9,58 @@ jest.mock('../../lib/openai', () => ({
   })
 }));
 
+jest.mock('../../services/quota', () => ({
+  enforceQuota: jest.fn().mockResolvedValue({
+    plan_type: 'pro',
+    credits_used: 0,
+    credits_remaining: 1000,
+    total_limit: 1000
+  }),
+  getQuotaStatus: jest.fn().mockResolvedValue({
+    plan_type: 'pro',
+    credits_used: 0,
+    credits_remaining: 1000,
+    total_limit: 1000
+  })
+}));
+
+jest.mock('../../services/usage', () => ({
+  recordUsage: jest.fn().mockResolvedValue({ error: null })
+}));
+
 const { createAltTextRouter } = require('../../routes/altText');
+
+/**
+ * Creates a chainable mock that supports all Supabase query methods.
+ */
+function createChainableMock(resolveData = null, resolveError = null) {
+  const chainable = {
+    select: () => chainable,
+    eq: () => chainable,
+    neq: () => chainable,
+    gt: () => chainable,
+    gte: () => chainable,
+    lt: () => chainable,
+    lte: () => chainable,
+    like: () => chainable,
+    ilike: () => chainable,
+    is: () => chainable,
+    in: () => chainable,
+    order: () => chainable,
+    limit: () => chainable,
+    insert: () => chainable,
+    update: () => chainable,
+    upsert: () => chainable,
+    single: () => Promise.resolve({ data: resolveData, error: resolveError }),
+    maybeSingle: () => Promise.resolve({ data: resolveData, error: resolveError }),
+    then: (resolve) => resolve({ data: resolveData ? [resolveData] : [], error: resolveError })
+  };
+  return chainable;
+}
 
 function createSupabaseMock() {
   return {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: () => Promise.resolve({ data: null, error: null })
-        })
-      })
-    })
+    from: () => createChainableMock(null)
   };
 }
 
