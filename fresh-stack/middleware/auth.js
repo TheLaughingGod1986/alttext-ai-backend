@@ -101,7 +101,7 @@ function authMiddleware({ supabase }) {
     logger.warn('[Auth] No license key or API token provided', {
       path: req.path,
       method: req.method,
-      headers: Object.keys(req.headers).filter(h => h.toLowerCase().includes('license') || h.toLowerCase().includes('api') || h.toLowerCase().includes('auth'))
+      headers: req.headers ? Object.keys(req.headers).filter(h => h.toLowerCase().includes('license') || h.toLowerCase().includes('api') || h.toLowerCase().includes('auth')) : []
     });
     return res.status(401).json({ 
       error: 'INVALID_LICENSE', 
