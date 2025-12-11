@@ -5,6 +5,7 @@
   "main": "fresh-stack/server.js",
   "scripts": {
     "start": "node fresh-stack/server.js",
+    "start:fresh": "node fresh-stack/server.js",
     "dev": "nodemon fresh-stack/server.js",
     "test": "jest --runInBand --forceExit",
     "test:unit": "jest tests/unit --runInBand --forceExit",
