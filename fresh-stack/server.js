@@ -47,7 +47,17 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '8mb' }));
 app.use(requestId());
 
-// Health
+// Health & root
+app.get('/', (_req, res) => res.json({ 
+  service: 'alttext-ai-api', 
+  version: '2.0.0',
+  status: 'running',
+  endpoints: {
+    health: '/health',
+    ready: '/ready',
+    docs: '/docs'
+  }
+}));
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'alttext-fresh', time: new Date().toISOString() }));
 app.get('/ready', async (_req, res) => {
   const checks = { redis: !!redis, supabase: !!supabase };
