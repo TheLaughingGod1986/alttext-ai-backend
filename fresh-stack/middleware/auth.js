@@ -3,6 +3,20 @@ const logger = require('../lib/logger');
 
 function authMiddleware({ supabase }) {
   return async function validate(req, res, next) {
+    // Public paths that don't require authentication
+    const publicPaths = [
+      '/license/validate',
+      '/license/activate',
+      '/license/deactivate',
+      '/license/transfer',
+      '/billing/plans'
+    ];
+
+    // Skip auth for public paths
+    if (publicPaths.includes(req.path)) {
+      return next();
+    }
+
     const licenseKey = req.header('X-License-Key');
     const apiKey = req.header('X-API-Key') || req.header('Authorization')?.replace(/^Bearer\\s+/i, '');
 
