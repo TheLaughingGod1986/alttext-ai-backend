@@ -15,7 +15,6 @@ services:
         value: 3001
       - key: ALLOWED_ORIGINS
         sync: false
-
       # Supabase (required)
       - key: SUPABASE_URL
         sync: false

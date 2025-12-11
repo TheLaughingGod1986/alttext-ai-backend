@@ -72,6 +72,13 @@ npm test -- --coverage
 npm start
 ```
 
+## Utility Scripts
+
+Development and testing utilities are in the `scripts/` folder:
+
+- `scripts/test-supabase.js` - Test Supabase connection
+- `scripts/setup-test-license.js` - Create a test license for development
+
 ## License
 
 Proprietary - Oppti
