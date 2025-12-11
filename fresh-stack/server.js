@@ -89,8 +89,8 @@ app.use('/api/alt-text', createAltTextRouter({
   supabase,
   redis,
   resultCache: new Map(),
-  checkRateLimit: async () => true, // global rate limit already applied
-  getSiteFromHeaders: async () => ({})
+  checkRateLimit: async (siteKey) => checkRateLimit(siteKey),
+  getSiteFromHeaders: async (req) => getSiteFromHeaders(supabase, req)
 }));
 
 // Jobs queue
@@ -127,8 +127,8 @@ const queue = createQueue({
 
 app.use('/api/jobs', createJobsRouter({
   supabase,
-  checkRateLimit: async () => true,
-  getSiteFromHeaders: async () => ({}),
+  checkRateLimit: async (siteKey) => checkRateLimit(siteKey),
+  getSiteFromHeaders: async (req) => getSiteFromHeaders(supabase, req),
   createJob: queue.createJob,
   getJobRecord: queue.getJobRecord
 }));

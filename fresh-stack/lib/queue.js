@@ -76,6 +76,9 @@ function createQueue({ redis, jobHandler, concurrency = 2, ttlSeconds = 60 * 60 
       status: 'queued',
       results: [],
       errors: [],
+      total: items.length,
+      completed: 0,
+      failed: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
