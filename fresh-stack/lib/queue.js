@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const logger = require('./logger');
 
 function createQueue({ redis, jobHandler, concurrency = 2, ttlSeconds = 60 * 60 * 24 * 7, queueKey = 'alttext:queue' }) {
   const jobStore = new Map();
@@ -63,7 +64,7 @@ function createQueue({ redis, jobHandler, concurrency = 2, ttlSeconds = 60 * 60 
         const job = JSON.parse(payload);
         await jobHandler(job);
       } catch (err) {
-        console.error('[jobs] worker error', err.message);
+        logger.error('[jobs] worker error', err.message);
         await new Promise(r => setTimeout(r, 500));
       }
     }

@@ -9,7 +9,7 @@
  */
 
 require('dotenv').config({ path: '.env.local' });
-const { supabase } = require('./db/supabase-client');
+const { supabase } = require('../db/supabase-client');
 
 const TEST_LICENSE_KEY = '24c93235-1053-4922-b337-9866aeb76dcc';
 const TEST_EMAIL = 'test@example.com';

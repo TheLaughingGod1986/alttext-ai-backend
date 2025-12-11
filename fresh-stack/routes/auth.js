@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
+const logger = require('../lib/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '30d';
@@ -61,7 +62,7 @@ function createAuthRouter({ supabase }) {
         .single();
 
       if (error) {
-        console.error('[Auth] Registration error:', error);
+        logger.error('[Auth] Registration error:', error);
         return res.status(500).json({
           error: 'REGISTRATION_FAILED',
           message: 'Failed to create account',
@@ -92,7 +93,7 @@ function createAuthRouter({ supabase }) {
         },
       });
     } catch (err) {
-      console.error('[Auth] Registration error:', err);
+      logger.error('[Auth] Registration error:', err);
       return res.status(500).json({
         error: 'SERVER_ERROR',
         message: 'An error occurred during registration',
@@ -183,7 +184,7 @@ function createAuthRouter({ supabase }) {
         },
       });
     } catch (err) {
-      console.error('[Auth] Login error:', err);
+      logger.error('[Auth] Login error:', err);
       return res.status(500).json({
         error: 'SERVER_ERROR',
         message: 'An error occurred during login',
@@ -243,7 +244,7 @@ function createAuthRouter({ supabase }) {
         },
       });
     } catch (err) {
-      console.error('[Auth] Get user error:', err);
+      logger.error('[Auth] Get user error:', err);
       return res.status(500).json({
         error: 'SERVER_ERROR',
         message: 'An error occurred',

@@ -1,4 +1,5 @@
 const Redis = require('ioredis');
+const logger = require('./logger');
 
 let client = null;
 
@@ -12,10 +13,10 @@ function getRedis() {
     enableAutoPipelining: true
   });
   client.on('error', (err) => {
-    console.error('[redis] error', err.message);
+    logger.error('[redis] error', err.message);
   });
   client.connect().catch(err => {
-    console.error('[redis] failed to connect', err.message);
+    logger.error('[redis] failed to connect', err.message);
   });
   return client;
 }

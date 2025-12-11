@@ -1,4 +1,5 @@
 const express = require('express');
+const logger = require('../lib/logger');
 
 function createBillingRouter({ supabase, requiredToken, getStripe, priceIds }) {
   const router = express.Router();
@@ -125,7 +126,7 @@ function createBillingRouter({ supabase, requiredToken, getStripe, priceIds }) {
       });
       res.json({ success: true, url: session.url, sessionId: session.id });
     } catch (error) {
-      console.error('[billing] checkout error', error.message);
+      logger.error('[billing] checkout error', error.message);
       res.status(500).json({ error: 'Failed to create checkout session' });
     }
   });
@@ -147,7 +148,7 @@ function createBillingRouter({ supabase, requiredToken, getStripe, priceIds }) {
       });
       res.json({ success: true, url: session.url });
     } catch (error) {
-      console.error('[billing] portal error', error.message);
+      logger.error('[billing] portal error', error.message);
       res.status(500).json({ error: 'Failed to create portal session' });
     }
   });
@@ -184,7 +185,7 @@ function createBillingRouter({ supabase, requiredToken, getStripe, priceIds }) {
         }
       });
     } catch (error) {
-      console.error('[billing] subscription fetch error', error.message);
+      logger.error('[billing] subscription fetch error', error.message);
       res.status(500).json({ error: 'Failed to fetch subscription' });
     }
   });

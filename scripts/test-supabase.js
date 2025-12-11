@@ -49,7 +49,7 @@ async function testConnection() {
         console.log('📋 Next step: Create database tables');
         console.log('   Go to: https://supabase.com/dashboard');
         console.log('   → Your Project → SQL Editor');
-        console.log('   → Copy SQL from: docs/DATABASE_SCHEMA.md\n');
+        console.log('   → Copy SQL from: ../docs/DATABASE_SCHEMA.md\n');
         return true;
       }
 
