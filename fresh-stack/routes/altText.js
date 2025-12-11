@@ -53,7 +53,8 @@ function createAltTextRouter({
 
     const { image, context = {} } = parsed.data;
     const siteKey = req.header('X-Site-Key') || 'default';
-    const licenseKey = req.header('X-License-Key');
+    // Get license key from header OR from JWT-authenticated user
+    const licenseKey = req.header('X-License-Key') || req.license?.license_key;
     const userInfo = extractUserInfo(req);
     const bypassCache = req.header('X-Bypass-Cache') === 'true' || req.query.no_cache === '1';
 
