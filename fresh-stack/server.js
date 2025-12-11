@@ -5,6 +5,7 @@ const config = require('../config/config');
 const { getRedis } = require('./lib/redis');
 const logger = require('./lib/logger');
 const { createQueue } = require('./lib/queue');
+const { createAuthRouter } = require('./routes/auth');
 const { createBillingRouter } = require('./routes/billing');
 const { createUsageRouter } = require('./routes/usage');
 const { createAltTextRouter } = require('./routes/altText');
@@ -64,6 +65,9 @@ app.use(rateLimitMiddleware({
   perSiteOverride: config.rateLimit.perSite,
   globalOverride: config.rateLimit.global
 }));
+
+// Auth routes (public - no auth required)
+app.use('/auth', createAuthRouter({ supabase }));
 
 // Auth for protected routes (license-key or API token)
 app.use(authMiddleware({ supabase }));

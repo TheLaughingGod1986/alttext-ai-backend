@@ -1,5 +1,8 @@
 const { validateLicense } = require('../services/license');
 const logger = require('../lib/logger');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 function authMiddleware({ supabase }) {
   return async function validate(req, res, next) {
@@ -18,15 +21,47 @@ function authMiddleware({ supabase }) {
     }
 
     const licenseKey = req.header('X-License-Key');
-    const apiKey = req.header('X-API-Key') || req.header('Authorization')?.replace(/^Bearer\\s+/i, '');
+    const authHeader = req.header('Authorization');
+    const apiKey = req.header('X-API-Key');
 
     // Debug logging
     logger.debug('[Auth] Request headers', {
       'X-License-Key': licenseKey ? `${licenseKey.substring(0, 8)}...` : 'missing',
       'X-API-Key': apiKey ? 'present' : 'missing',
-      'Authorization': req.header('Authorization') ? 'present' : 'missing',
+      'Authorization': authHeader ? 'present' : 'missing',
       path: req.path
     });
+
+    // JWT token auth (Bearer token)
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        logger.debug('[Auth] JWT validated', {
+          user_id: decoded.user_id,
+          email: decoded.email
+        });
+
+        // Fetch user from database
+        const { data: user } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('id', decoded.user_id)
+          .single();
+
+        if (user && user.status === 'active') {
+          req.user = user;
+          req.license = user; // Set license for quota tracking
+          req.authMethod = 'jwt';
+          return next();
+        } else {
+          logger.warn('[Auth] JWT user not found or inactive');
+        }
+      } catch (err) {
+        logger.warn('[Auth] JWT validation failed', { error: err.message });
+        // Don't return error, fall through to other auth methods
+      }
+    }
 
     // License-based auth preferred
     if (licenseKey) {
