@@ -7,16 +7,22 @@ const REQUIRED = [
   'ALTTEXT_AI_STRIPE_PRICE_PRO',
   'ALTTEXT_AI_STRIPE_PRICE_AGENCY',
   'ALTTEXT_AI_STRIPE_PRICE_CREDITS',
-  'OPENAI_API_KEY',
   'ALLOWED_ORIGINS'
 ];
 
 function loadConfig() {
   if (isProduction()) {
     validateRequired(REQUIRED);
+    // Check for OpenAI API key (either name)
+    if (!getEnv('OPENAI_API_KEY') && !getEnv('ALTTEXT_OPENAI_API_KEY')) {
+      throw new Error('Missing required env var: OPENAI_API_KEY or ALTTEXT_OPENAI_API_KEY');
+    }
   } else {
     try {
       validateRequired(REQUIRED);
+      if (!getEnv('OPENAI_API_KEY') && !getEnv('ALTTEXT_OPENAI_API_KEY')) {
+        throw new Error('Missing required env var: OPENAI_API_KEY or ALTTEXT_OPENAI_API_KEY');
+      }
     } catch (err) {
       console.warn('[config] missing env (dev)', err.message);
     }
@@ -36,7 +42,7 @@ function loadConfig() {
       agency: getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
       credits: getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')
     },
-    openAiKey: getEnv('OPENAI_API_KEY'),
+    openAiKey: getEnv('OPENAI_API_KEY') || getEnv('ALTTEXT_OPENAI_API_KEY'),
     openAiModel: getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
     allowedOrigins: (getEnv('ALLOWED_ORIGINS', '') || '')
       .split(',')
