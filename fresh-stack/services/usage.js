@@ -24,7 +24,7 @@ async function recordUsage(supabase, {
   errorMessage = null
 }) {
   const payload = {
-    license_id: licenseId || null,
+    license_key: licenseKey,
     site_hash: siteHash,
     user_id: userId || null,
     user_email: userEmail || null,
@@ -44,7 +44,74 @@ async function recordUsage(supabase, {
   };
 
   const { error } = await supabase.from('usage_logs').insert(payload);
+
+  // Update quota summary for this period
+  if (!error && licenseKey) {
+    await updateQuotaSummary(supabase, licenseKey, creditsUsed, siteHash);
+  }
+
   return { error };
+}
+
+/**
+ * Update quota summary for current period (upsert).
+ */
+async function updateQuotaSummary(supabase, licenseKey, creditsUsed, siteHash) {
+  // Get license to find billing day
+  const { data: license } = await supabase
+    .from('licenses')
+    .select('billing_day_of_month, plan')
+    .eq('license_key', licenseKey)
+    .single();
+
+  if (!license) return;
+
+  const billingDay = license.billing_day_of_month || 1;
+  const periodStart = computePeriodStart(billingDay, new Date());
+  const periodEnd = new Date(periodStart);
+  periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+  // Get current limits
+  const { getLimits } = require('./license');
+  const limits = getLimits(license.plan);
+  const totalLimit = limits.credits;
+
+  // Check if summary exists
+  const { data: existing } = await supabase
+    .from('quota_summaries')
+    .select('*')
+    .eq('license_key', licenseKey)
+    .eq('period_start', periodStart.toISOString())
+    .maybeSingle();
+
+  if (existing) {
+    // Update existing summary
+    const newTotalCredits = (existing.total_credits_used || 0) + creditsUsed;
+    const siteUsage = existing.site_usage || {};
+    siteUsage[siteHash] = (siteUsage[siteHash] || 0) + creditsUsed;
+
+    await supabase
+      .from('quota_summaries')
+      .update({
+        total_credits_used: newTotalCredits,
+        site_usage: siteUsage,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', existing.id);
+  } else {
+    // Create new summary
+    const siteUsage = { [siteHash]: creditsUsed };
+    await supabase
+      .from('quota_summaries')
+      .insert({
+        license_key: licenseKey,
+        period_start: periodStart.toISOString(),
+        period_end: periodEnd.toISOString(),
+        total_credits_used: creditsUsed,
+        total_limit: totalLimit,
+        site_usage: siteUsage
+      });
+  }
 }
 
 /**
