@@ -7,7 +7,7 @@ function createUsageRouter({ supabase }) {
 
   // GET /usage - current quota status
   router.get('/', async (req, res) => {
-    const licenseKey = req.header('X-License-Key');
+    const licenseKey = req.header('X-License-Key') || req.license?.license_key;
     const siteKey = req.header('X-Site-Key');
 
     const status = await getQuotaStatus(supabase, { licenseKey, siteHash: siteKey });
@@ -33,7 +33,7 @@ function createUsageRouter({ supabase }) {
 
   // GET /usage/users - per-user breakdown
   router.get('/users', async (req, res) => {
-    const licenseKey = req.header('X-License-Key');
+    const licenseKey = req.header('X-License-Key') || req.license?.license_key;
     const siteKey = req.header('X-Site-Key');
     if (!siteKey) return res.status(400).json({ error: 'INVALID_REQUEST', message: 'X-Site-Key required' });
 
@@ -52,8 +52,8 @@ function createUsageRouter({ supabase }) {
 
   // GET /usage/sites - per-site breakdown (agency)
   router.get('/sites', async (req, res) => {
-    const licenseKey = req.header('X-License-Key');
-    if (!licenseKey) return res.status(401).json({ error: 'INVALID_LICENSE', message: 'X-License-Key required' });
+    const licenseKey = req.header('X-License-Key') || req.license?.license_key;
+    if (!licenseKey) return res.status(401).json({ error: 'INVALID_LICENSE', message: 'License key or JWT token required' });
 
     // Ensure plan is agency
     const { data: lic } = await supabase.from('licenses').select('plan').eq('license_key', licenseKey).single();
