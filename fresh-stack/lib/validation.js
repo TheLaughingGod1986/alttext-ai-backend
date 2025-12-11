@@ -34,12 +34,6 @@ function validateImagePayload(image = {}) {
     warnings.push('Width and height are missing; include them to keep token costs predictable.');
   }
 
-  // Check if image exceeds 512px (optimal for cost savings)
-  const maxDimension = Math.max(width || 0, height || 0);
-  if (maxDimension > 512) {
-    warnings.push(`Image is ${width}x${height} (max ${maxDimension}px). Resize to 512px max for 50% token savings with no quality loss for alt text.`);
-  }
-
   // Analyze size expectations when base64 is present.
   if (hasBase64) {
     const base64Length = rawBase64.length;
@@ -49,27 +43,14 @@ function validateImagePayload(image = {}) {
 
     const bytesPerPixel = pixelCount ? decodedBytes / pixelCount : null;
 
-    // Gray zone detection: prevent high token costs from corrupted/small base64
-    if (pixelCount && pixelCount > 50000) { // Images > 50K pixels
-      const expectedMinRawKB = (pixelCount * 0.00625) / 1024;
-      const expectedMinSizeKB = Math.max(Math.round(expectedMinRawKB * 1.33), 2);
-      const grayZoneThreshold = expectedMinSizeKB * 5;
-
-      if (base64SizeKB >= expectedMinSizeKB && base64SizeKB < grayZoneThreshold) {
-        errors.push(`Base64 size (${base64SizeKB}KB) is suspiciously small for ${width}x${height}. Expected at least ${grayZoneThreshold}KB. This may cause OpenAI to process at full resolution (3,000+ tokens instead of ~85). Resize to 512px and re-encode.`);
-      } else if (base64SizeKB < expectedMinSizeKB) {
-        errors.push(`Base64 size (${base64SizeKB}KB) is too small for ${width}x${height}. Expected minimum ${expectedMinSizeKB}KB. Image may be truncated or corrupted.`);
-      }
-    }
-
     // Expected range based on light compression; only warn, do not block.
     if (bytesPerPixel !== null) {
-      if (bytesPerPixel < 0.01 && !pixelCount) {
+      if (bytesPerPixel < 0.01) {
         warnings.push(`Payload seems tiny for ${width}x${height} (${bytesPerPixel.toFixed(4)} bytes/px). Verify the image is fully encoded.`);
       } else if (bytesPerPixel > 0.35) {
         warnings.push(`Payload seems large for ${width}x${height} (${bytesPerPixel.toFixed(3)} bytes/px). Resize or compress before sending.`);
       }
-    } else if (base64SizeKB < 5 && !pixelCount) {
+    } else if (base64SizeKB < 5) {
       warnings.push('Base64 payload is under 5KB; ensure the image is not truncated.');
     }
 
