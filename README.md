@@ -54,9 +54,7 @@ For detailed documentation, see the `/docs` directory:
 
 - **[API Specification](docs/API_SPEC.md)** - Complete API endpoint documentation
 - **[Database Schema](docs/DATABASE_SCHEMA.md)** - Database tables, relationships, and migrations
-- **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)** - Development roadmap and architecture
-- **[Frontend Integration](docs/FRONTEND_INTEGRATION.md)** - Guide for frontend developers
-- **[Frontend Quick Fix](docs/FRONTEND_FIX_MESSAGE.md)** - Quick reference for license key issues
+- **[Frontend Integration](docs/FRONTEND_INTEGRATION.md)** - Guide for frontend developers (includes license key setup)
 
 ## Development
 
