@@ -91,15 +91,13 @@ function createBillingRouter({ supabase, requiredToken, getStripe, priceIds }) {
       return res.status(400).json({ error: 'Invalid or missing priceId', valid: priceIds });
     }
     // Enforce site limit for PRO: only 1 site per subscription
-    // IMPORTANT: Only check for Pro subscriptions, not Agency or Credit packs
-    // This allows users to have multiple plan types (e.g., Agency + Pro, or Credits + Pro)
     if (priceId === priceIds.pro && supabase) {
       try {
         const { data: subs } = await supabase
           .from('subscriptions')
           .select('id')
           .eq('site_hash', siteKey)
-          .eq('plan', 'pro') // Only check Pro subscriptions, not all plans
+          .eq('plan', 'pro')
           .in('status', ['active', 'trial', 'past_due']);
         if (subs && subs.length > 0) {
           return res.status(403).json({

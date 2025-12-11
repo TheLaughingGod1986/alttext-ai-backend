@@ -7,7 +7,6 @@ const crypto = require('crypto');
 const { validateImagePayload } = require('./lib/validation');
 const { generateAltText } = require('./lib/openai');
 const { getRedis } = require('./lib/redis');
-const { validateLicenseKey, getSiteFromHeaders } = require('./lib/auth');
 // Supabase (for usage/credits). If unavailable, usage endpoint will return minimal data.
 let supabase = null;
 try {
@@ -51,15 +50,10 @@ app.use(cors({
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '127.0.0.1';
 
-// License key authentication middleware (optional - allows license OR API token OR free tier)
-app.use(validateLicenseKey(supabase));
-
 // Simple shared secret auth: require header X-API-Key to match ALT_API_TOKEN when set
-// NOTE: If license key is valid, this is skipped
 const requiredToken = process.env.ALT_API_TOKEN || process.env.API_TOKEN;
 app.use((req, res, next) => {
   if (!requiredToken) return next();
-  if (req.authMethod === 'license') return next(); // License key already validated
   const token = req.header('X-API-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
     if (token === requiredToken) return next();
     return res.status(401).json({ error: 'Unauthorized: invalid or missing API token' });
@@ -330,19 +324,6 @@ app.post('/api/alt-text', async (req, res) => {
   const siteKey = req.header('X-Site-Key') || 'default';
   const bypassCache = req.header('X-Bypass-Cache') === 'true' || req.query.no_cache === '1';
 
-  // Get site data and check quota
-  const siteData = await getSiteFromHeaders(supabase, req);
-  if (siteData.remaining <= 0) {
-    return res.status(402).json({
-      error: 'Quota exceeded for this billing period',
-      code: 'QUOTA_EXCEEDED',
-      quota: siteData.quota,
-      used: siteData.used,
-      remaining: 0,
-      plan: siteData.plan
-    });
-  }
-
   // Rate limit per site
   if (!(await checkRateLimit(siteKey))) {
     return res.status(429).json({ error: 'Rate limit exceeded for this site. Please retry later.' });
@@ -465,39 +446,10 @@ app.post('/api/jobs', async (req, res) => {
     return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
   }
   const siteKey = req.header('X-Site-Key') || 'default';
-
-  // Get site data and check quota
-  const siteData = await getSiteFromHeaders(supabase, req);
-  if (siteData.remaining <= 0) {
-    return res.status(402).json({
-      error: 'Quota exceeded for this billing period',
-      code: 'QUOTA_EXCEEDED',
-      quota: siteData.quota,
-      used: siteData.used,
-      remaining: 0,
-      plan: siteData.plan
-    });
-  }
-
-  // Check if batch size would exceed quota
-  const { images } = parsed.data;
-  if (siteData.remaining < images.length) {
-    return res.status(402).json({
-      error: `Batch size (${images.length} images) exceeds remaining quota (${siteData.remaining} images)`,
-      code: 'BATCH_EXCEEDS_QUOTA',
-      quota: siteData.quota,
-      used: siteData.used,
-      remaining: siteData.remaining,
-      plan: siteData.plan,
-      batchSize: images.length
-    });
-  }
-
   if (!(await checkRateLimit(siteKey))) {
     return res.status(429).json({ error: 'Rate limit exceeded for this site. Please retry later.' });
   }
-
-  const { context = {} } = parsed.data;
+  const { images, context = {} } = parsed.data;
   const items = images.map(item => ({ image: item.image, context: item.context || {} }));
   const jobId = await createJob(items, context, siteKey);
   res.json({ jobId, status: 'queued' });
