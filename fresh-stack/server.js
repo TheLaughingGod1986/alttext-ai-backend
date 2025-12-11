@@ -2,11 +2,15 @@ const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
-const { z } = require('zod');
-const crypto = require('crypto');
-const { validateImagePayload } = require('./lib/validation');
-const { generateAltText } = require('./lib/openai');
 const { getRedis } = require('./lib/redis');
+const { validateLicenseKey, getSiteFromHeaders } = require('./lib/auth');
+const { generateAltText } = require('./lib/openai');
+const { createQueue } = require('./lib/queue');
+const { createBillingRouter } = require('./routes/billing');
+const { createUsageRouter } = require('./routes/usage');
+const { createAltTextRouter } = require('./routes/altText');
+const { createJobsRouter } = require('./routes/jobs');
+
 // Supabase (for usage/credits). If unavailable, usage endpoint will return minimal data.
 let supabase = null;
 try {
@@ -28,9 +32,6 @@ function getStripe() {
   return stripe;
 }
 
-const { createBillingRouter } = require('./routes/billing');
-const { createUsageRouter } = require('./routes/usage');
-
 const app = express();
 const redis = getRedis();
 
@@ -50,14 +51,19 @@ app.use(cors({
 const PORT = process.env.PORT || 4000;
 const HOST = process.env.HOST || '127.0.0.1';
 
+// License key authentication middleware (optional - allows license OR API token OR free tier)
+app.use(validateLicenseKey(supabase));
+
 // Simple shared secret auth: require header X-API-Key to match ALT_API_TOKEN when set
+// NOTE: If license key is valid, this is skipped
 const requiredToken = process.env.ALT_API_TOKEN || process.env.API_TOKEN;
 app.use((req, res, next) => {
   if (!requiredToken) return next();
+  if (req.authMethod === 'license') return next(); // License key already validated
   const token = req.header('X-API-Key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
-    if (token === requiredToken) return next();
-    return res.status(401).json({ error: 'Unauthorized: invalid or missing API token' });
-  });
+  if (token === requiredToken) return next();
+  return res.status(401).json({ error: 'Unauthorized: invalid or missing API token' });
+});
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '8mb' }));
@@ -110,143 +116,6 @@ async function checkRateLimit(siteKey) {
 
   return true;
 }
-
-function hashPayload(base64) {
-  return crypto.createHash('md5').update(base64).digest('hex');
-}
-
-// Minimal job queue (Redis if available, otherwise in-memory)
-const jobStore = new Map(); // in-memory job records
-const jobQueue = [];
-const JOB_CONCURRENCY = Number(process.env.JOB_CONCURRENCY || 2);
-let activeWorkers = 0;
-const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
-const queueKey = 'alttext:queue';
-
-async function setJobRecord(jobId, record) {
-  record.updatedAt = new Date().toISOString();
-  if (redis) {
-    await redis.set(`alttext:job:${jobId}`, JSON.stringify(record), 'EX', JOB_TTL_SECONDS);
-  } else {
-    jobStore.set(jobId, record);
-  }
-}
-
-async function getJobRecord(jobId) {
-  if (redis) {
-    const val = await redis.get(`alttext:job:${jobId}`);
-    return val ? JSON.parse(val) : null;
-  }
-  return jobStore.get(jobId) || null;
-}
-
-async function enqueueJob(job) {
-  if (redis) {
-    await redis.lpush(queueKey, JSON.stringify(job));
-    startRedisWorkers();
-  } else {
-    jobQueue.push(job);
-    processQueueInMemory();
-  }
-}
-
-async function processQueueInMemory() {
-  if (activeWorkers >= JOB_CONCURRENCY) return;
-  const next = jobQueue.shift();
-  if (!next) return;
-  activeWorkers += 1;
-  try {
-    await processJob(next);
-  } finally {
-    activeWorkers -= 1;
-    if (jobQueue.length) processQueueInMemory();
-  }
-}
-
-let redisWorkersStarted = false;
-function startRedisWorkers() {
-  if (redisWorkersStarted || !redis) return;
-  redisWorkersStarted = true;
-  for (let i = 0; i < JOB_CONCURRENCY; i += 1) {
-    redisWorkerLoop();
-  }
-}
-
-async function redisWorkerLoop() {
-  while (true) {
-    try {
-      const res = await redis.brpop(queueKey, 5);
-      if (!res) continue;
-      const [, payload] = res;
-      const job = JSON.parse(payload);
-      await processJob(job);
-    } catch (err) {
-      console.error('[jobs] worker error', err.message);
-      await new Promise(r => setTimeout(r, 500));
-    }
-  }
-}
-
-async function processJob(job) {
-  const { jobId, items, context } = job;
-  const record = await getJobRecord(jobId);
-  if (!record) return;
-  record.status = 'running';
-  await setJobRecord(jobId, record);
-
-  for (const item of items) {
-    try {
-      const { image, context: itemContext } = item;
-      const mergedContext = { ...context, ...itemContext };
-      const { altText, usage, meta } = await generateAltText({ image, context: mergedContext });
-      record.results.push({ altText, usage, meta });
-    } catch (e) {
-      record.errors.push(e.message || 'Job item failed');
-    }
-    await setJobRecord(jobId, record);
-  }
-  record.status = 'completed';
-  await setJobRecord(jobId, record);
-}
-
-async function createJob(items, context, siteKey) {
-  const jobId = crypto.randomUUID();
-  const jobRecord = {
-    status: 'queued',
-    results: [],
-    errors: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  await setJobRecord(jobId, jobRecord);
-  await enqueueJob({ jobId, items, context, siteKey });
-  return jobId;
-}
-
-const requestSchema = z.object({
-  image: z
-    .object({
-      base64: z.string().optional(),
-      image_base64: z.string().optional(),
-      url: z.string().url().optional(),
-      width: z.number().optional(),
-      height: z.number().optional(),
-      mime_type: z.string().optional(),
-      filename: z.string().optional()
-    })
-    .refine(
-      data => Boolean(data.base64 || data.image_base64 || data.url),
-      'Send base64/image_base64 or url.'
-    ),
-  context: z
-    .object({
-      title: z.string().optional(),
-      caption: z.string().optional(),
-      pageTitle: z.string().optional(),
-      altTextSuggestion: z.string().optional()
-    })
-    .optional()
-});
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'alttext-fresh', time: new Date().toISOString() });
@@ -313,153 +182,62 @@ async function recordUsage({ siteKey, usage, supabaseClient, headers }) {
   }
 }
 
-app.post('/api/alt-text', async (req, res) => {
-  const parsed = requestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    console.warn('[alt-text] invalid payload', parsed.error.issues?.[0]);
-    return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
-  }
+// Job processing via shared queue
+const JOB_CONCURRENCY = Number(process.env.JOB_CONCURRENCY || 2);
+const JOB_TTL_SECONDS = 60 * 60 * 24 * 7;
+const queueKey = 'alttext:queue';
 
-  const { image, context = {} } = parsed.data;
-  const siteKey = req.header('X-Site-Key') || 'default';
-  const bypassCache = req.header('X-Bypass-Cache') === 'true' || req.query.no_cache === '1';
+const queue = createQueue({
+  redis,
+  concurrency: JOB_CONCURRENCY,
+  ttlSeconds: JOB_TTL_SECONDS,
+  queueKey,
+  jobHandler: processJob
+});
 
-  // Rate limit per site
-  if (!(await checkRateLimit(siteKey))) {
-    return res.status(429).json({ error: 'Rate limit exceeded for this site. Please retry later.' });
-  }
+const { createJob, getJobRecord, setJobRecord } = queue;
 
-  // Deduplication via hash
-  const base64Data = image.base64 || image.image_base64 || '';
-  const cacheKey = base64Data ? hashPayload(base64Data) : null;
-  if (cacheKey && !bypassCache) {
-    if (redis) {
-      try {
-        const cached = await redis.get(`alttext:cache:${cacheKey}`);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          console.info('[alt-text] cache hit', {
-            width: image.width,
-            height: image.height,
-            cached: true,
-            prompt_tokens: parsed?.usage?.prompt_tokens,
-            completion_tokens: parsed?.usage?.completion_tokens,
-            model: parsed?.meta?.modelUsed
-          });
-          return res.json({ ...parsed, cached: true });
-        }
-      } catch (e) {
-        // fall through on cache errors
-      }
-    } else if (resultCache.has(cacheKey)) {
-      const cached = resultCache.get(cacheKey);
-      console.info('[alt-text] cache hit', {
-        width: image.width,
-        height: image.height,
-        cached: true,
-        prompt_tokens: cached?.usage?.prompt_tokens,
-        completion_tokens: cached?.usage?.completion_tokens,
-        model: cached?.meta?.modelUsed
-      });
-      return res.json({ ...cached, cached: true });
+async function processJob(job) {
+  const { jobId, items, context, siteKey } = job;
+  const record = await getJobRecord(jobId);
+  if (!record) return;
+  record.status = 'running';
+  await setJobRecord(jobId, record);
+
+  for (const item of items) {
+    try {
+      const { image, context: itemContext } = item;
+      const mergedContext = { ...context, ...itemContext };
+      const { altText, usage, meta } = await generateAltText({ image, context: mergedContext });
+      record.results.push({ altText, usage, meta });
+    } catch (e) {
+      record.errors.push(e.message || 'Job item failed');
     }
+    await setJobRecord(jobId, record);
   }
+  record.status = 'completed';
+  await setJobRecord(jobId, record);
+}
 
-  console.info('[alt-text] request received', {
-    hasBase64: Boolean(image.base64 || image.image_base64),
-    hasUrl: Boolean(image.url),
-    width: image.width,
-    height: image.height
-  });
-  const { errors, warnings, normalized } = validateImagePayload(image);
-  if (normalized?.base64) {
-    const sizeKb = Math.round((normalized.base64.length * 3) / 4096);
-    const bpp = normalized.width && normalized.height
-      ? Math.round(((normalized.base64.length * 0.75) / (normalized.width * normalized.height)) * 10000) / 10000
-      : null;
-    console.info('[alt-text] base64 meta', { kb: sizeKb, width: normalized.width, height: normalized.height, bpp });
-  }
-
-  if (errors.length) {
-    console.warn('[alt-text] validation failed', { errors, warnings });
-    return res.status(400).json({ error: 'Image validation failed', errors, warnings });
-  }
-
-  const { altText, usage, meta } = await generateAltText({
-    image: normalized,
-    context: { ...context, filename: normalized.filename }
-  });
-
-  // Record usage/credits for successful, non-cached generations
-  if (!bypassCache && usage) {
-    console.info('[usage] attempting to record usage', {
-      siteKey,
-      prompt_tokens: usage?.prompt_tokens,
-      completion_tokens: usage?.completion_tokens
-    });
-    await recordUsage({
-      siteKey,
-      usage,
-      supabaseClient: supabase,
-      headers: req.headers
-    });
-  }
-
-  if (cacheKey && !bypassCache) {
-    const payload = { altText, warnings, usage, meta };
-    if (redis) {
-      redis.set(`alttext:cache:${cacheKey}`, JSON.stringify(payload), 'EX', 60 * 60 * 24 * 7).catch(() => {});
-    } else {
-      resultCache.set(cacheKey, payload);
-    }
-  }
-
-  console.info('[alt-text] usage', {
-    width: normalized.width,
-    height: normalized.height,
-    prompt_tokens: usage?.prompt_tokens,
-    completion_tokens: usage?.completion_tokens,
-    model: meta?.modelUsed,
-    cached: false
-  });
-
-  res.json({
-    altText,
-    warnings,
-    usage,
-    meta
-  });
+// Mount alt-text and jobs routers
+const altTextRouter = createAltTextRouter({
+  supabase,
+  redis,
+  resultCache,
+  checkRateLimit,
+  getSiteFromHeaders,
+  recordUsage
 });
+app.use('/api/alt-text', altTextRouter);
 
-// Batch endpoint: accepts an array of images, enqueues a job, returns jobId
-const batchSchema = z.object({
-  images: z.array(z.object({
-    image: requestSchema.shape.image,
-    context: requestSchema.shape.context.optional()
-  })).min(1),
-  context: requestSchema.shape.context.optional()
+const jobsRouter = createJobsRouter({
+  supabase,
+  checkRateLimit,
+  getSiteFromHeaders,
+  createJob,
+  getJobRecord
 });
-
-app.post('/api/jobs', async (req, res) => {
-  const parsed = batchSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
-  }
-  const siteKey = req.header('X-Site-Key') || 'default';
-  if (!(await checkRateLimit(siteKey))) {
-    return res.status(429).json({ error: 'Rate limit exceeded for this site. Please retry later.' });
-  }
-  const { images, context = {} } = parsed.data;
-  const items = images.map(item => ({ image: item.image, context: item.context || {} }));
-  const jobId = await createJob(items, context, siteKey);
-  res.json({ jobId, status: 'queued' });
-});
-
-app.get('/api/jobs/:jobId', async (req, res) => {
-  const job = await getJobRecord(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json(job);
-});
+app.use('/api/jobs', jobsRouter);
 
 app.listen(PORT, HOST, () => {
   console.log(`Fresh alt-text service running on http://${HOST}:${PORT}`);
