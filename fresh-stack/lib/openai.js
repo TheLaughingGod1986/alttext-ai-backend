@@ -2,29 +2,39 @@ const axios = require('axios');
 
 function buildPrompt(context = {}) {
   const lines = [
-    'Write a concise, specific alt text for the image.',
-    'Rules:',
-    '- 10-16 words, under ~110 characters.',
-    '- Mention subjects, action, setting, colors; include any legible text verbatim.',
-    '- Use 1-2 relevant keywords from context/filename naturally.',
-    '- No filler like "image of" or "picture of".',
+    'Write descriptive alternative text for this image.',
+    'Requirements:',
+    '- Length: 10-15 words (125 characters max for optimal accessibility/SEO)',
+    '- Include relevant keywords naturally based on context',
+    '- Describe: subjects, actions, setting, visible text',
+    '- For logos/icons: state brand name and recognizable elements',
+    '- Avoid filler: "image of", "picture of", "photo of"',
+    '- Be specific: "woman presenting sales chart" vs "woman at computer"'
   ];
 
   const hints = [];
   if (context.title) hints.push(`Title: ${context.title}`);
   if (context.caption) hints.push(`Caption: ${context.caption}`);
   if (context.pageTitle) hints.push(`Page: ${context.pageTitle}`);
-  if (context.filename) hints.push(`File: ${context.filename}`);
+
+  // Extract keywords from filename (remove extension, replace dashes/underscores)
+  if (context.filename) {
+    const cleanFilename = context.filename
+      .replace(/[-_]/g, ' ')
+      .replace(/\.(jpg|jpeg|png|gif|webp)$/i, '');
+    hints.push(`File: ${cleanFilename}`);
+  }
+
   if (context.altTextSuggestion) hints.push(`User suggestion: ${context.altTextSuggestion}`);
 
   if (hints.length) {
     lines.push('');
-    lines.push('Context:');
+    lines.push('Context (use for keyword relevance):');
     lines.push(...hints);
   }
 
   lines.push('');
-  lines.push('Return only the alt text.');
+  lines.push('Return only the alt text (no quotes, no explanation).');
   return lines.join('\n');
 }
 
@@ -58,7 +68,10 @@ async function generateAltText({ image, context }) {
           temperature: 0.2,
           max_tokens: 50,
           messages: [
-            { role: 'system', content: 'You are an accessibility assistant that writes excellent alternative text.' },
+            {
+              role: 'system',
+              content: 'Expert at WCAG 2.1 Level AA alt text optimized for accessibility and SEO. Write natural, keyword-rich descriptions (10-15 words, 125 chars max). Be specific and descriptive.'
+            },
             {
               role: 'user',
               content: [
@@ -88,7 +101,10 @@ async function generateAltText({ image, context }) {
             temperature: 0.2,
             max_tokens: 50,
             messages: [
-              { role: 'system', content: 'You are an accessibility assistant that writes excellent alternative text.' },
+              {
+                role: 'system',
+                content: 'Expert at WCAG 2.1 Level AA alt text optimized for accessibility and SEO. Write natural, keyword-rich descriptions (10-15 words, 125 chars max). Be specific and descriptive.'
+              },
               {
                 role: 'user',
                 content: [
