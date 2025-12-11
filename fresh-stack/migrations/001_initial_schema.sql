@@ -69,7 +69,7 @@ END $$;
 -- 2. Sites table
 CREATE TABLE IF NOT EXISTS sites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  license_key UUID NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
+  license_key VARCHAR(255) NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
 
   -- Site identification
   site_hash VARCHAR(255) UNIQUE NOT NULL,
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- License & Site
-  license_key UUID NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
+  license_key VARCHAR(255) NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
   site_hash VARCHAR(255) NOT NULL,
 
   -- User tracking
@@ -135,7 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_license_created ON usage_logs(license_
 -- 4. Quota summaries table (for fast lookups)
 CREATE TABLE IF NOT EXISTS quota_summaries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  license_key UUID NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
+  license_key VARCHAR(255) NOT NULL REFERENCES licenses(license_key) ON DELETE CASCADE,
 
   -- Billing period
   period_start TIMESTAMPTZ NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS debug_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Context
-  license_key UUID REFERENCES licenses(license_key) ON DELETE SET NULL,
+  license_key VARCHAR(255) REFERENCES licenses(license_key) ON DELETE SET NULL,
   site_hash VARCHAR(255),
   user_email VARCHAR(255),
 
