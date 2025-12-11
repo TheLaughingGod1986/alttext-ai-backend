@@ -57,15 +57,19 @@ function createAuthRouter({ supabase }) {
           status: 'active',
           max_sites: 1,
           billing_day_of_month: new Date().getUTCDate(),
+          billing_cycle: 'monthly',
+          billing_anchor_date: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (error) {
         logger.error('[Auth] Registration error:', error);
+        logger.error('[Auth] Registration error details:', JSON.stringify(error, null, 2));
         return res.status(500).json({
           error: 'REGISTRATION_FAILED',
           message: 'Failed to create account',
+          details: error.message || 'Unknown error'
         });
       }
 
