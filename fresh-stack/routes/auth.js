@@ -2,10 +2,16 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
+const crypto = require('crypto');
 const logger = require('../lib/logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '30d';
+
+// Generate UUID v4
+function generateUUID() {
+  return crypto.randomUUID();
+}
 
 function createAuthRouter({ supabase }) {
   const router = express.Router();
@@ -47,10 +53,14 @@ function createAuthRouter({ supabase }) {
       // Hash password
       const password_hash = await bcrypt.hash(password, 10);
 
+      // Generate license key
+      const license_key = generateUUID();
+
       // Create user account (stored as a license with plan='free')
       const { data: user, error } = await supabase
         .from('licenses')
         .insert({
+          license_key,
           email,
           password_hash,
           plan: 'free',
