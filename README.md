@@ -52,11 +52,11 @@ RESEND_AUDIENCE_ID=aud_xxx  # Optional: For subscriber management
 
 For detailed documentation, see the `/docs` directory:
 
-- **[Architecture](docs/architecture.md)** - System design, tech stack, technical debt
-- **[Testing](docs/testing.md)** - Test structure, coverage, running tests
-- **[Deployment](docs/deployment.md)** - Deployment instructions, environment setup
-- **[Backend Structure](docs/backend-structure.md)** - Directory organization, file structure
-- **[Migrations](docs/migrations.md)** - Database migration process and history
+- **[API Specification](docs/API_SPEC.md)** - Complete API endpoint documentation
+- **[Database Schema](docs/DATABASE_SCHEMA.md)** - Database tables, relationships, and migrations
+- **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)** - Development roadmap and architecture
+- **[Frontend Integration](docs/FRONTEND_INTEGRATION.md)** - Guide for frontend developers
+- **[Frontend Quick Fix](docs/FRONTEND_FIX_MESSAGE.md)** - Quick reference for license key issues
 
 ## Development
 
