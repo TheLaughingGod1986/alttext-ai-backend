@@ -97,6 +97,17 @@ function createAuthRouter({ supabase }) {
       return res.status(201).json({
         success: true,
         message: 'Account created successfully',
+        data: {
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            license_key: user.license_key,
+            plan: user.plan,
+            status: user.status,
+          },
+        },
+        // Keep top-level for backward compatibility
         token,
         user: {
           id: user.id,
@@ -188,6 +199,17 @@ function createAuthRouter({ supabase }) {
       return res.json({
         success: true,
         message: 'Login successful',
+        data: {
+          token,
+          user: {
+            id: user.id,
+            email: user.email,
+            license_key: user.license_key,
+            plan: user.plan,
+            status: user.status,
+          },
+        },
+        // Keep top-level for backward compatibility
         token,
         user: {
           id: user.id,
