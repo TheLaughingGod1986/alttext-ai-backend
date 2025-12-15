@@ -82,6 +82,51 @@ app.use('/auth', createAuthRouter({ supabase }));
 // Auth for protected routes (license-key or API token)
 app.use(authMiddleware({ supabase }));
 
+// Helper function for per-site rate limiting used by alt-text route
+const altTextRateLimits = new Map();
+async function checkRateLimit(siteKey) {
+  const windowMs = 60_000;
+  const limit = 60; // Default limit per site per minute
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  
+  const hits = altTextRateLimits.get(siteKey) || [];
+  const recent = hits.filter((ts) => ts >= windowStart);
+  recent.push(now);
+  altTextRateLimits.set(siteKey, recent);
+  
+  // Clean up old entries periodically
+  if (Math.random() < 0.01) {
+    for (const [key, times] of altTextRateLimits.entries()) {
+      const filtered = times.filter((ts) => ts >= windowStart);
+      if (filtered.length === 0) {
+        altTextRateLimits.delete(key);
+      } else {
+        altTextRateLimits.set(key, filtered);
+      }
+    }
+  }
+  
+  return recent.length <= limit;
+}
+
+// Helper function to get site from headers
+async function getSiteFromHeaders(supabase, req) {
+  const siteHash = req.header('X-Site-Hash') || req.header('X-Site-Key');
+  if (!siteHash) return null;
+  
+  try {
+    const { data } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('site_hash', siteHash)
+      .single();
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
 // Routers
 app.use('/license', createLicenseRouter({ supabase }));
 app.use('/api/usage', createUsageRouter({ supabase }));
@@ -89,7 +134,7 @@ app.use('/api/alt-text', createAltTextRouter({
   supabase,
   redis,
   resultCache: new Map(),
-  checkRateLimit: async (siteKey) => checkRateLimit(siteKey),
+  checkRateLimit,
   getSiteFromHeaders: async (req) => getSiteFromHeaders(supabase, req)
 }));
 
