@@ -112,7 +112,15 @@ function createAltTextRouter({
     });
 
     // Record usage/credits
-    await recordUsage(supabase, {
+    const logger = require('../lib/logger');
+    logger.info('[altText] Recording usage', {
+      licenseKey: licenseKey ? `${licenseKey.substring(0, 8)}...` : 'missing',
+      siteKey,
+      userId: userInfo.user_id,
+      creditsUsed: 1
+    });
+    
+    const usageResult = await recordUsage(supabase, {
       licenseKey,
       siteHash: siteKey,
       userId: userInfo.user_id,
@@ -130,6 +138,12 @@ function createAltTextRouter({
       endpoint: 'api/alt-text',
       status: 'success'
     });
+    
+    if (usageResult.error) {
+      logger.error('[altText] Failed to record usage', { error: usageResult.error });
+    } else {
+      logger.info('[altText] Usage recorded successfully');
+    }
 
     if (cacheKey && !bypassCache) {
       const payload = { altText, warnings, usage, meta };

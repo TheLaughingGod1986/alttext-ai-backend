@@ -1,4 +1,5 @@
 const { computePeriodStart } = require('./quota');
+const logger = require('../lib/logger');
 
 /**
  * Record usage with per-user and per-site tracking.
@@ -43,10 +44,23 @@ async function recordUsage(supabase, {
     error_message: errorMessage
   };
 
+  logger.debug('[usage] Inserting usage log', { 
+    license_key: licenseKey ? `${licenseKey.substring(0, 8)}...` : 'missing',
+    site_hash: siteHash,
+    credits_used: creditsUsed 
+  });
+  
   const { error } = await supabase.from('usage_logs').insert(payload);
+
+  if (error) {
+    logger.error('[usage] Failed to insert usage log', { error: error.message, code: error.code });
+  } else {
+    logger.info('[usage] Usage log inserted successfully');
+  }
 
   // Update quota summary for this period
   if (!error && licenseKey) {
+    logger.debug('[usage] Updating quota summary', { licenseKey: `${licenseKey.substring(0, 8)}...` });
     await updateQuotaSummary(supabase, licenseKey, creditsUsed, siteHash);
   }
 
