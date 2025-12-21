@@ -1,4 +1,36 @@
 const axios = require('axios');
+const { OPENAI_MAX_TOKENS, OPENAI_REQUEST_TIMEOUT } = require('./constants');
+
+/**
+ * Makes an OpenAI chat completion request with vision support
+ */
+async function makeOpenAIRequest(model, prompt, imageUrl, apiKey) {
+  return await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model,
+      temperature: 0.2,
+      max_tokens: OPENAI_MAX_TOKENS,
+      messages: [
+        { role: 'system', content: 'You are an accessibility assistant that writes excellent alternative text.' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } }
+          ]
+        }
+      ]
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: OPENAI_REQUEST_TIMEOUT
+    }
+  );
+}
 
 function buildPrompt(context = {}) {
   const lines = [
@@ -51,61 +83,13 @@ async function generateAltText({ image, context }) {
   try {
     let response;
     try {
-      response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: modelUsed,
-          temperature: 0.2,
-          max_tokens: 50,
-          messages: [
-            { role: 'system', content: 'You are an accessibility assistant that writes excellent alternative text.' },
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } }
-              ]
-            }
-          ]
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        }
-      );
+      response = await makeOpenAIRequest(modelUsed, prompt, imageUrl, apiKey);
     } catch (firstError) {
       const msg = firstError?.response?.data?.error?.message || '';
       const modelMissing = /model.+does not exist/i.test(msg) || /You must provide a model parameter/.test(msg);
       if (modelMissing && modelUsed !== fallbackModel) {
         modelUsed = fallbackModel;
-        response = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-            model: modelUsed,
-            temperature: 0.2,
-            max_tokens: 50,
-            messages: [
-              { role: 'system', content: 'You are an accessibility assistant that writes excellent alternative text.' },
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: prompt },
-                  { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } }
-                ]
-              }
-            ]
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 60000
-          }
-        );
+        response = await makeOpenAIRequest(modelUsed, prompt, imageUrl, apiKey);
       } else {
         throw firstError;
       }

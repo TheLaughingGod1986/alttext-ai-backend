@@ -1,7 +1,13 @@
 const { getLimits } = require('./license');
+const { QUOTA_WARNING_THRESHOLD } = require('../lib/constants');
 
 /**
- * Calculate reset date and quota status for a license.
+ * Calculate reset date and quota status for a license
+ * @param {Object} supabase - Supabase client
+ * @param {Object} options - Options object
+ * @param {string} options.licenseKey - License key to check
+ * @param {string} [options.siteHash] - Optional site hash for site-specific quotas
+ * @returns {Promise<Object>} Quota status object with credits_used, credits_remaining, reset_date, etc.
  */
 async function getQuotaStatus(supabase, { licenseKey, siteHash }) {
   const now = new Date();
@@ -54,8 +60,7 @@ async function getQuotaStatus(supabase, { licenseKey, siteHash }) {
     }
   }
 
-  const warningThreshold = 0.9;
-  const isNearLimit = creditsUsed / totalLimit >= warningThreshold;
+  const isNearLimit = creditsUsed / totalLimit >= QUOTA_WARNING_THRESHOLD;
 
   return {
     plan_type: license.plan,
@@ -64,14 +69,20 @@ async function getQuotaStatus(supabase, { licenseKey, siteHash }) {
     credits_remaining: creditsRemaining,
     total_limit: totalLimit,
     reset_date: periodEnd.toISOString(),
-    warning_threshold: warningThreshold,
+    warning_threshold: QUOTA_WARNING_THRESHOLD,
     is_near_limit: isNearLimit,
     site_quota: siteQuota
   };
 }
 
 /**
- * Check if enough credits remain; does not mutate.
+ * Check if enough credits remain for an operation (does not mutate)
+ * @param {Object} supabase - Supabase client
+ * @param {Object} options - Options object
+ * @param {string} options.licenseKey - License key to check
+ * @param {string} [options.siteHash] - Optional site hash
+ * @param {number} [options.creditsNeeded=1] - Credits needed for the operation
+ * @returns {Promise<Object>} Quota status or error object if quota exceeded
  */
 async function checkQuotaAvailable(supabase, { licenseKey, siteHash, creditsNeeded = 1 }) {
   const status = await getQuotaStatus(supabase, { licenseKey, siteHash });
@@ -90,7 +101,15 @@ async function checkQuotaAvailable(supabase, { licenseKey, siteHash, creditsNeed
 }
 
 /**
- * Enforce quota; throws on failure to simplify route handlers.
+ * Enforce quota check and throw error if quota exceeded
+ * Simplifies route handlers by throwing instead of returning error objects
+ * @param {Object} supabase - Supabase client
+ * @param {Object} options - Options object
+ * @param {string} options.licenseKey - License key to check
+ * @param {string} [options.siteHash] - Optional site hash (can be skipped via env config)
+ * @param {number} [options.creditsNeeded=1] - Credits needed for the operation
+ * @returns {Promise<Object>} Quota status if check passes
+ * @throws {Error} Throws error with status and payload if quota exceeded
  */
 async function enforceQuota(supabase, { licenseKey, siteHash, creditsNeeded = 1 }) {
   const skipList = (process.env.SKIP_QUOTA_CHECK_SITE_IDS || '')
@@ -122,6 +141,12 @@ async function enforceQuota(supabase, { licenseKey, siteHash, creditsNeeded = 1 
   return result;
 }
 
+/**
+ * Compute the billing period start date based on billing day of month
+ * @param {number} [billingDay=1] - Day of month billing cycle starts (1-31)
+ * @param {Date} [now=new Date()] - Current date for calculation
+ * @returns {Date} Start date of the current billing period
+ */
 function computePeriodStart(billingDay = 1, now = new Date()) {
   const day = Math.max(1, Math.min(31, Number(billingDay) || 1));
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), day, 0, 0, 0));
