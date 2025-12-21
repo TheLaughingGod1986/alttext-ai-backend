@@ -4,8 +4,10 @@ const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const crypto = require('crypto');
 const logger = require('../lib/logger');
+const config = require('../../config/config');
+const { authRateLimitMiddleware } = require('../middleware/rateLimit');
+const { getRedis } = require('../lib/redis');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = '30d';
 
 // Generate UUID v4
@@ -15,9 +17,11 @@ function generateUUID() {
 
 function createAuthRouter({ supabase }) {
   const router = express.Router();
+  const redis = getRedis();
+  const authRateLimit = authRateLimitMiddleware({ redis });
 
   // Register new user
-  router.post('/register', async (req, res) => {
+  router.post('/register', authRateLimit, async (req, res) => {
     const schema = z.object({
       email: z.string().email(),
       password: z.string().min(8),
@@ -90,7 +94,7 @@ function createAuthRouter({ supabase }) {
           email: user.email,
           license_key: user.license_key,
         },
-        JWT_SECRET,
+        config.jwtSecret,
         { expiresIn: JWT_EXPIRES_IN }
       );
 
@@ -127,7 +131,7 @@ function createAuthRouter({ supabase }) {
   });
 
   // Login
-  router.post('/login', async (req, res) => {
+  router.post('/login', authRateLimit, async (req, res) => {
     const schema = z.object({
       email: z.string().email(),
       password: z.string(),
@@ -192,7 +196,7 @@ function createAuthRouter({ supabase }) {
           email: user.email,
           license_key: user.license_key,
         },
-        JWT_SECRET,
+        config.jwtSecret,
         { expiresIn: JWT_EXPIRES_IN }
       );
 
@@ -245,7 +249,7 @@ function createAuthRouter({ supabase }) {
       // Verify token
       let decoded;
       try {
-        decoded = jwt.verify(token, JWT_SECRET);
+        decoded = jwt.verify(token, config.jwtSecret);
       } catch (err) {
         return res.status(401).json({
           error: 'INVALID_TOKEN',
@@ -289,7 +293,7 @@ function createAuthRouter({ supabase }) {
   });
 
   // Forgot password (placeholder - would send email in production)
-  router.post('/forgot-password', async (req, res) => {
+  router.post('/forgot-password', authRateLimit, async (req, res) => {
     const schema = z.object({
       email: z.string().email(),
     });

@@ -4,6 +4,30 @@ const bcrypt = require('bcryptjs');
 const { getQuotaStatus } = require('../services/quota');
 const { getUsageLogs } = require('../services/usage');
 
+/**
+ * Sanitizes a value for CSV export to prevent injection attacks.
+ * Prefixes dangerous characters with a single quote.
+ */
+function sanitizeCSV(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  const str = String(value);
+
+  // Check if the value starts with dangerous characters
+  if (str.length > 0 && ['=', '+', '-', '@', '\t', '\r'].includes(str[0])) {
+    return "'" + str.replace(/"/g, '""');
+  }
+
+  // Escape quotes and wrap in quotes if contains comma, newline, or quote
+  if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+
+  return str;
+}
+
 function createDashboardRouter({ supabase }) {
   const router = express.Router();
 
@@ -107,15 +131,16 @@ function createDashboardRouter({ supabase }) {
     const csvLines = [header.join(',')];
     logs.forEach((log) => {
       csvLines.push([
-        log.created_at,
-        log.site_hash,
-        log.user_email,
-        log.credits_used,
-        log.endpoint,
-        log.status
+        sanitizeCSV(log.created_at),
+        sanitizeCSV(log.site_hash),
+        sanitizeCSV(log.user_email),
+        sanitizeCSV(log.credits_used),
+        sanitizeCSV(log.endpoint),
+        sanitizeCSV(log.status)
       ].join(','));
     });
     res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="usage-export.csv"');
     res.send(csvLines.join('\n'));
   });
 
