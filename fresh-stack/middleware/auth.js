@@ -1,8 +1,7 @@
 const { validateLicense } = require('../services/license');
 const logger = require('../lib/logger');
 const jwt = require('jsonwebtoken');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const config = require('../../config/config');
 
 function authMiddleware({ supabase }) {
   return async function validate(req, res, next) {
@@ -36,7 +35,7 @@ function authMiddleware({ supabase }) {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = jwt.verify(token, config.jwtSecret);
         logger.debug('[Auth] JWT validated', {
           user_id: decoded.user_id,
           email: decoded.email

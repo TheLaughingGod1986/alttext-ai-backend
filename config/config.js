@@ -7,7 +7,8 @@ const REQUIRED = [
   'ALTTEXT_AI_STRIPE_PRICE_PRO',
   'ALTTEXT_AI_STRIPE_PRICE_AGENCY',
   'ALTTEXT_AI_STRIPE_PRICE_CREDITS',
-  'ALLOWED_ORIGINS'
+  'ALLOWED_ORIGINS',
+  'JWT_SECRET'
 ];
 
 function loadConfig() {
@@ -42,6 +43,7 @@ function loadConfig() {
       agency: getEnv('ALTTEXT_AI_STRIPE_PRICE_AGENCY'),
       credits: getEnv('ALTTEXT_AI_STRIPE_PRICE_CREDITS')
     },
+    jwtSecret: getEnv('JWT_SECRET'),
     openAiKey: getEnv('OPENAI_API_KEY') || getEnv('ALTTEXT_OPENAI_API_KEY'),
     openAiModel: getEnv('OPENAI_MODEL', 'gpt-4o-mini'),
     allowedOrigins: (getEnv('ALLOWED_ORIGINS', '') || '')
