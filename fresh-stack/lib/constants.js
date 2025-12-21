@@ -30,15 +30,22 @@ const AUTH_RATE_LIMITS = {
 // Cache TTL values
 const CACHE_TTL = {
   ALT_TEXT_RESULT: 60 * 60 * 24 * 7, // 7 days in seconds
-  RATE_LIMIT_WINDOW: 60_000 // 1 minute in milliseconds
+  RATE_LIMIT_WINDOW: 60_000, // 1 minute in milliseconds
+  DASHBOARD_SESSION: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
 };
 
 // Magic numbers
 const OPENAI_MAX_TOKENS = 50;
+const OPENAI_REQUEST_TIMEOUT = 60000; // 60 seconds
+
+// Quota warning threshold
+const QUOTA_WARNING_THRESHOLD = 0.9; // 90%
 
 module.exports = {
   PLAN_LIMITS,
   AUTH_RATE_LIMITS,
   CACHE_TTL,
-  OPENAI_MAX_TOKENS
+  OPENAI_MAX_TOKENS,
+  OPENAI_REQUEST_TIMEOUT,
+  QUOTA_WARNING_THRESHOLD
 };

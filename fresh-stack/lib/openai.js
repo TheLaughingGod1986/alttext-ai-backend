@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { OPENAI_MAX_TOKENS } = require('./constants');
+const { OPENAI_MAX_TOKENS, OPENAI_REQUEST_TIMEOUT } = require('./constants');
 
 /**
  * Makes an OpenAI chat completion request with vision support
@@ -27,7 +27,7 @@ async function makeOpenAIRequest(model, prompt, imageUrl, apiKey) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 60000
+      timeout: OPENAI_REQUEST_TIMEOUT
     }
   );
 }
