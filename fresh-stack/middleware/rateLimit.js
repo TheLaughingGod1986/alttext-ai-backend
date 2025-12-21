@@ -3,25 +3,16 @@
  * Uses Redis if available, otherwise in-memory fallback.
  */
 
-const PLAN_LIMITS = {
-  free: 60,
-  pro: 120,
-  agency: 240
-};
-
-// Rate limits for authentication endpoints (per IP)
-const AUTH_RATE_LIMITS = {
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  maxAttempts: 5 // 5 attempts per 15 minutes
-};
+const { PLAN_LIMITS, AUTH_RATE_LIMITS, CACHE_TTL } = require('../lib/constants');
 
 function rateLimitMiddleware({ redis, perSiteOverride, globalOverride }) {
-  const windowMs = 60_000;
+  const windowMs = CACHE_TTL.RATE_LIMIT_WINDOW;
   const memoryBuckets = new Map();
 
   return async function rateLimit(req, res, next) {
     const plan = req.license?.plan || 'free';
-    const limit = perSiteOverride || PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+    const planLimits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+    const limit = perSiteOverride || planLimits.rateLimit;
     const globalLimit = globalOverride || 0;
     const key = req.license?.license_key || req.header('X-License-Key') || 'anon';
     const bucketKey = `ratelimit:${key}:${Math.floor(Date.now() / windowMs)}`;

@@ -4,14 +4,14 @@
  * All functions are pure and expect an injected Supabase client.
  */
 
-const PLAN_LIMITS = {
-  free: { credits: 50, maxSites: 1 },
-  pro: { credits: 1000, maxSites: 1 },
-  agency: { credits: 10000, maxSites: null } // null = unlimited
-};
+const { PLAN_LIMITS } = require('../lib/constants');
 
 function getLimits(plan = 'free') {
-  return PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+  return {
+    credits: limits.credits,
+    maxSites: limits.maxSites
+  };
 }
 
 /**

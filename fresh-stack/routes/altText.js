@@ -6,6 +6,7 @@ const { generateAltText } = require('../lib/openai');
 const { enforceQuota } = require('../services/quota');
 const { recordUsage } = require('../services/usage');
 const { extractUserInfo } = require('../middleware/auth');
+const logger = require('../lib/logger');
 
 function hashPayload(base64) {
   return crypto.createHash('md5').update(base64).digest('hex');
@@ -112,7 +113,6 @@ function createAltTextRouter({
     });
 
     // Record usage/credits
-    const logger = require('../lib/logger');
     logger.info('[altText] Recording usage', {
       licenseKey: licenseKey ? `${licenseKey.substring(0, 8)}...` : 'missing',
       siteKey,
